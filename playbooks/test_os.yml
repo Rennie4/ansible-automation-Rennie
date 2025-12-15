@@ -1,15 +1,32 @@
+
 ---
-- name: Test connectivity and show OS Family
+- name: Test connectivity and show OS details
   hosts: all
-  gather_facts: true # Ensure facts are collected for the 'when' condition
+  gather_facts: true
 
   tasks:
-    - name: Display success message for Linux host
-      ansible.builtin.debug:
-        msg: "SUCCESS: Connected to {{ inventory_hostname }}. OS is {{ ansible_facts['distribution'] }}."
-      when: ansible_facts['os_family'] == 'Debian'
+    - name: Ping Linux/Unix/macOS hosts
+      ansible.builtin.ping:
+      when: ansible_facts['os_family'] != 'Windows'
 
-    - name: Display success message for Windows host
+    - name: Ping Windows hosts
+      ansible.windows.win_ping:
+      when: ansible_facts['os_family'] == 'Windows'
+
+    - name: Display success message (Linux/Unix/macOS)
       ansible.builtin.debug:
-        msg: "SUCCESS: Connected to {{ inventory_hostname }}. OS is {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}."
+        msg: >-
+          SUCCESS: Connected to {{ inventory_hostname }}.
+          OS family={{ ansible_facts['os_family'] }},
+          distribution={{ ansible_facts['distribution'] | default('N/A') }},
+          version={{ ansible_facts['distribution_version'] | default('N/A') }}.
+      when: ansible_facts['os_family'] != 'Windows'
+
+    - name: Display success message (Windows)
+      ansible.builtin.debug:
+        msg: >-
+          SUCCESS: Connected to {{ inventory_hostname }}.
+          OS family={{ ansible_facts['os_family'] }},
+          distribution={{ ansible_facts['distribution'] | default('Windows') }},
+          version={{ ansible_facts['distribution_version'] | default('N/A') }}.
       when: ansible_facts['os_family'] == 'Windows'
