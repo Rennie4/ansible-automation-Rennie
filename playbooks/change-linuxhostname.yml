@@ -1,16 +1,24 @@
 
 ---
-- name: Set Linux Hostname and Reboot if changed
+- name: Set Linux Hostname and Reboot if changed (AWS Ubuntu safe)
   hosts: linux_hosts
   gather_facts: false
   become: true
 
   tasks:
+    - name: Ensure cloud-init preserves the hostname (AWS Ubuntu)
+      ansible.builtin.lineinfile:
+        path: /etc/cloud/cloud.cfg
+        regexp: '^preserve_hostname:'
+        line: 'preserve_hostname: true'
+
     - name: Set the new hostname
       ansible.builtin.hostname:
         name: linux-01
-      register: hostname_change      register: hostname_change
+      register: hostname_change
 
     - name: Reboot Linux server if hostname changed
       ansible.builtin.reboot:
         reboot_timeout: 600
+      when: hostname_change.changed
+``
