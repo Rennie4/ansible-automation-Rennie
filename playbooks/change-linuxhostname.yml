@@ -5,6 +5,9 @@
   gather_facts: false
   become: true
 
+  vars:
+    new_hostname: linux-01
+
   tasks:
     - name: Ensure cloud-init preserves the hostname (AWS Ubuntu)
       ansible.builtin.lineinfile:
@@ -14,11 +17,9 @@
 
     - name: Set the new hostname
       ansible.builtin.hostname:
-        name: linux-01
+        name: "{{ new_hostname }}"
       register: hostname_change
 
-    - name: Reboot Linux server if hostname changed
+       - name: Reboot Linux server if hostname changed
       ansible.builtin.reboot:
         reboot_timeout: 600
-      when: hostname_change.changed
-``
