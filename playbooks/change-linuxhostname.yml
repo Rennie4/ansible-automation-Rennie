@@ -1,0 +1,17 @@
+
+---
+- name: Set Linux Hostname and Reboot if changed
+  hosts: linux_hosts
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Set the new hostname
+      ansible.builtin.hostname:
+        name: linux-01
+      register: hostname_change
+
+    - name: Reboot Linux server if hostname changed
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+     
