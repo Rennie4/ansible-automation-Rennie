@@ -1,11 +1,11 @@
 ---
-- name: Resize gp3 EBS volume to 17 GB
+- name: Resize gp3 EBS volume to 7 GB
   hosts: localhost
   gather_facts: false
   vars:
     region: eu-west-1
     volume_id: vol-0f6bd48fc470f0780
-    new_size: 17   # target size in GB
+    new_size: 7   # target size in GB
 
   tasks:
     - name: Get current volume info
@@ -15,7 +15,7 @@
           volume-id: "{{ volume_id }}"
       register: vol_info
 
-    - name: Modify EBS volume size to 17 GB
+    - name: Modify EBS volume size to 7 GB
       amazon.aws.ec2_vol:
         id: "{{ vol_info.volumes[0].id }}"
         volume_size: "{{ new_size }}"
