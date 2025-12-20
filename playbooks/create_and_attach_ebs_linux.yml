@@ -1,0 +1,55 @@
+---
+- name: AWS Infrastructure - Create and Attach
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    instance_id: i-043c4a9904b2ed301
+    vol_size: 5
+    region: eu-west-1
+    zone: eu-west-1b
+
+  tasks:
+    - name: Ensure 5GB volume exists and is attached
+      amazon.aws.ec2_vol:
+        instance: "{{ instance_id }}"
+        region: "{{ region }}"
+        zone: "{{ zone }}"
+        volume_size: "{{ vol_size }}"
+        device_name: /dev/sdf
+        # This ensures the volume is created if missing and stays attached
+        state: present
+      register: ec2_vol_result
+
+    - name: Wait for volume to be ready in the OS
+      pause:
+        seconds: 15
+      when: ec2_vol_result.changed
+
+- name: OS Configuration - Format and Mount
+  hosts: linux_hosts
+  become: yes
+  tasks:
+    - name: Create ext4 filesystem on /dev/xvdf
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/xvdf
+        # force: no ensures we don't wipe data if the disk is already formatted
+        force: no
+      register: format_result
+
+    - name: Create mount directory
+      file:
+        path: /data
+        state: directory
+        mode: '0755'
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Mount the volume and add to /etc/fstab
+      ansible.builtin.mount:
+        path: /data
+        src: /dev/xvdf
+        fstype: ext4
+        state: mounted
+        opts: defaults
