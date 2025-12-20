@@ -17,7 +17,6 @@
         zone: "{{ zone }}"
         volume_size: "{{ vol_size }}"
         device_name: /dev/sdf
-        # This ensures the volume is created if missing and stays attached
         state: present
       register: ec2_vol_result
 
@@ -31,10 +30,9 @@
   become: yes
   tasks:
     - name: Create ext4 filesystem on /dev/xvdf
-      ansible.posix.filesystem:
+      filesystem:
         fstype: ext4
         dev: /dev/xvdf
-        # force: no ensures we don't wipe data if the disk is already formatted
         force: no
       register: format_result
 
@@ -47,7 +45,7 @@
         group: ubuntu
 
     - name: Mount the volume and add to /etc/fstab
-      ansible.builtin.mount:
+      mount:
         path: /data
         src: /dev/xvdf
         fstype: ext4
