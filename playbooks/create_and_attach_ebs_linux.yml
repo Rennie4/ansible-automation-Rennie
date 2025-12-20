@@ -31,7 +31,7 @@
   become: yes
   tasks:
     - name: Create ext4 filesystem on /dev/xvdf
-      community.general.filesystem:
+      ansible.posix.filesystem:
         fstype: ext4
         dev: /dev/xvdf
         # force: no ensures we don't wipe data if the disk is already formatted
