@@ -4,7 +4,6 @@
   connection: local
   gather_facts: false
   vars:
-    # These variables are populated by your AAP Survey
     instance_id: "{{ target_instance_id }}"
     region: "eu-west-1"
     az: "{{ target_az }}"
@@ -12,7 +11,7 @@
     device_name: "/dev/xvdf"
 
   tasks:
-    - name: "Create {{ volume_size }}GB EBS Volume in {{ az }}"
+    - name: Create EBS Volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ az }}"
@@ -20,7 +19,7 @@
         volume_type: gp3
       register: new_vol_info
 
-    - name: "Attach Volume to Instance: {{ instance_id }}"
+    - name: Attach Volume to Instance
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         instance: "{{ instance_id }}"
@@ -33,35 +32,21 @@
   tasks:
     - name: Detect and Initialize New Storage
       win_shell: |
-        # 1. Force Windows to see new hardware (Works for SCSI and NVMe)
         "san policy=OnlineAll" | diskpart
         "rescan" | diskpart
         Update-HostStorageCache
-        if (Get-Command Reset-StorageSubSystem -ErrorAction SilentlyContinue) { 
-            Reset-StorageSubSystem 
-        }
-
-        # 2. Find first available letter starting from E (ASCII 69)
-        $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { 
-            (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null 
-        } | Select-Object -First 1
-
-        # 3. Find any disk that isn't the Boot Drive (Disk 0) and is Raw/Offline
-        # This works for both t3 (Xen) and m7i (Nitro)
+        if (Get-Command Reset-StorageSubSystem -ErrorAction SilentlyContinue) { Reset-StorageSubSystem }
+        $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null } | Select-Object -First 1
         $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and ($_.NumberOfPartitions -eq 0 -or $_.OperationalStatus -eq 'Offline') } | Select-Object -First 1
-
         if ($disk) {
-            # Clear read-only attributes and bring online
             $disk | Set-Disk -IsOffline $false -IsReadOnly $false
-            $disk | Initialize-Disk -PartitionStyle GPT -PassThru | 
-            New-Partition -UseMaximumSize -DriveLetter $NextLetter | 
-            Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume" -Confirm:$false
+            $disk | Initialize-Disk -PartitionStyle GPT -PassThru | New-Partition -UseMaximumSize -DriveLetter $NextLetter | Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume" -Confirm:$false
             Write-Host "Success: Assigned drive letter $NextLetter"
         } else {
-            Write-Error "No new disk detected inside Windows. Check AWS Console for attachment status."
+            Write-Error "No new disk detected inside Windows."
         }
       register: disk_out
 
     - name: Report Final Status
       debug:
-        msg: "{{ disk_out.stdout | default('No output from PowerShell') }}"
+        msg: "{{ disk_out.stdout | default('Disk check complete') }}"
