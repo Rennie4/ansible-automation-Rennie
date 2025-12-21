@@ -6,7 +6,7 @@
   tasks:
     - name: Set the new hostname
       win_hostname:
-        name: windows-2019
+        name: windows-2019new
       register: hostname_change
 
     - name: Reboot Windows server if hostname changed
