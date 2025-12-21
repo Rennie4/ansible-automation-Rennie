@@ -4,6 +4,7 @@
   connection: local
   gather_facts: false
   vars:
+    # These come from your AAP Survey
     instance_id: "{{ target_instance_id }}"
     region: "eu-west-1"
     az: "{{ target_az }}"
@@ -11,7 +12,7 @@
     device_name: "/dev/xvdf"
 
   tasks:
-    - name: Create EBS Volume
+    - name: "Create {{ volume_size }}GB EBS Volume in {{ az }}"
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ az }}"
@@ -19,43 +20,44 @@
         volume_type: gp3
       register: new_vol_info
 
-    - name: Attach Volume to Windows Instance
+    - name: "Attach Volume to Instance: {{ instance_id }}"
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         instance: "{{ instance_id }}"
         id: "{{ new_vol_info.volume_id }}"
         device_name: "{{ device_name }}"
 
-- name: Windows Configuration - Dynamic Disk Setup
+- name: Windows Configuration - Universal Disk Setup
   hosts: windows_hosts
   gather_facts: false
   tasks:
-    - name: Force Windows to detect and format new hardware
+    - name: Detect and Initialize New Storage
       win_shell: |
-        # 1. Force a deeper storage refresh for NVMe
+        # 1. Force Windows to see new hardware (Works for SCSI and NVMe)
+        "san policy=OnlineAll" | diskpart
+        "rescan" | diskpart
         Update-HostStorageCache
-        Get-StorageSubSystem | Reset-StorageSubSystem
-        
-        # 2. Find the first available letter starting from E
+        if (Get-Command Reset-StorageSubSystem -ErrorAction SilentlyContinue) { Reset-StorageSubSystem }
+
+        # 2. Find first available letter starting from E
         $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { 
             (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null 
         } | Select-Object -First 1
-        
-        # 3. Target any disk that is NOT Disk 0 and is currently Offline or Raw
+
+        # 3. Find any disk that isn't the Boot Drive (Disk 0) and is Raw/Offline
         $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and ($_.NumberOfPartitions -eq 0 -or $_.OperationalStatus -eq 'Offline') } | Select-Object -First 1
-        
+
         if ($disk) {
-            # Clear read-only attributes and bring online
             $disk | Set-Disk -IsOffline $false -IsReadOnly $false
             $disk | Initialize-Disk -PartitionStyle GPT -PassThru | 
             New-Partition -UseMaximumSize -DriveLetter $NextLetter | 
             Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume" -Confirm:$false
-            Write-Host "Successfully assigned $NextLetter"
+            Write-Host "Success: Assigned drive letter $NextLetter"
         } else {
-            Write-Error "Windows still does not see the new hardware."
+            Write-Error "No new disk detected inside Windows."
         }
       register: disk_out
 
-    - name: Confirm Assignment
+    - name: Report Final Status
       debug:
         msg: "{{ disk_out.stdout }}"
