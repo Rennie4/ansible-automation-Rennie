@@ -4,12 +4,12 @@
   connection: local
   gather_facts: false
   vars:
-    # These will now come from the AAP Survey
-    region: "eu-west-1"
+    # These variables are populated by your AAP Survey
     instance_id: "{{ target_instance_id }}"
+    region: "eu-west-1"
     az: "{{ target_az }}"
     volume_size: "{{ target_volume_size }}"
-    device_name: /dev/xvdf
+    device_name: "/dev/xvdf"
 
   tasks:
     - name: Create EBS Volume
@@ -31,13 +31,34 @@
   hosts: windows_hosts
   gather_facts: false
   tasks:
+    - name: Force Windows to rescan for new hardware
+      win_shell: |
+        "rescan" | diskpart
+        Update-HostStorageCache
+      register: rescan_out
+
     - name: Find next available drive letter and format disk
       win_shell: |
+        # 1. Find the first available letter starting from E (ASCII 69)
         $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { 
             (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null 
         } | Select-Object -First 1
-        $disk = Get-Disk | Where-Object IsOffline -eq $true | Initialize-Disk -PassThru
-        $partition = $disk | New-Partition -UseMaximumSize -DriveLetter $NextLetter
-        $partition | Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume"
-        echo "Assigned Letter: $NextLetter"
+        
+        # 2. Find the new disk (the one that is currently Offline/Uninitialized)
+        $disk = Get-Disk | Where-Object { $_.OperationalStatus -eq 'Offline' -or $_.PartitionStyle -eq 'Raw' } | Select-Object -First 1
+        
+        if ($disk) {
+            $disk | Initialize-Disk -PartitionStyle GPT -PassThru | 
+            New-Partition -UseMaximumSize -DriveLetter $NextLetter | 
+            Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume" -Confirm:$false
+            echo "Successfully assigned $NextLetter"
+        } else {
+            Write-Error "No uninitialized disk found. It might already be online."
+        }
       register: disk_out
+
+    - name: Final Disk Summary
+      debug:
+        msg: 
+          - "Rescan Status: Completed"
+          - "Result: {{ disk_out.stdout | default('Disk already initialized or not found') }}"
