@@ -4,14 +4,15 @@
   connection: local
   gather_facts: false
   vars:
-    instance_id: i-01e4a90bc531d3afd
-    region: eu-west-1
-    az: eu-west-1a
-    volume_size: 10
+    # These will now come from the AAP Survey
+    region: "eu-west-1"
+    instance_id: "{{ target_instance_id }}"
+    az: "{{ target_az }}"
+    volume_size: "{{ target_volume_size }}"
     device_name: /dev/xvdf
 
   tasks:
-    - name: Create 10GB EBS Volume
+    - name: Create EBS Volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ az }}"
@@ -35,13 +36,8 @@
         $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { 
             (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null 
         } | Select-Object -First 1
-        
         $disk = Get-Disk | Where-Object IsOffline -eq $true | Initialize-Disk -PassThru
         $partition = $disk | New-Partition -UseMaximumSize -DriveLetter $NextLetter
         $partition | Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume"
         echo "Assigned Letter: $NextLetter"
       register: disk_out
-
-    - name: Confirm Assignment
-      debug:
-        msg: "{{ disk_out.stdout }}"
