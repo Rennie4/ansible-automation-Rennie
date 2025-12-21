@@ -1,0 +1,25 @@
+---
+- name: Set Windows Hostname and Reboot
+  hosts: windows_hosts
+  gather_facts: false
+
+  tasks:
+    - name: Set the new hostname
+      win_hostname:
+        name: windows-2019
+      register: hostname_change
+
+    - name: Reboot Windows server if hostname changed
+      win_reboot:
+      when: hostname_change.reboot_required
+
+    - name: Get Windows Status (Hostname and Uptime)
+      win_shell: |
+        $os = Get-CimInstance Win32_OperatingSystem
+        $uptime = (Get-Date) - $os.LastBootUpTime
+        echo "Current Hostname: $env:COMPUTERNAME | Uptime: $($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
+      register: windows_status
+
+    - name: Display Status in AAP Console
+      debug:
+        msg: "{{ windows_status.stdout_lines }}"
