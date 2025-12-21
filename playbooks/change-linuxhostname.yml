@@ -6,11 +6,19 @@
 
   tasks:
     - name: Set the new hostname
-      hostname: # Simplified for AAP
+      hostname:
         name: linux-01
       register: hostname_change
 
     - name: Reboot Linux server if hostname changed
-      reboot: # Simplified for AAP
+      reboot:
         reboot_timeout: 600
-      when: hostname_change.changed  # <--- This prevents unnecessary reboots
+      when: hostname_change.changed
+
+    - name: Get current status from the OS
+      shell: "echo 'Current Hostname: ' $(hostname) ' | Uptime: ' $(uptime -p)"
+      register: status_check
+
+    - name: Display Status in AAP Console
+      debug:
+        msg: "{{ status_check.stdout }}"
