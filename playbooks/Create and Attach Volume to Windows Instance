@@ -1,0 +1,47 @@
+---
+- name: AWS Infrastructure - Create and Attach Volume
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    instance_id: i-01e4a90bc531d3afd
+    region: eu-west-1
+    az: eu-west-1a
+    volume_size: 10
+    device_name: /dev/xvdf
+
+  tasks:
+    - name: Create 10GB EBS Volume
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        zone: "{{ az }}"
+        volume_size: "{{ volume_size }}"
+        volume_type: gp3
+      register: new_vol_info
+
+    - name: Attach Volume to Windows Instance
+      amazon.aws.ec2_vol:
+        region: "{{ region }}"
+        instance: "{{ instance_id }}"
+        id: "{{ new_vol_info.volume_id }}"
+        device_name: "{{ device_name }}"
+
+- name: Windows Configuration - Dynamic Disk Setup
+  hosts: windows_hosts
+  gather_facts: false
+  tasks:
+    - name: Find next available drive letter and format disk
+      win_shell: |
+        $NextLetter = 69..90 | ForEach-Object { [char]$_ } | Where-Object { 
+            (Get-PSDrive -Name $_ -ErrorAction SilentlyContinue) -eq $null 
+        } | Select-Object -First 1
+        
+        $disk = Get-Disk | Where-Object IsOffline -eq $true | Initialize-Disk -PassThru
+        $partition = $disk | New-Partition -UseMaximumSize -DriveLetter $NextLetter
+        $partition | Format-Volume -FileSystem NTFS -NewFileSystemLabel "DataVolume"
+        echo "Assigned Letter: $NextLetter"
+      register: disk_out
+
+    - name: Confirm Assignment
+      debug:
+        msg: "{{ disk_out.stdout }}"
