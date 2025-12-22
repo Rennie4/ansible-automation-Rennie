@@ -1,5 +1,5 @@
 ---
-- name: AWS Infrastructure - Cleanup and Create
+- name: AWS Infrastructure - Create and Attach
   hosts: localhost
   connection: local
   gather_facts: true
@@ -10,22 +10,7 @@
     aws_zone: "{{ target_zone }}"
 
   tasks:
-    - name: Pre-Flight - Find any "Stuck" Available volumes
-      amazon.aws.ec2_vol_info:
-        region: "{{ aws_region }}"
-        filters:
-          status: "available"
-      register: available_vols
-
-    - name: Pre-Flight - Delete leftover volumes
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        id: "{{ item.id }}"
-        state: absent
-      loop: "{{ available_vols.volumes }}"
-      when: available_vols.volumes | length > 0
-
-    - name: Step 1 - Create Fresh Volume
+    - name: Step 1 - Create Unique Volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
@@ -34,66 +19,83 @@
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach to Fresh Slot
+    - name: Step 2 - Attach to Instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # We pick a random letter between 'h' and 'p' to keep it fresh
+        # Randomizing letters ensures we don't hit a 'reserved' slot
         device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
-    - name: Step 3 - Wait for AWS API
+    - name: Step 3 - Wait for API Propagation
+      pause:
+        seconds: 10
+
+    - name: Step 4 - Verify Attachment
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
           volume-id: "{{ raw_vol.volume_id }}"
       register: vol_status
+      # This logic prevents the "list index" error by checking if the list exists first
       until: 
+        - vol_status.volumes | length > 0
+        - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
       retries: 15
       delay: 5
 
-    - name: Set facts for OS
+    - name: Set facts for OS discovery
       set_fact:
-        # AWS volume IDs like vol-1234 becomes vol1234 for the OS serial check
-        vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
-        mount_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
+        vol_id_short: "{{ raw_vol.volume_id | replace('-', '') }}"
+        final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
-- name: OS Configuration - High-Speed Discovery
+- name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Identify Device by Serial ID
+    - name: Universal Device Discovery
       shell: 
         cmd: |
-          udevadm trigger && udevadm settle --timeout=10
-          # Look for the device path using the unique AWS Serial ID
-          lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}'
+          for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
+          udevadm settle && sleep 5
+          SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
+          echo "$DEVICE"
       register: found_device
       until: found_device.stdout != ""
       retries: 10
       delay: 5
 
-    - name: Final Format and Mount
+    - name: Format and Mount
       block:
         - name: Create directory
           file:
-            path: "{{ hostvars['localhost']['mount_path'] }}"
+            path: "{{ hostvars['localhost']['final_path'] }}"
             state: directory
+            mode: '0755'
 
         - name: Create filesystem
           filesystem:
             fstype: ext4
             dev: "{{ found_device.stdout }}"
+            force: no
 
         - name: Mount volume
           mount:
-            path: "{{ hostvars['localhost']['mount_path'] }}"
+            path: "{{ hostvars['localhost']['final_path'] }}"
             src: "{{ found_device.stdout }}"
             fstype: ext4
             state: mounted
+            opts: defaults
+
+    - name: Final Storage Report
+      command: df -h
+      register: storage_df
 
     - name: Success Summary
       debug:
-        msg: "SUCCESS! {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['mount_path'] }}"
+        msg: 
+          - "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB is live!"
+          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
