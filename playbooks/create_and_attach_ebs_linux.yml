@@ -4,34 +4,23 @@
   connection: local
   gather_facts: true
   vars:
-    # --- DYNAMIC INPUTS ---
-    aws_region: "eu-west-1"
+    # --- THESE COME DIRECTLY FROM YOUR SURVEY ---
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
+    aws_zone: "{{ target_zone }}"
+    aws_region: "eu-west-1"
 
   tasks:
-    - name: Step 1 - Auto-Discover Instance Zone and IP
-      amazon.aws.ec2_instance_info:
-        region: "{{ aws_region }}"
-        instance_ids: ["{{ aws_instance }}"]
-      register: instance_info
-
-    - name: Set Discovery Facts
-      set_fact:
-        # Automatically pulls the correct zone (e.g., eu-west-1a)
-        aws_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        target_ip: "{{ instance_info.instances[0].public_ip_address if instance_info.instances[0].public_ip_address else instance_info.instances[0].private_ip_address }}"
-
-    - name: Step 2 - Create Unique Volume
+    - name: Step 1 - Create Volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        name: "Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
+        name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
-    - name: Step 3 - Attach to Instance
+    - name: Step 2 - Attach to Instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
@@ -39,41 +28,53 @@
         device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
+    - name: Step 3 - Wait for AWS Confirmation
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ raw_vol.volume_id }}"
+      register: vol_status
+      until: 
+        - vol_status.volumes | length > 0
+        - vol_status.volumes[0].attachment_set | length > 0
+        - vol_status.volumes[0].attachment_set[0].status == 'attached'
+      retries: 20
+      delay: 5
+
     - name: Set facts for OS
       set_fact:
         vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-5:] }}"
 
-    - name: Step 4 - Dynamic Inventory Override
+    - name: Step 4 - Override Git IP with Current IP
       add_host:
-        name: "current_target"
-        ansible_host: "{{ target_ip }}"
+        name: "active_server"
+        ansible_host: "3.254.143.183"  # Your updated Public IP
         ansible_user: "ubuntu"
         ansible_ssh_private_key_file: "/runner/artifacts/1268/ssh_key_data"
-        groups: active_nodes
+        groups: dynamic_hosts
 
 - name: OS Configuration - Format and Mount
-  hosts: active_nodes
+  hosts: dynamic_hosts
   gather_facts: no
   tasks:
-    - name: Step 5 - Wait for SSH Banner
-      # Runs locally without sudo to prevent 'rc 127'
+    - name: Step 5 - Wait for SSH Connectivity
+      # Checking port 22 locally to avoid the "Connection Refused" crash
       wait_for:
         port: 22
         host: "{{ ansible_host }}"
         search_regex: OpenSSH
-        delay: 5
-        timeout: 450
+        timeout: 300
       delegate_to: localhost
 
-    - name: Step 6 - Hardware Discovery (NVMe Support)
+    - name: Step 6 - Hardware Discovery
       become: yes
       shell: 
         cmd: |
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
-      retries: 20
+      retries: 15
       delay: 5
 
     - name: Step 7 - Universal Mount
@@ -98,6 +99,6 @@
             fstype: ext4
             state: mounted
 
-    - name: Final Success Report
+    - name: Success Summary
       debug:
-        msg: "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB mounted on {{ ansible_host }}"
+        msg: "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
