@@ -1,9 +1,41 @@
 ---
+- name: AWS Infrastructure - Resize Linux EBS Volume
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Matches your AAP Survey variables
+    region: "eu-west-1"
+    volume_id: "{{ target_volume_id }}"
+    new_size: "{{ target_new_size }}"
+
+  tasks:
+    - name: Get current volume info
+      amazon.aws.ec2_vol_info:
+        region: "{{ region }}"
+        filters:
+          volume-id: "{{ volume_id }}"
+      register: vol_info
+
+    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
+      amazon.aws.ec2_vol:
+        id: "{{ volume_id }}"
+        volume_size: "{{ new_size }}"
+        region: "{{ region }}"
+        zone: "{{ vol_info.volumes[0].zone }}"
+        modify_volume: true
+      register: resize_result
+
+    - name: Wait for AWS backend
+      pause:
+        seconds: 30
+      when: resize_result.changed
+
 - name: OS Configuration - Universal Linux Extend
   hosts: linux_hosts
   become: yes
   vars:
-    # Pass the volume ID to the Linux host
+    # Pass the volume ID to the Linux host and remove dashes for matching
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
     - name: Install resize prerequisites (growpart)
@@ -18,7 +50,7 @@
         DEVICE=$(lsblk -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}')
         
         if [ -z "$DEVICE" ]; then
-            # Fallback for non-nitro: find data disk that isn't the OS disk
+            # Fallback for non-nitro: find data disk that isn't the OS disk (Disk 0)
             DEVICE=$(lsblk -dpno NAME,TYPE,MOUNTPOINT | grep "disk" | grep -v "/$" | awk '{print $1}' | head -n 1)
         fi
 
@@ -27,6 +59,7 @@
             echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
             
             # 3. Grow the partition and then the filesystem
+            # Logic: Try growing partition 1, then resize EXT4 or XFS
             growpart $DEVICE 1 || echo "No partition to grow, resizing disk directly."
             
             # Try EXT4 resize first, then XFS if that fails
