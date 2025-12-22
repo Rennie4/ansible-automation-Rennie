@@ -24,8 +24,6 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Using /dev/sdz as a placeholder satisfies the AWS API requirement.
-        # AWS will automatically map this to the next free internal slot.
         device_name: "/dev/sdz" 
         state: present
 
@@ -55,18 +53,22 @@
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Universal Device Discovery
+    - name: Universal Device Discovery (With Retries)
       shell: 
         cmd: |
+          # Rescan the bus to find new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
-          udevadm settle && sleep 10
+          udevadm settle
+          
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Discovery by Serial ID ensures we find the right disk even if 
-          # AWS renames /dev/sdz to something else internally.
+          # Try to find the device by Serial ID
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
-      failed_when: found_device.stdout == ""
+      # This loop ensures we wait for the OS to actually "see" the disk
+      until: found_device.stdout != ""
+      retries: 12
+      delay: 5
 
     - name: Format and Mount
       block:
@@ -93,7 +95,6 @@
     - name: Success Summary
       debug:
         msg: 
-          - "SUCCESS: Disk Attached and Mounted!"
-          - "Size: {{ hostvars['localhost']['aws_size'] }} GB"
-          - "Final System Device: {{ found_device.stdout }}"
+          - "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB Disk Mounted!"
+          - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
           - "Path: {{ hostvars['localhost']['final_path'] }}"
