@@ -19,12 +19,13 @@
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach Using Placeholder Slot
+    - name: Step 2 - Attach Using Unique Randomized Slot
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        device_name: "/dev/sdz" 
+        # This randomizer ensures we don't keep hitting /dev/sdz or /dev/sdp
+        device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'] | random }}" 
         state: present
 
     - name: Step 3 - Wait for API Propagation
@@ -56,18 +57,14 @@
     - name: Universal Device Discovery (With Retries)
       shell: 
         cmd: |
-          # Rescan the bus to find new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle
-          
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Try to find the device by Serial ID
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
-      # This loop ensures we wait for the OS to actually "see" the disk
       until: found_device.stdout != ""
-      retries: 12
+      retries: 15
       delay: 5
 
     - name: Format and Mount
@@ -97,4 +94,4 @@
         msg: 
           - "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB Disk Mounted!"
           - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
-          - "Path: {{ hostvars['localhost']['final_path'] }}"
+          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
