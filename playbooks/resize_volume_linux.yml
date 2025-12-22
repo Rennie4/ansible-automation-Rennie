@@ -4,7 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    # These match your AAP Survey variable names
+    # Matches your AAP Survey variables
     region: "eu-west-1"
     volume_id: "{{ target_volume_id }}"
     new_size: "{{ target_new_size }}"
@@ -35,7 +35,7 @@
   hosts: linux_hosts
   become: yes
   vars:
-    # Removes dashes so we can match the Linux Serial Number
+    # Removes dashes for Serial Number matching
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
     - name: Install resize prerequisites (growpart)
