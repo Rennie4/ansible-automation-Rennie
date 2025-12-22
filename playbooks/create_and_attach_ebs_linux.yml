@@ -1,7 +1,7 @@
 
 ---
 # Play 1: AWS actions on localhost
-- name: AWS Infrastructure - Create and Attach Volume
+- name: AWS Infrastructure - Create and Attach Multiple Volumes
   hosts: localhost
   connection: local
   gather_facts: true
@@ -9,26 +9,21 @@
   vars:
     # --- Survey variables ---
     aws_instance: "{{ target_instance_id }}"
-    aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
-    attach_device_name: "/dev/sdf"
-
-    # --- Optional survey variables ---
+    volume_count: "{{ target_volume_count | int }}"
+    sizes_csv: "{{ target_volume_sizes_csv }}"
+    fstype: "{{ target_fstype | default('ext4') }}"
+    volume_type: "{{ target_volume_type | default('gp3') }}"
     delete_on_termination: "{{ target_delete_on_termination | default(false) | bool }}"
     encrypted: "{{ target_encrypted | default(true) | bool }}"
     kms_key_id: "{{ target_kms_key_id | default(omit) }}"
-    volume_type: "{{ target_volume_type | default('gp3') }}"
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
-    # --- Tags for visibility in console ---
-    common_tags:
-      Name: "Reusable-Disk-{{ aws_instance }}-{{ aws_size }}GiB-{{ ansible_date_time.epoch }}"
-      Owner: "{{ lookup('env', 'USER') | default('awx') }}"
-      ManagedBy: "Ansible"
-      InstanceId: "{{ aws_instance }}"
-      Region: "{{ aws_region }}"
+    # Base device names for API attachment labels: /dev/sdf, /dev/sdg, ...
+    attach_device_prefix: "/dev/sd"
+    attach_device_letters: ['f','g','h','i','j','k','l','m','n','o','p','q']
 
   tasks:
     # ---------- Prechecks ----------
@@ -58,12 +53,26 @@
           - "ARN: {{ whoami.arn }}"
           - "Region: {{ aws_region }}"
 
-    - name: Validate survey inputs (instance + size)
+    - name: Validate survey inputs (instance, count)
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
-          - aws_size | int > 0
-        fail_msg: "Survey validation failed: instance_id (i-xxxx) and size (>0) required."
+          - volume_count | int > 0
+        fail_msg: "Survey validation failed: instance_id (i-xxxx) and volume_count (>0) required."
+
+    - name: Parse sizes from CSV and validate length
+      set_fact:
+        sizes_list: "{{ sizes_csv | trim | split(',') | map('trim') | list }}"
+    - name: Coerce sizes to int and validate all > 0
+      set_fact:
+        sizes_int_list: "{{ sizes_list | map('int') | list }}"
+    - name: Validate sizes list length equals count
+      assert:
+        that:
+          - sizes_int_list | length == volume_count | int
+          - (sizes_int_list | min) > 0
+        fail_msg: >-
+          Sizes CSV must contain exactly {{ volume_count }} positive integers (GiB). Received: {{ sizes_list }}
 
     # ---------- Instance discovery ----------
     - name: Get instance details
@@ -81,7 +90,6 @@
     - name: Set instance facts
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        # If survey AZ provided use it; otherwise default to instance AZ
         aws_zone: >-
           {{ (target_az | length > 0)
              | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
@@ -104,67 +112,78 @@
           - "Instance: {{ aws_instance }}"
           - "Region: {{ aws_region }}"
           - "AZ (effective): {{ aws_zone }}"
-          - "Size GiB: {{ aws_size }}"
-          - "Device (API): {{ attach_device_name }}"
-          - "Target IP: {{ target_ip }}"
+          - "Volumes to create: {{ volume_count }}"
+          - "Sizes (GiB): {{ sizes_int_list }}"
+          - "Attach device letters: {{ attach_device_letters[:volume_count] }}"
 
-    # ---------- Create volume ----------
-    - name: Create EBS volume
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        zone: "{{ aws_zone }}"
-        volume_size: "{{ aws_size }}"
-        volume_type: "{{ volume_type }}"
-        iops: "{{ iops }}"
-        throughput: "{{ throughput }}"
-        encrypted: "{{ encrypted }}"
-        kms_key_id: "{{ kms_key_id }}"
-        tags: "{{ common_tags }}"
-        state: present
-      register: raw_vol
+    # ---------- Create + attach loop ----------
+    - name: Initialize list to collect created volumes
+      set_fact:
+        created_volumes: []
 
-    - name: Ensure volume created
-      assert:
-        that:
-          - raw_vol.volume_id is defined
-        fail_msg: "EBS volume creation failed—no volume_id returned. Check IAM/KMS permissions."
+    - name: Loop - Create and attach volumes
+      vars:
+        idx: "{{ item.0 }}"
+        size_gb: "{{ item.1 }}"
+        device_label: "{{ attach_device_prefix }}{{ attach_device_letters[idx] }}"
+        vol_name: "Reusable-Disk-{{ aws_instance }}-{{ size_gb }}GiB-{{ ansible_date_time.epoch }}-{{ idx }}"
+        vol_tags:
+          Name: "{{ vol_name }}"
+          Owner: "{{ lookup('env', 'USER') | default('awx') }}"
+          ManagedBy: "Ansible"
+          InstanceId: "{{ aws_instance }}"
+          Region: "{{ aws_region }}"
+          Index: "{{ idx }}"
+          SizeGB: "{{ size_gb }}"
+      loop: "{{ query('zip', range(0, volume_count | int), sizes_int_list) }}"
+      block:
+        - name: Create EBS volume ({{ size_gb }} GiB, index {{ idx }})
+          amazon.aws.ec2_vol:
+            region: "{{ aws_region }}"
+            zone: "{{ aws_zone }}"
+            volume_size: "{{ size_gb }}"
+            volume_type: "{{ volume_type }}"
+            iops: "{{ iops }}"
+            throughput: "{{ throughput }}"
+            encrypted: "{{ encrypted }}"
+            kms_key_id: "{{ kms_key_id }}"
+            tags: "{{ vol_tags }}"
+            state: present
+          register: raw_vol
 
-    - name: Debug - Volume details
-      debug:
-        msg:
-          - "Volume ID: {{ raw_vol.volume_id }}"
-          - "Find in console by ID or Tag Name={{ common_tags.Name }}"
+        - name: Assert volume created (index {{ idx }})
+          assert:
+            that:
+              - raw_vol.volume_id is defined
+            fail_msg: "EBS volume (index {{ idx }}) failed—no volume_id returned."
 
-    # ---------- Attach ----------
-    - name: Attach EBS volume to instance
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        instance: "{{ aws_instance }}"
-        volume_id: "{{ raw_vol.volume_id }}"
-        device_name: "{{ attach_device_name }}"
-        delete_on_termination: "{{ delete_on_termination }}"
-        state: present
-      register: attach_result
+        - name: Attach EBS volume to instance ({{ device_label }}, index {{ idx }})
+          amazon.aws.ec2_vol:
+            region: "{{ aws_region }}"
+            instance: "{{ aws_instance }}"
+            volume_id: "{{ raw_vol.volume_id }}"
+            device_name: "{{ device_label }}"
+            delete_on_termination: "{{ delete_on_termination }}"
+            state: present
+          register: attach_result
 
-    - name: Wait until attached
-      amazon.aws.ec2_vol_info:
-        region: "{{ aws_region }}"
-        filters:
-          volume-id: "{{ raw_vol.volume_id }}"
-      register: vol_status
-      until:
-        - vol_status.volumes | length > 0
-        - vol_status.volumes[0].attachment_set | length > 0
-        - vol_status.volumes[0].attachment_set[0].instance_id == aws_instance
-        - vol_status.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 30
-      delay: 5
+        - name: Wait until attached (index {{ idx }})
+          amazon.aws.ec2_vol_info:
+            region: "{{ aws_region }}"
+            filters:
+              volume-id: "{{ raw_vol.volume_id }}"
+          register: vol_status
+          until:
+            - vol_status.volumes | length > 0
+            - vol_status.volumes[0].attachment_set | length > 0
+            - vol_status.volumes[0].attachment_set[0].instance_id == aws_instance
+            - vol_status.volumes[0].attachment_set[0].status in ['attaching', 'attached']
+          retries: 30
+          delay: 5
 
-    - name: Debug - Attachment status
-      debug:
-        msg:
-          - "Attachment: {{ vol_status.volumes[0].attachment_set[0].status }}"
-          - "Device (API): {{ attach_device_name }}"
+        - name: Append created volume info (index {{ idx }})
+          set_fact:
+            created_volumes: "{{ created_volumes + [ { 'index': idx, 'size_gb': size_gb, 'volume_id': raw_vol.volume_id, 'device_label': device_label } ] }}"
 
     # ---------- Dynamic inventory for OS config ----------
     - name: Add target to dynamic inventory
@@ -174,68 +193,9 @@
         ansible_user: "ubuntu"
         ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
         groups: active_nodes
-      # Expose these facts to the next play
       vars:
-        raw_vol: "{{ raw_vol }}"
-        aws_size: "{{ aws_size }}"
+        created_volumes: "{{ created_volumes }}"
+        fstype: "{{ fstype }}"
 
 # Play 2: OS actions on the instance
-- name: OS Configuration - Format and Mount
-  hosts: active_nodes
-  gather_facts: no
-
-  tasks:
-    - name: Wait for SSH
-      wait_for:
-        port: 22
-        host: "{{ ansible_host }}"
-        search_regex: OpenSSH
-        timeout: 300
-      delegate_to: localhost
-
-    - name: Find device by EBS serial (Nitro/NVMe friendly)
-      become: yes
-      shell: |
-        set -o pipefail
-        VOLNOHYP="{{ hostvars['localhost']['raw_vol']['volume_id'] | replace('-', '') }}"
-        DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
-        if [ -z "$DEV" ]; then
-          DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
-          [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
-        fi
-        echo -n "$DEV"
-      register: found_device
-      until: found_device.stdout != ""
-      retries: 20
-      delay: 5
-      args:
-        executable: /bin/bash
-
-    - name: Detect filesystem
-      become: yes
-      command: lsblk -no FSTYPE "{{ found_device.stdout }}"
-      register: fs_type
-
-    - name: Format and mount
-      become: yes
-      vars:
-        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
-      block:
-        - name: Create directory
-          file:
-            path: "{{ mpath }}"
-            state: directory
-            mode: '0755'
-
-        - name: Create filesystem if none
-          filesystem:
-            fstype: ext4
-            dev: "{{ found_device.stdout }}"
-          when: fs_type.stdout | trim == ""
-
-        - name: Mount filesystem
-          mount:
-            path: "{{ mpath }}"
-            src: "{{ found_device.stdout }}"
-            fstype: ext4
-            state: mounted
+- name: OS Configuration - Format and Mount Multiple Volumes
