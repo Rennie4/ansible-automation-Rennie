@@ -16,7 +16,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # REMOVED device_name: /dev/sdf to allow multiple disks
+        # device_name REMOVED to stop AWS from skipping creation
         state: present
       register: ec2_vol_result
 
@@ -49,10 +49,13 @@
       failed_when: found_device.stdout == ""
       changed_when: false 
 
+    - name: Set Target Path
+      set_fact:
+        target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb"
+
     - name: Format and Mount
       vars:
         final_dev: "{{ found_device.stdout }}"
-        target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb"
       block:
         - name: Create directory
           file:
@@ -61,6 +64,7 @@
             mode: '0755'
 
         - name: Create filesystem
+          # This formats the disk ONLY if it is empty
           filesystem:
             fstype: "{{ preferred_fs }}"
             dev: "{{ final_dev }}"
