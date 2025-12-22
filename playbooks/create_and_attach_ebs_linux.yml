@@ -19,13 +19,14 @@
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach Using Auto-Assignment
+    - name: Step 2 - Attach Using Placeholder Slot
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # CRITICAL: Empty string tells AWS to pick the next free letter
-        device_name: "" 
+        # Using /dev/sdz as a placeholder satisfies the AWS API requirement.
+        # AWS will automatically map this to the next free internal slot.
+        device_name: "/dev/sdz" 
         state: present
 
     - name: Step 3 - Wait for API Propagation
@@ -60,7 +61,8 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 10
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Find the disk by matching the AWS Volume ID to the OS serial
+          # Discovery by Serial ID ensures we find the right disk even if 
+          # AWS renames /dev/sdz to something else internally.
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
@@ -93,4 +95,5 @@
         msg: 
           - "SUCCESS: Disk Attached and Mounted!"
           - "Size: {{ hostvars['localhost']['aws_size'] }} GB"
+          - "Final System Device: {{ found_device.stdout }}"
           - "Path: {{ hostvars['localhost']['final_path'] }}"
