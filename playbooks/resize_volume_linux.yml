@@ -39,54 +39,58 @@
   tasks:
     - name: Ensure resize tools are present
       package:
-        name: cloud-guest-utils
+        name: 
+          - cloud-guest-utils
+          - util-linux
         state: present
       ignore_errors: true
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # 1. SEARCH BY SERIAL (Best for Nitro)
-        DEVICE=$(lsblk -r -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
-        
-        # 2. FALLBACK: Search by Mount Point /data (Best for existing setups)
+        # 1. FIND BY MOUNTPOINT (Most reliable for existing data disks)
+        # findmnt returns the source device for a specific mount point
+        DEVICE=$(findmnt -no SOURCE /data || findmnt -no SOURCE /mnt/data)
+
+        # 2. FALLBACK: FIND BY SERIAL (Nitro instances)
         if [ -z "$DEVICE" ]; then
-          DEVICE=$(lsblk -r -no PKNAME,MOUNTPOINT | grep -w "/data" | awk '{print $1}' | head -n 1)
-          # Convert relative name (xvdf) to full path (/dev/xvdf)
-          [ -n "$DEVICE" ] && DEVICE="/dev/$DEVICE"
+          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
         fi
 
-        # 3. SECOND FALLBACK: Match by Size (Ignore Root)
+        # 3. FALLBACK: FIND BY SIZE (New disks not yet mounted)
         if [ -z "$DEVICE" ]; then
           ROOT_DISK=$(lsblk -no PKNAME $(lsblk -no NAME,MOUNTPOINT | grep -w "/" | awk '{print $1}'))
-          DEVICE=$(lsblk -dpno NAME,SIZE | grep "{{ target_new_size }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+          DEVICE=$(lsblk -rdpno NAME,SIZE | grep "{{ target_new_size }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
         fi
 
         if [ -n "$DEVICE" ]; then
-          # Force Kernel to see the new 10G size from AWS
-          echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
-          sleep 2
+          # Get the parent disk name (e.g., if DEVICE is /dev/xvdf1, PARENT is xvdf)
+          PARENT_NAME=$(lsblk -no PKNAME "$DEVICE")
+          [ -z "$PARENT_NAME" ] && PARENT_NAME=$(basename "$DEVICE")
 
-          if ! blkid $DEVICE; then
-              echo "STATUS: Blank disk detected. Formatting..."
-              mkfs.ext4 -F $DEVICE
+          # Refresh kernel hardware view
+          echo 1 > "/sys/class/block/$PARENT_NAME/device/rescan"
+          sleep 2
+          
+          echo "STATUS: Working on device $DEVICE"
+
+          if ! blkid "$DEVICE"; then
+              echo "STATUS: Blank disk. Initializing..."
+              mkfs.ext4 -F "$DEVICE"
               mkdir -p /data
-              mount $DEVICE /data
+              mount "$DEVICE" /data
           else
-              echo "STATUS: Existing filesystem found on $DEVICE. Resizing..."
-              growpart $DEVICE 1 || growpart $DEVICE 2 || echo "Info: No partition (Raw Disk)"
+              echo "STATUS: Existing data found. Resizing..."
+              # Grow partition if it exists
+              growpart "/dev/$PARENT_NAME" 1 || growpart "/dev/$PARENT_NAME" 2 || echo "Raw disk resize"
               
-              if blkid ${DEVICE}1 || blkid ${DEVICE}p1; then
-                  PART=$(lsblk -r -np -o NAME $DEVICE | grep -v "^$DEVICE$" | head -n 1)
-                  resize2fs $PART || xfs_growfs $PART
-              else
-                  resize2fs $DEVICE || xfs_growfs $DEVICE
-              fi
+              # Perform the actual filesystem grow (Ext4 or XFS)
+              resize2fs "$DEVICE" || xfs_growfs "$DEVICE" || xfs_growfs /data
           fi
           
           echo "TARGET_DEVICE: $DEVICE"
-          df -h $DEVICE
+          df -h "$DEVICE"
         else
-          echo "ERROR: Could not find disk by Serial, Mountpoint (/data), or Size"
+          echo "ERROR: Could not find disk by Mountpoint (/data), Serial, or Size"
           lsblk -f
           exit 1
         fi
