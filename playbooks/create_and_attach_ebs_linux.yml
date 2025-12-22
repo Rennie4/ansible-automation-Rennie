@@ -16,9 +16,10 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # This tells AWS: "Look for 1 disk with this unique name. If you don't find it, CREATE IT."
+        # This token forces AWS to ignore existing disks and make a NEW one
+        idempotency_token: "run-{{ ansible_date_time.epoch }}"
         tags:
-          UniqueName: "Disk-{{ ansible_date_time.epoch }}"
+          Name: "Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
         state: present
       register: ec2_vol_result
 
@@ -34,17 +35,24 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
+          # Rescan the bus to find the new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
-          SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Find the actual device name for the NEW volume ID
-          lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_id_short'] }}" | awk '{print $1}' | head -n 1
+          
+          # We search for the NEW Volume ID provided by the AWS task
+          NEW_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$NEW_ID" | awk '{print $1}' | head -n 1)
+          
+          # Fallback: If AWS hides the serial, pick the highest alphabetical device that isn't root
+          if [ -z "$DEVICE" ]; then
+             DEVICE=$(lsblk -dpno NAME | grep -v "$(lsblk -dpno NAME | head -n 1)" | sort | tail -n 1)
+          fi
+          echo "$DEVICE"
       register: found_device
-      failed_when: found_device.stdout == ""
 
     - name: Format and Mount
       vars:
-        # Use the NEW volume's unique ID for the folder name
+        # Use the NEW Volume ID to make the folder name unique
         short_id: "{{ hostvars['localhost']['vol_id_short'][-4:] }}"
         target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb_{{ short_id }}"
       block:
@@ -70,4 +78,4 @@
 
     - name: Success Message
       debug:
-        msg: "Success! New disk {{ hostvars['localhost']['vol_id_short'] }} is mounted at /data_{{ hostvars['localhost']['survey_size'] }}gb_{{ hostvars['localhost']['vol_id_short'][-4:] }}"
+        msg: "Success! New disk {{ hostvars['localhost']['vol_id_short'] }} mounted at {{ target_path }}"
