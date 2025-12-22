@@ -19,18 +19,19 @@
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach Using Unique Randomized Slot
+    - name: Step 2 - Attach Using Fresh Randomized Slot
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # This randomizer ensures we don't keep hitting /dev/sdz or /dev/sdp
-        device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'] | random }}" 
+        # Using a fresh range (e through k) to avoid the 'p' and 'z' slots 
+        # that are already active in your screenshots.
+        device_name: "/dev/sd{{ ['e','f','g','h','i','j','k'] | random }}" 
         state: present
 
     - name: Step 3 - Wait for API Propagation
       pause:
-        seconds: 7
+        seconds: 10
 
     - name: Step 4 - Verify Attachment
       amazon.aws.ec2_vol_info:
@@ -42,7 +43,7 @@
         - vol_status.volumes | length > 0
         - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 20
+      retries: 25
       delay: 5
 
     - name: Set facts for OS discovery
@@ -54,7 +55,7 @@
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Universal Device Discovery (With Retries)
+    - name: Universal Device Discovery (Retry Loop)
       shell: 
         cmd: |
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
@@ -63,6 +64,7 @@
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
+      # This ensures the OS has time to register the new hardware
       until: found_device.stdout != ""
       retries: 15
       delay: 5
@@ -88,10 +90,3 @@
             fstype: ext4
             state: mounted
             opts: defaults
-
-    - name: Success Summary
-      debug:
-        msg: 
-          - "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB Disk Mounted!"
-          - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
-          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
