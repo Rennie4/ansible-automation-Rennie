@@ -4,10 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    # Hardcoded region to avoid survey loops
     aws_region: "eu-west-1"
-    
-    # These match your survey answers exactly
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -46,16 +43,22 @@
 
     - name: Universal Device Discovery
       shell: |
-        # 1. Search by AWS Hardware Serial (Nitro/Modern)
+        # Force Kernel to scan for new hardware first
+        for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > $bus; done
+        udevadm settle
+        sleep 2
+
+        # 1. Search by AWS Hardware Serial (Nitro)
         DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_id_short'] }}" | awk '{print $1}' | head -n 1)
         
-        # 2. Fallback: Search by Size and exclude Root (Legacy Xen/T2)
+        # 2. Fallback: Search by Size (Excluding Root)
         if [ -z "$DEVICE" ]; then
-          # Find the parent disk name of the root partition (cleanly)
-          ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)
-          # Search for disks matching the size, excluding the root disk
+          # Get root disk safely
+          ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE / | head -n 1) | head -n 1)
+          # Find any disk matching survey size that isn't root
           DEVICE=$(lsblk -dpno NAME,SIZE | grep "{{ hostvars['localhost']['survey_size'] }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
         fi
+        
         echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
