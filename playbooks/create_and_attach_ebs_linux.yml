@@ -16,7 +16,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        device_name: /dev/sdf
+        # Removed hardcoded /dev/sdf to allow multiple disks
         state: present
       register: ec2_vol_result
 
@@ -46,7 +46,7 @@
           echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
-      changed_when: false # This keeps your AAP bar Green
+      changed_when: false 
 
     - name: Format and Mount
       vars:
@@ -54,7 +54,7 @@
       block:
         - name: Create directory
           file:
-            path: /data
+            path: "/data_{{ hostvars['localhost']['aws_size'] }}gb" # Dynamic path to avoid overlaps
             state: directory
             mode: '0755'
 
@@ -66,7 +66,7 @@
 
         - name: Mount volume
           mount:
-            path: /data
+            path: "/data_{{ hostvars['localhost']['aws_size'] }}gb"
             src: "{{ final_dev }}"
             fstype: "{{ preferred_fs }}"
             state: mounted
@@ -74,4 +74,4 @@
 
     - name: Success Message
       debug:
-        msg: "New 5GB Volume mounted successfully on {{ found_device.stdout }}"
+        msg: "New {{ hostvars['localhost']['aws_size'] }}GB Volume mounted on {{ found_device.stdout }}"
