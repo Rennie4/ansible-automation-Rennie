@@ -16,8 +16,10 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # A name tag with a timestamp FORCES a new creation every time
-        name: "Vol-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
+        # This token tells AWS: "This is a unique request, do not reuse existing disks"
+        tags:
+          Name: "Vol-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
+          CreationTime: "{{ ansible_date_time.iso8601 }}"
         state: present
       register: ec2_vol_result
 
@@ -52,7 +54,7 @@
 
     - name: Set Target Path
       set_fact:
-        # Fixed the filter here to avoid the positional argument error
+        # Use the last 4 of the NEW volume ID to ensure a unique folder
         target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb_{{ hostvars['localhost']['vol_id_short'][-4:] }}"
 
     - name: Format and Mount
@@ -81,4 +83,4 @@
 
     - name: Success Message
       debug:
-        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB mounted on {{ found_device.stdout }} at {{ target_path }}"
+        msg: "Success! New Volume {{ hostvars['localhost']['vol_id_short'] }} mounted at {{ target_path }}"
