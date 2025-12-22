@@ -12,7 +12,7 @@
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
 
-    # Prefer CSV; if omitted, use single size + count
+    # Prefer CSV; if omitted, use single size (+ default count=1 when count missing)
     sizes_csv: "{{ target_volume_sizes_csv | default('') }}"
     single_size: "{{ target_vol_size | default(omit) }}"
     single_count: "{{ target_volume_count | default(omit) }}"
@@ -56,12 +56,24 @@
           - aws_instance is match('^i-[0-9a-f]+$')
         fail_msg: "Survey validation failed: instance_id (i-xxxx) is required."
 
-    # ---------- Build sizes list from CSV OR single size + count ----------
+    - name: Debug - Raw survey inputs
+      debug:
+        msg:
+          - "sizes_csv='{{ sizes_csv }}'"
+          - "single_size='{{ single_size | default('UNSET') }}'"
+          - "single_count='{{ single_count | default('UNSET') }}'"
+
+    # ---------- Build sizes list from CSV OR single size (+ default count=1) ----------
     - name: When CSV provided, parse sizes
       set_fact:
         sizes_list: "{{ sizes_csv | trim | split(',') | map('trim') | list }}"
         sizes_int_list: "{{ sizes_csv | trim | split(',') | map('trim') | map('int') | list }}"
       when: sizes_csv | trim | length > 0
+
+    - name: Default count to 1 if only single_size was provided
+      set_fact:
+        single_count: 1
+      when: sizes_csv | trim | length == 0 and single_size is defined and single_count is not defined
 
     - name: When CSV missing, derive list from single size + count
       set_fact:
@@ -74,8 +86,8 @@
           - sizes_int_list | length > 0
           - (sizes_int_list | min) > 0
         fail_msg: >-
-          Provide either 'target_volume_sizes_csv' (e.g., 20,30,50) OR both
-          'target_vol_size' and 'target_volume_count' (e.g., size=20, count=3).
+          Provide either 'target_volume_sizes_csv' (e.g., 20,30,50) OR 'target_vol_size'
+          (e.g., 30) [optionally with 'target_volume_count'; default is 1].
 
     # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
