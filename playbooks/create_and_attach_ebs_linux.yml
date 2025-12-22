@@ -4,13 +4,14 @@
   connection: local
   gather_facts: false
   vars:
-    instance_id: i-043c4a9904b2ed301
-    vol_size: 5
-    region: eu-west-1
-    zone: eu-west-1b
+    # AAP Survey Variables
+    instance_id: "{{ target_instance_id }}"
+    vol_size: "{{ target_vol_size }}"
+    region: "eu-west-1"
+    zone: "eu-west-1b"
 
   tasks:
-    - name: Ensure 5GB volume exists and is attached
+    - name: Create and Attach EBS Volume
       amazon.aws.ec2_vol:
         instance: "{{ instance_id }}"
         region: "{{ region }}"
@@ -20,34 +21,61 @@
         state: present
       register: ec2_vol_result
 
-    - name: Wait for volume to be ready in the OS
-      pause:
-        seconds: 15
-      when: ec2_vol_result.changed
+    - name: Set Volume Serial fact for OS discovery
+      set_fact:
+        vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
 
-- name: OS Configuration - Format and Mount
+- name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Create ext4 filesystem on /dev/xvdf
-      filesystem:
-        fstype: ext4
-        dev: /dev/xvdf
-        force: no
-      register: format_result
+    - name: Universal Device Discovery
+      shell: |
+        # 1. Search by AWS Hardware Serial (Nitro/Modern)
+        DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_id_short'] }}" | awk '{print $1}' | head -n 1)
+        
+        # 2. Fallback: Search by Size and exclude Root (Legacy Xen)
+        if [ -z "$DEVICE" ]; then
+          ROOT_DISK=$(lsblk -no PKNAME $(lsblk -no NAME,MOUNTPOINT | grep -w "/" | awk '{print $1}'))
+          DEVICE=$(lsblk -rdpno NAME,SIZE | grep "{{ hostvars['localhost']['vol_size'] }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+        fi
+        echo "$DEVICE"
+      register: found_device
+      failed_when: found_device.stdout == ""
+
+    - name: Set Filesystem Type based on OS Family
+      set_fact:
+        # RHEL/CentOS/AmazonLinux prefer xfs; Ubuntu/Debian prefer ext4
+        preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
+
+    - name: Install required tools (Distro-Agnostic)
+      package:
+        name:
+          - util-linux
+          - "{{ 'xfsprogs' if preferred_fs == 'xfs' else 'e2fsprogs' }}"
+        state: present
+      ignore_errors: true
 
     - name: Create mount directory
       file:
         path: /data
         state: directory
         mode: '0755'
-        owner: ubuntu
-        group: ubuntu
 
-    - name: Mount the volume and add to /etc/fstab
-      mount:
-        path: /data
-        src: /dev/xvdf
-        fstype: ext4
-        state: mounted
-        opts: defaults
+    - name: Format and Mount
+      vars:
+        final_dev: "{{ found_device.stdout }}"
+      block:
+        - name: Create filesystem
+          filesystem:
+            fstype: "{{ preferred_fs }}"
+            dev: "{{ final_dev }}"
+            force: no
+
+        - name: Mount volume by UUID (Persistent)
+          mount:
+            path: /data
+            src: "{{ final_dev }}"
+            fstype: "{{ preferred_fs }}"
+            state: mounted
+            opts: defaults
