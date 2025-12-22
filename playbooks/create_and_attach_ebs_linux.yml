@@ -15,8 +15,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # name is unique to force a brand new volume ID in the console
-        name: "Forced-Disk-{{ 1000 | random }}-{{ ansible_date_time.epoch }}"
+        name: "Disk-{{ 1000 | random }}-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
@@ -26,7 +25,6 @@
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
         state: present
-      register: ec2_vol_result
 
     - name: Set facts for OS discovery
       set_fact:
@@ -51,28 +49,40 @@
           echo "/dev/$(basename $DEVICE)"
       register: found_device
 
-    - name: Create directory
-      file:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        state: directory
-        mode: '0755'
+    - name: Format and Mount
+      block:
+        - name: Create directory
+          file:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            state: directory
+            mode: '0755'
 
-    - name: Create filesystem
-      filesystem:
-        fstype: ext4
-        dev: "{{ found_device.stdout }}"
-        force: no
+        - name: Create filesystem
+          filesystem:
+            fstype: ext4
+            dev: "{{ found_device.stdout }}"
+            force: no
 
-    - name: Mount volume
-      mount:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        src: "{{ found_device.stdout }}"
-        fstype: ext4
-        state: mounted
-        opts: defaults
+        - name: Mount volume
+          mount:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            src: "{{ found_device.stdout }}"
+            fstype: ext4
+            state: mounted
+            opts: defaults
 
-    - name: Success Message
+    - name: Verify on Linux
+      command: lsblk
+      register: linux_lsblk
+
+    - name: SUCCESS REPORT
       debug:
         msg: 
-          - "Success! New Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
-          - "Mounted at: {{ hostvars['localhost']['final_path'] }}"
+          - "AWS CONFIRMATION:"
+          - "Region: {{ hostvars['localhost']['aws_region'] }}"
+          - "New Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
+          - "------------------------------------"
+          - "LINUX CONFIRMATION:"
+          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
+          - "OS sees these disks:"
+          - "{{ linux_lsblk.stdout_lines }}"
