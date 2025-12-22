@@ -11,7 +11,12 @@
     aws_instance: "{{ target_instance_id }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
+
+    # Prefer CSV; if omitted, use single size + count
     sizes_csv: "{{ target_volume_sizes_csv | default('') }}"
+    single_size: "{{ target_vol_size | default(omit) }}"
+    single_count: "{{ target_volume_count | default(omit) }}"
+
     fstype: "{{ target_fstype | default('ext4') }}"
     volume_type: "{{ target_volume_type | default('gp3') }}"
     delete_on_termination: "{{ target_delete_on_termination | default(false) | bool }}"
@@ -45,26 +50,32 @@
         region: "{{ aws_region }}"
       register: whoami
 
-    - name: Validate instance and sizes CSV presence
+    - name: Validate instance id presence
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
-          - sizes_csv | trim | length > 0
-        fail_msg: "Survey validation failed: instance_id (i-xxxx) and sizes CSV (e.g. '20,30,50') are required."
+        fail_msg: "Survey validation failed: instance_id (i-xxxx) is required."
 
-    - name: Parse sizes from CSV and coerce to int
+    # ---------- Build sizes list from CSV OR single size + count ----------
+    - name: When CSV provided, parse sizes
       set_fact:
         sizes_list: "{{ sizes_csv | trim | split(',') | map('trim') | list }}"
         sizes_int_list: "{{ sizes_csv | trim | split(',') | map('trim') | map('int') | list }}"
-        volume_count: "{{ sizes_csv | trim | split(',') | map('trim') | list | length }}"
+      when: sizes_csv | trim | length > 0
 
-    - name: Validate positive sizes were provided
+    - name: When CSV missing, derive list from single size + count
+      set_fact:
+        sizes_int_list: "{{ range(0, single_count | int) | map('int') | map('regex_replace', '.*', single_size | string) | map('int') | list }}"
+      when: sizes_csv | trim | length == 0 and single_size is defined and single_count is defined
+
+    - name: Validate we have a non-empty sizes list
       assert:
         that:
-          - (sizes_int_list | length) == (volume_count | int)
+          - sizes_int_list | length > 0
           - (sizes_int_list | min) > 0
         fail_msg: >-
-          Sizes CSV must contain positive integers (GiB). Received: {{ sizes_list }}
+          Provide either 'target_volume_sizes_csv' (e.g., 20,30,50) OR both
+          'target_vol_size' and 'target_volume_count' (e.g., size=20, count=3).
 
     # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
@@ -124,7 +135,7 @@
           - "AZ (effective): {{ aws_zone }}"
           - "Requested sizes (GiB): {{ sizes_int_list }}"
           - "Existing device names: {{ existing_device_names }}"
-          - "Free letters (to use): {{ free_letters[:volume_count] }}"
+          - "Free letters (to use): {{ free_letters[:(sizes_int_list | length)] }}"
 
     # ---------- Create volumes ----------
     - name: Create EBS volumes
@@ -185,14 +196,109 @@
       vars:
         idx: "{{ item.0 }}"
         vol_res: "{{ item.1 }}"
-      register: _wait_result
+      register: wait_info
       until:
-        - _wait_result.volumes is defined
-        - _wait_result.volumes | length > 0
-        - _wait_result.volumes[0].attachment_set | length > 0
-        - _wait_result.volumes[0].attachment_set[0].instance_id == aws_instance
-        - _wait_result.volumes[0].attachment_set[0].status in ['attaching', 'attached']
+        - wait_info.volumes is defined
+        - wait_info.volumes | length > 0
+        - wait_info.volumes[0].attachment_set | length > 0
+        - wait_info.volumes[0].attachment_set[0].instance_id == aws_instance
+        - wait_info.volumes[0].attachment_set[0].status in ['attaching', 'attached']
       retries: 30
       delay: 5
 
     # ---------- Collect created volume metadata ----------
+    - name: Build created_volumes list
+      set_fact:
+        created_volumes: []
+    - name: Append created volumes metadata
+      set_fact:
+        created_volumes: "{{ created_volumes + [ { 'index': idx, 'size_gb': sizes_int_list[idx], 'volume_id': create_results.results[idx].volume_id } ] }}"
+      loop: "{{ range(0, create_results.results | length) | list }}"
+      loop_control:
+        index_var: idx
+
+    - name: Debug - Created volumes
+      debug:
+        var: created_volumes
+
+    # ---------- Dynamic inventory for OS config ----------
+    - name: Add target host for OS config
+      add_host:
+        name: "current_target"
+        ansible_host: "{{ target_ip }}"
+        ansible_user: "ubuntu"
+        ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
+        groups: active_nodes
+      vars:
+        created_volumes: "{{ created_volumes }}"
+        fstype: "{{ fstype }}"
+
+# Play 2: OS actions on the instance
+- name: OS Configuration - Format and Mount Multiple Volumes
+  hosts: active_nodes
+  gather_facts: no
+
+  tasks:
+    - name: Wait for SSH
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        search_regex: OpenSSH
+        timeout: 300
+      delegate_to: localhost
+
+    - name: Debug - Volumes to configure
+      debug:
+        var: hostvars['localhost']['created_volumes']
+
+    # Per-volume NVMe detection with internal retry loop (avoids Ansible 'until' + loop quirks)
+    - name: Find device by EBS serial (Nitro/NVMe friendly)
+      become: yes
+      shell: |
+        set -euo pipefail
+        VOLNOHYP="{{ item.volume_id | replace('-', '') }}"
+        for i in $(seq 1 20); do
+          DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
+          if [ -z "$DEV" ]; then
+            DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
+            [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
+          fi
+          if [ -n "$DEV" ]; then echo -n "$DEV"; exit 0; fi
+          sleep 5
+        done
+        exit 1
+      loop: "{{ hostvars['localhost']['created_volumes'] }}"
+      register: found_device
+      args:
+        executable: /bin/bash
+
+    - name: Detect filesystem on each device
+      become: yes
+      command: lsblk -no FSTYPE "{{ item.stdout }}"
+      loop: "{{ found_device.results }}"
+      register: fs_detect
+
+    - name: Create mount directories
+      become: yes
+      file:
+        path: "/data_{{ item.item.size_gb }}gb_{{ item.item.volume_id[-4:] }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ found_device.results }}"
+
+    - name: Create filesystem if none
+      become: yes
+      filesystem:
+        fstype: "{{ hostvars['localhost']['fstype'] }}"
+        dev: "{{ item.0.stdout }}"
+      loop: "{{ range(0, found_device.results | length) | zip(found_device.results, fs_detect.results) | list }}"
+      when: item.1.stdout | trim == ""
+
+    - name: Mount filesystems
+      become: yes
+      mount:
+        path: "/data_{{ item.item.size_gb }}gb_{{ item.item.volume_id[-4:] }}"
+        src: "{{ item.stdout }}"
+        fstype: "{{ hostvars['localhost']['fstype'] }}"
+        state: mounted
+      loop: "{{ found_device.results }}"
