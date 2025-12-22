@@ -6,7 +6,6 @@
   vars:
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
-    # Links directly to your Survey input
     aws_size: "{{ target_vol_size | int }}"
     aws_zone: "{{ target_zone }}"
 
@@ -20,18 +19,19 @@
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach to Instance
+    - name: Step 2 - Attach Using Auto-Assignment
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Randomized letters avoid clashing with your 5, 8, 11, and 12GB disks
-        device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p','q','r','s'] | random }}" 
+        # Letting AWS pick the device name prevents the "Available" hang 
+        # seen in your last run.
+        device_name: "" 
         state: present
 
     - name: Step 3 - Wait for API Propagation
       pause:
-        seconds: 5
+        seconds: 7
 
     - name: Step 4 - Verify Attachment
       amazon.aws.ec2_vol_info:
@@ -43,7 +43,7 @@
         - vol_status.volumes | length > 0
         - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 15
+      retries: 20
       delay: 5
 
     - name: Set facts for OS discovery
@@ -61,9 +61,11 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 10
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          # Find the disk by matching the AWS Volume ID to the OS serial
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
+      failed_when: found_device.stdout == ""
 
     - name: Format and Mount
       block:
@@ -87,16 +89,9 @@
             state: mounted
             opts: defaults
 
-    - name: Final Storage Summary
-      shell: "df -h | grep data_"
-      register: storage_report
-      failed_when: false
-
-    - name: Success Message
+    - name: Success Summary
       debug:
         msg: 
-          - "SUCCESS: Disk added via Survey!"
+          - "SUCCESS: Disk Attached and Mounted!"
           - "Size: {{ hostvars['localhost']['aws_size'] }} GB"
-          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
-          - "Current Mounted Data Volumes:"
-          - "{{ storage_report.stdout_lines }}"
+          - "Path: {{ hostvars['localhost']['final_path'] }}"
