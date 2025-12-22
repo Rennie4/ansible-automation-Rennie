@@ -16,7 +16,10 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # device_name REMOVED to stop AWS from skipping creation
+        # Adding Tags forces AWS to treat this as a NEW unique request
+        tags:
+          Name: "Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch | default('manual') }}"
+          CreatedBy: "Ansible-AAP"
         state: present
       register: ec2_vol_result
 
@@ -64,7 +67,6 @@
             mode: '0755'
 
         - name: Create filesystem
-          # This formats the disk ONLY if it is empty
           filesystem:
             fstype: "{{ preferred_fs }}"
             dev: "{{ final_dev }}"
@@ -80,4 +82,4 @@
 
     - name: Success Message
       debug:
-        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB mounted on {{ found_device.stdout }} at {{ target_path }}"
+        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB Volume ({{ hostvars['localhost']['vol_id_short'] }}) mounted on {{ found_device.stdout }} at {{ target_path }}"
