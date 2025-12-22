@@ -4,7 +4,10 @@
   connection: local
   gather_facts: false
   vars:
+    # Hardcoded region to prevent survey recursion loops
     aws_region: "eu-west-1"
+    
+    # These map directly to your AAP Survey variables
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -22,6 +25,7 @@
 
     - name: Set facts for OS discovery
       set_fact:
+        # Pass the AWS Volume ID and requested Size to the next play
         vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
         survey_size: "{{ aws_size }}"
 
@@ -31,6 +35,7 @@
   tasks:
     - name: Set Filesystem Type based on OS Family
       set_fact:
+        # Automatically chooses XFS for RedHat/AmazonLinux, Ext4 for Ubuntu/Debian
         preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
 
     - name: Install required tools
@@ -44,26 +49,29 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
-          # Force Kernel to scan for new hardware
-          for bus in /sys/class/scsi_host/host*/scan; do 
-            echo "- - -" > "$bus"
-          done
+          # 1. Force Kernel to scan for new hardware (Essential for AWS)
+          for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle
           sleep 2
 
-          # 1. Search by AWS Hardware Serial (Nitro)
+          # 2. Search by AWS Hardware Serial (Most accurate for Nitro/Modern instances)
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           
-          # 2. Fallback: Search by Size (Excluding Root)
+          # 3. Fallback: Search by "Fuzzy" Size (Best for Legacy/T2/Xen instances)
           if [ -z "$DEVICE" ]; then
-            TARGET_SIZE="{{ hostvars['localhost']['survey_size'] }}G"
+            # Identify root disk to exclude it from formatting
             ROOT_PART=$(findmnt -no SOURCE / | head -n 1)
             ROOT_DISK=$(lsblk -no PKNAME "$ROOT_PART" | head -n 1)
-            # If ROOT_DISK is empty, it means root is a raw disk (no partition)
             [ -z "$ROOT_DISK" ] && ROOT_DISK=$(basename "$ROOT_PART")
             
-            DEVICE=$(lsblk -dpno NAME,SIZE | grep "$TARGET_SIZE" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+            # Convert requested GB to bytes and look for a disk within 0.5GB range
+            TARGET_BYTES=$(( {{ hostvars['localhost']['survey_size'] }} * 1024 * 1024 * 1024 ))
+            MIN_BYTES=$(( $TARGET_BYTES - 536870912 )) 
+            MAX_BYTES=$(( $TARGET_BYTES + 536870912 )) 
+
+            DEVICE=$(lsblk -dpbno NAME,SIZE | awk -v min="$MIN_BYTES" -v max="$MAX_BYTES" -v root="$ROOT_DISK" \
+              '$2 >= min && $2 <= max && $1 !~ root {print $1}' | head -n 1)
           fi
           
           echo "$DEVICE"
@@ -100,4 +108,4 @@
 
     - name: Success Message
       debug:
-        msg: "Disk successfully mounted: {{ final_status.stdout }}"
+        msg: "Success! Disk mounted on {{ found_device.stdout }}: {{ final_status.stdout }}"
