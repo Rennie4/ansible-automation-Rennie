@@ -10,27 +10,29 @@
     aws_zone: "{{ target_zone }}"
 
   tasks:
-    - name: Step 1 - Force Create a Raw Volume
+    - name: Step 1 - Create Unique Volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # The name in the console will look like: Disk-482-1734875609
-        name: "Disk-{{ 1000 | random }}-{{ ansible_date_time.epoch }}"
+        # Random name ensures AWS sees this as a brand new request
+        name: "Disk-{{ 100 | random }}-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
-    - name: Step 2 - Attach the New Volume
+    - name: Step 2 - Attach to Instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
+        # Using a high letter like /dev/sdp ensures we don't clash 
+        # with common lower slots like /dev/sdb or /dev/sdh
+        device_name: "/dev/sdp" 
         state: present
 
     - name: Set facts for OS discovery
       set_fact:
         vol_id_short: "{{ raw_vol.volume_id | replace('-', '') }}"
-        survey_size: "{{ aws_size }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
 - name: OS Configuration - Universal Format and Mount
@@ -43,43 +45,37 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          # Matches the NEW volume ID to the OS device name
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-          if [ -z "$DEVICE" ]; then
-             DEVICE=$(lsblk -dpno NAME | grep -v "$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)" | sort | tail -n 1)
-          fi
           echo "/dev/$(basename $DEVICE)"
       register: found_device
 
-    - name: Create directory
-      file:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        state: directory
-        mode: '0755'
+    - name: Format and Mount
+      block:
+        - name: Create directory
+          file:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            state: directory
+            mode: '0755'
 
-    - name: Create filesystem
-      filesystem:
-        fstype: ext4
-        dev: "{{ found_device.stdout }}"
-        force: no
+        - name: Create filesystem
+          filesystem:
+            fstype: ext4
+            dev: "{{ found_device.stdout }}"
+            force: no
 
-    - name: Mount volume
-      mount:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        src: "{{ found_device.stdout }}"
-        fstype: ext4
-        state: mounted
-        opts: defaults
+        - name: Mount volume
+          mount:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            src: "{{ found_device.stdout }}"
+            fstype: ext4
+            state: mounted
+            opts: defaults
 
-    - name: Get OS Disk List
-      command: lsblk
-      register: final_lsblk
-
-    - name: Success Message
+    - name: Final Success Message
       debug:
         msg: 
-          - "AWS CONFIRMATION: Look in Region {{ hostvars['localhost']['aws_region'] }}"
+          - "SUCCESS: Fresh disk attached and mounted!"
           - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
-          - "Mounted at: {{ hostvars['localhost']['final_path'] }}"
-          - "-------------------------------------------"
-          - "CURRENT DISK STACK ON SERVER:"
-          - "{{ final_lsblk.stdout_lines }}"
+          - "Linux Path: {{ hostvars['localhost']['final_path'] }}"
+          - "Device Name: {{ found_device.stdout }}"
