@@ -24,6 +24,7 @@
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
       register: resize_result
+      ignore_errors: yes # Essential if you hit the 6-hour AWS limit
 
     - name: Wait for AWS to complete
       pause:
@@ -36,10 +37,11 @@
   vars:
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
-    - name: Install growpart
-      package:
-        name: cloud-utils-growpart
+    - name: Install growpart (Ubuntu package fix)
+      apt:
+        name: cloud-guest-utils
         state: present
+        update_cache: yes
       ignore_errors: true
 
     - name: Find Device Path and Resize
@@ -48,10 +50,18 @@
         if [ -z "$DEVICE" ]; then
           DEVICE=$(lsblk -dpno NAME,TYPE,MOUNTPOINT | grep "disk" | grep -v "/$" | awk '{print $1}' | head -n 1)
         fi
+
         if [ -n "$DEVICE" ]; then
           echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
-          growpart $DEVICE 1 || echo "no partition"
-          resize2fs ${DEVICE}1 || resize2fs $DEVICE || xfs_growfs $DEVICE || xfs_growfs /mnt/data
+          
+          # Grow the partition (if it exists)
+          growpart $DEVICE 1 || echo "Partition already max size"
+          
+          # Force the filesystem to fill the available space
+          resize2fs ${DEVICE}1 || resize2fs $DEVICE || xfs_growfs ${DEVICE}1 || xfs_growfs $DEVICE
+          
+          # Final status check
+          lsblk $DEVICE
         else
           echo "Device not found" && exit 1
         fi
@@ -59,4 +69,4 @@
 
     - name: Report Status
       debug:
-        msg: "{{ linux_resize_out.stdout }}"
+        msg: "{{ linux_resize_out.stdout_lines }}"
