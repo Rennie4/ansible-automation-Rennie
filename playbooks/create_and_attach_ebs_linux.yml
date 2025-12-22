@@ -4,12 +4,12 @@
   connection: local
   gather_facts: true
   vars:
-    # --- UPDATE THESE FOUR VARIABLES ONLY ---
+    # --- DYNAMIC INPUTS ---
+    # These pull from your survey/command line automatically
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_zone: "{{ target_zone }}"
-    # ----------------------------------------
 
   tasks:
     - name: Step 1 - Create Unique Volume
@@ -17,6 +17,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
+        # No hardcoded names - uses the size and timestamp
         name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
@@ -26,56 +27,62 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Randomizing device letter prevents "device busy" errors
+        # Randomizes the device letter so you never hit a "busy" slot
         device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
-    - name: Step 3 - Wait for AWS Confirmation (Stable Loop)
+    - name: Step 3 - Wait for AWS API Stability
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
           volume-id: "{{ raw_vol.volume_id }}"
       register: vol_status
-      # This logic prevents the "list index" crash by checking lengths first
+      # This handles the "list index" error by ensuring data exists before checking status
       until: 
         - vol_status.volumes | length > 0
         - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 20
+      retries: 25
       delay: 5
 
-    - name: Set facts for OS discovery
+    - name: Prepare Variables for OS
       set_fact:
         vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
+        # Unique folder path: /data_25gb_eda1
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
-- name: OS Configuration - Format and Mount
+- name: OS Configuration - Universal Format and Mount
   hosts: all
   become: yes
   gather_facts: no
   vars:
-    # These are inherited from your SSH/Survey configuration
+    # Static connection details
     ansible_host: "3.250.3.8"
     ansible_user: "ubuntu"
-    ansible_ssh_private_key_file: "/runner/artifacts/1230/ssh_key_data"
+    ansible_ssh_private_key_file: "/runner/artifacts/1236/ssh_key_data"
 
   tasks:
-    - name: Step 4 - Wait for Connection
-      wait_for_connection:
-        timeout: 120
+    - name: Step 4 - Wait for SSH to wake up
+      # This fixes the "Connection refused" by waiting for port 22 to actually open
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        search_regex: OpenSSH
+        delay: 5
+        timeout: 300
 
-    - name: Step 5 - Hardware Discovery
+    - name: Step 5 - Universal Discovery
       shell: 
         cmd: |
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
       retries: 15
-      delay: 5
+      delay: 10
 
-    - name: Step 6 - Universal Mount
+    - name: Step 6 - Mount Logic
       block:
-        - name: Create directory
+        - name: Create mount point
           file:
             path: "{{ hostvars['localhost']['final_path'] }}"
             state: directory
@@ -87,15 +94,13 @@
             dev: "{{ found_device.stdout }}"
             force: no
 
-        - name: Mount volume
+        - name: Mount
           mount:
             path: "{{ hostvars['localhost']['final_path'] }}"
             src: "{{ found_device.stdout }}"
             fstype: ext4
             state: mounted
 
-    - name: Final Success Report
+    - name: Success Summary
       debug:
-        msg: 
-          - "SUCCESS! Disk is live."
-          - "Details: {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
+        msg: "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
