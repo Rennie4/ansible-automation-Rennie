@@ -24,13 +24,13 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Randomizing letters ensures we don't hit a 'reserved' slot
-        device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p'] | random }}" 
+        # Randomizing avoids 'device busy' errors
+        device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p','q','r','s'] | random }}" 
         state: present
 
     - name: Step 3 - Wait for API Propagation
       pause:
-        seconds: 10
+        seconds: 12
 
     - name: Step 4 - Verify Attachment
       amazon.aws.ec2_vol_info:
@@ -38,35 +38,36 @@
         filters:
           volume-id: "{{ raw_vol.volume_id }}"
       register: vol_status
-      # This logic prevents the "list index" error by checking if the list exists first
       until: 
         - vol_status.volumes | length > 0
         - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 15
+      retries: 20
       delay: 5
 
     - name: Set facts for OS discovery
       set_fact:
-        vol_id_short: "{{ raw_vol.volume_id | replace('-', '') }}"
+        vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
 - name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Universal Device Discovery
+    - name: Universal Device Discovery (Maximum Patience)
       shell: 
         cmd: |
+          # Force the kernel to look for new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
-          udevadm settle && sleep 5
-          SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-          echo "$DEVICE"
+          udevadm trigger && udevadm settle --timeout=30
+          
+          # Use the most direct path to find the disk serial
+          lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
+      # Increased retries and delay to give the OS 5 full minutes if needed
       until: found_device.stdout != ""
-      retries: 10
-      delay: 5
+      retries: 30
+      delay: 10
 
     - name: Format and Mount
       block:
@@ -91,11 +92,12 @@
             opts: defaults
 
     - name: Final Storage Report
-      command: df -h
+      command: df -h | grep data_
       register: storage_df
 
     - name: Success Summary
       debug:
         msg: 
           - "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB is live!"
-          - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
+          - "Total Mounted Test Disks:"
+          - "{{ storage_df.stdout_lines }}"
