@@ -58,13 +58,12 @@
           - "ARN: {{ whoami.arn }}"
           - "Region: {{ aws_region }}"
 
-    - name: Validate survey inputs
+    - name: Validate survey inputs (instance + size)
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
           - aws_size | int > 0
-          - target_az | length > 0
-        fail_msg: "Survey validation failed: instance_id (i-xxxx), size (>0), AZ (e.g., eu-west-1b) required."
+        fail_msg: "Survey validation failed: instance_id (i-xxxx) and size (>0) required."
 
     # ---------- Instance discovery ----------
     - name: Get instance details
@@ -82,17 +81,21 @@
     - name: Set instance facts
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
+        # If survey AZ provided use it; otherwise default to instance AZ
+        aws_zone: >-
+          {{ (target_az | length > 0)
+             | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
         target_ip: >-
           {{ instance_info.instances[0].public_ip_address
              if instance_info.instances[0].public_ip_address
              else instance_info.instances[0].private_ip_address }}
 
-    - name: Assert AZ matches instance AZ
+    - name: Assert aws_zone matches instance AZ
       assert:
         that:
-          - target_az == instance_zone
+          - aws_zone == instance_zone
         fail_msg: >-
-          AZ mismatch: survey AZ ({{ target_az }}) != instance AZ ({{ instance_zone }}).
+          AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
           EBS must be created in the SAME AZ as the instance.
 
     - name: Debug - Inputs
@@ -100,7 +103,7 @@
         msg:
           - "Instance: {{ aws_instance }}"
           - "Region: {{ aws_region }}"
-          - "AZ: {{ target_az }}"
+          - "AZ (effective): {{ aws_zone }}"
           - "Size GiB: {{ aws_size }}"
           - "Device (API): {{ attach_device_name }}"
           - "Target IP: {{ target_ip }}"
@@ -109,7 +112,7 @@
     - name: Create EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
-        zone: "{{ target_az }}"
+        zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
         volume_type: "{{ volume_type }}"
         iops: "{{ iops }}"
@@ -171,6 +174,10 @@
         ansible_user: "ubuntu"
         ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
         groups: active_nodes
+      # Expose these facts to the next play
+      vars:
+        raw_vol: "{{ raw_vol }}"
+        aws_size: "{{ aws_size }}"
 
 # Play 2: OS actions on the instance
 - name: OS Configuration - Format and Mount
