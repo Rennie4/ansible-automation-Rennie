@@ -4,9 +4,10 @@
   connection: local
   gather_facts: false
   vars:
-    region: eu-west-1
-    volume_id: vol-08992a32f5c7acbed
-    new_size: 10  # Increasing it to 10GB as an example
+    # Matches your AAP Survey variables
+    region: "eu-west-1"
+    volume_id: "{{ target_volume_id }}"
+    new_size: "{{ target_new_size }}"
 
   tasks:
     - name: Get current volume info
@@ -16,7 +17,7 @@
           volume-id: "{{ volume_id }}"
       register: vol_info
 
-    - name: Modify EBS volume size in AWS
+    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
       amazon.aws.ec2_vol:
         id: "{{ volume_id }}"
         volume_size: "{{ new_size }}"
@@ -25,17 +26,51 @@
         modify_volume: true
       register: resize_result
 
-    - name: Wait for AWS to complete volume modification
+    - name: Wait for AWS backend
       pause:
-        seconds: 30  # Increased slightly to ensure AWS backend finishes
+        seconds: 30
       when: resize_result.changed
 
-- name: OS Configuration - Extend Linux Filesystem
+- name: OS Configuration - Universal Linux Extend
   hosts: linux_hosts
   become: yes
+  vars:
+    # Pass the volume ID to the Linux host
+    vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
-    - name: Resize the ext4 filesystem
-      filesystem:
-        fstype: ext4
-        dev: /dev/xvdf
-        resizefs: yes
+    - name: Install resize prerequisites (growpart)
+      package:
+        name: cloud-utils-growpart
+        state: present
+      ignore_errors: true  # Prevents failure if the package has a different name or is already there
+
+    - name: Find Device Path and Resize
+      shell: |
+        # 1. Find the device by Serial (Nitro/m7i/t3) or Fallback (Xen/t2)
+        DEVICE=$(lsblk -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}')
+        
+        if [ -z "$DEVICE" ]; then
+            # Fallback for non-nitro: find data disk that isn't the OS disk
+            DEVICE=$(lsblk -dpno NAME,TYPE,MOUNTPOINT | grep "disk" | grep -v "/$" | awk '{print $1}' | head -n 1)
+        fi
+
+        if [ -n "$DEVICE" ]; then
+            # 2. Tell the kernel to refresh the block device size
+            echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
+            
+            # 3. Grow the partition and then the filesystem
+            # Logic: Try growing partition 1, then resize EXT4 or XFS
+            growpart $DEVICE 1 || echo "No partition to grow, resizing disk directly."
+            
+            # Try EXT4 resize first, then XFS if that fails
+            resize2fs ${DEVICE}1 || resize2fs $DEVICE || xfs_growfs $DEVICE || xfs_growfs /mnt/data
+            echo "Successfully resized $DEVICE"
+        else
+            echo "Could not find device for Volume ID {{ target_volume_id }}"
+            exit 1
+        fi
+      register: linux_resize_out
+
+    - name: Report Linux Resize Status
+      debug:
+        msg: "{{ linux_resize_out.stdout }}"
