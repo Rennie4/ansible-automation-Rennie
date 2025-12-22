@@ -45,19 +45,20 @@
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # 1. SEARCH BY SERIAL (Bypasses naming issues like /dev/sdf vs /dev/xvdf)
-        DEVICE=$(lsblk -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}')
+        # 1. SEARCH BY SERIAL (Cleaned of any special characters)
+        DEVICE=$(lsblk -r -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
         
-        # 2. FALLBACK: Match by Size and EXCLUDE the OS Root disk
+        # 2. FALLBACK: Match by the EXACT size we just requested (Target Size)
+        # We use -r (raw) to avoid the "├─" tree character errors
         if [ -z "$DEVICE" ]; then
-          ROOT_DISK=$(lsblk -no PKNAME $(lsblk -no NAME,MOUNTPOINT | grep -w "/" | awk '{print $1}'))
-          DEVICE=$(lsblk -dpno NAME,SIZE | grep "{{ target_new_size }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+          # Find disks (not partitions), exclude the one mounted to /
+          DEVICE=$(lsblk -r -dpno NAME,SIZE,MOUNTPOINT | grep "disk" | grep "{{ target_new_size }}G" | grep -v "/$" | awk '{print $1}' | head -n 1)
         fi
 
         if [ -n "$DEVICE" ]; then
+          # Force Kernel rescan
           echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
           
-          # Check if the disk is blank or has data
           if ! blkid $DEVICE; then
               echo "STATUS: Blank disk detected. Formatting..."
               mkfs.ext4 -F $DEVICE
@@ -65,22 +66,22 @@
               mount $DEVICE /data
           else
               echo "STATUS: Existing filesystem found. Resizing..."
-              # Grow partition if it exists
               growpart $DEVICE 1 || growpart $DEVICE 2 || echo "Info: No partition (Raw Disk)"
               
-              # Resize Filesystem (Detects EXT4 or XFS)
               if blkid ${DEVICE}1 || blkid ${DEVICE}p1; then
-                  PART=$(lsblk -np -o NAME $DEVICE | sed -n '2p')
-                  resize2fs $PART || xfs_growfs $PART || xfs_growfs /
+                  # Get the partition name accurately
+                  PART=$(lsblk -r -np -o NAME $DEVICE | grep -v "^$DEVICE$" | head -n 1)
+                  resize2fs $PART || xfs_growfs $PART
               else
-                  resize2fs $DEVICE || xfs_growfs $DEVICE || xfs_growfs /
+                  resize2fs $DEVICE || xfs_growfs $DEVICE
               fi
           fi
           
           echo "TARGET_DEVICE: $DEVICE"
-          df -h $DEVICE || df -h | grep "$DEVICE"
+          df -h $DEVICE || df -h | grep "$(basename $DEVICE)"
         else
-          echo "ERROR: Could not find data disk matching {{ target_new_size }}G"
+          echo "ERROR: Could not find disk matching Volume ID or Size {{ target_new_size }}G"
+          lsblk -f # Output for debugging if it fails again
           exit 1
         fi
       register: linux_resize_out
