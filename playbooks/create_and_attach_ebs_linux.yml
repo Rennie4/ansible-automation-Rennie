@@ -24,18 +24,25 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Automatically cycles through slots to avoid collisions
+        # Randomized device name to avoid existing sdm/sdp slots
         device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
-    - name: Step 3 - Wait for attachment to stabilize
+    - name: Step 3 - Wait for API Propagation
+      pause:
+        seconds: 5
+
+    - name: Step 4 - Verify Attachment
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
           volume-id: "{{ raw_vol.volume_id }}"
       register: vol_status
-      until: vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 10
+      until: 
+        - vol_status.volumes | length > 0
+        - vol_status.volumes[0].attachment_set | length > 0
+        - vol_status.volumes[0].attachment_set[0].status == 'attached'
+      retries: 15
       delay: 5
 
     - name: Set facts for OS discovery
@@ -50,42 +57,38 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
-          # Rescan SCSI bus and wait for settle
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 10
-          
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          
-          # Try finding by serial (Nitro/Standard)
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-          
-          # Fallback: Find the newest disk that isn't the root drive
-          if [ -z "$DEVICE" ]; then
-            DEVICE=$(lsblk -dpno NAME | grep -v "$(lsblk -dpno NAME | head -n 1)" | sort | tail -n 1)
-          fi
-          
           echo "$DEVICE"
       register: found_device
 
-    - name: Create directory
-      file:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        state: directory
-        mode: '0755'
+    - name: Format and Mount
+      block:
+        - name: Create directory
+          file:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            state: directory
+            mode: '0755'
 
-    - name: Create filesystem
-      filesystem:
-        fstype: ext4
-        dev: "{{ found_device.stdout }}"
-        force: no
+        - name: Create filesystem
+          filesystem:
+            fstype: ext4
+            dev: "{{ found_device.stdout }}"
+            force: no
 
-    - name: Mount volume
-      mount:
-        path: "{{ hostvars['localhost']['final_path'] }}"
-        src: "{{ found_device.stdout }}"
-        fstype: ext4
-        state: mounted
-        opts: defaults
+        - name: Mount volume
+          mount:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            src: "{{ found_device.stdout }}"
+            fstype: ext4
+            state: mounted
+            opts: defaults
+
+    - name: Final Disk Report
+      command: lsblk
+      register: final_lsblk
 
     - name: Final Success Message
       debug:
@@ -93,3 +96,5 @@
           - "SUCCESS: Disk Live and Mounted!"
           - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
           - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
+          - "Current Storage Stack:"
+          - "{{ final_lsblk.stdout_lines }}"
