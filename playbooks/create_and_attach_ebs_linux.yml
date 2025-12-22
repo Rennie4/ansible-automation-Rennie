@@ -16,8 +16,8 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # name is the key to forcing a NEW volume in your version
-        name: "Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
+        # Using a timestamp in the NAME tag is what forces a 'changed' status
+        name: "Test-Disk-{{ 100000 | random }}-{{ ansible_date_time.epoch }}"
         state: present
       register: ec2_vol_result
 
@@ -25,7 +25,7 @@
       set_fact:
         vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
         survey_size: "{{ aws_size }}"
-        # Moving this here so BOTH plays can see it clearly
+        # unique path based on the NEW volume ID
         final_path: "/data_{{ aws_size }}gb_{{ ec2_vol_result.volume_id[-4:] }}"
 
 - name: OS Configuration - Universal Format and Mount
@@ -38,9 +38,11 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          # Find the exact device for the NEW volume ID
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           if [ -z "$DEVICE" ]; then
-             DEVICE=$(lsblk -dpno NAME | grep -v "$(lsblk -dpno NAME | head -n 1)" | sort | tail -n 1)
+             # Fallback to the latest added disk if serial is hidden
+             DEVICE=$(lsblk -dpno NAME | grep -v "$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)" | sort | tail -n 1)
           fi
           echo "/dev/$(basename $DEVICE)"
       register: found_device
@@ -70,4 +72,3 @@
         msg: 
           - "Success! New disk {{ hostvars['localhost']['vol_id_short'] }} is live."
           - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
-          - "Device: {{ found_device.stdout }}"
