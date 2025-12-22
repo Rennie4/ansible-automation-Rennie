@@ -5,7 +5,6 @@
   gather_facts: true
   vars:
     # --- DYNAMIC INPUTS ---
-    # These pull from your survey/command line automatically
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
@@ -17,7 +16,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # No hardcoded names - uses the size and timestamp
+        # Dynamically named based on size and timestamp
         name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
@@ -27,60 +26,59 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Randomizes the device letter so you never hit a "busy" slot
+        # T3 instances are flexible with naming; sd[f-p] is safe
         device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
-    - name: Step 3 - Wait for AWS API Stability
+    - name: Step 3 - Wait for AWS Stability
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
           volume-id: "{{ raw_vol.volume_id }}"
       register: vol_status
-      # This handles the "list index" error by ensuring data exists before checking status
       until: 
         - vol_status.volumes | length > 0
         - vol_status.volumes[0].attachment_set | length > 0
         - vol_status.volumes[0].attachment_set[0].status == 'attached'
-      retries: 25
+      retries: 20
       delay: 5
 
-    - name: Prepare Variables for OS
+    - name: Set facts for OS discovery
       set_fact:
         vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
-        # Unique folder path: /data_25gb_eda1
-        final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
+        # Dynamic path: e.g., /data_25gb_add49
+        final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-5:] }}"
 
-- name: OS Configuration - Universal Format and Mount
+- name: OS Configuration - Format and Mount
   hosts: all
   become: yes
   gather_facts: no
   vars:
-    # Static connection details
+    # Always check if your Public IP changed after the instance type change!
     ansible_host: "3.250.3.8"
     ansible_user: "ubuntu"
     ansible_ssh_private_key_file: "/runner/artifacts/1236/ssh_key_data"
 
   tasks:
     - name: Step 4 - Wait for SSH to wake up
-      # This fixes the "Connection refused" by waiting for port 22 to actually open
       wait_for:
         port: 22
         host: "{{ ansible_host }}"
         search_regex: OpenSSH
-        delay: 5
         timeout: 300
 
     - name: Step 5 - Universal Discovery
       shell: 
         cmd: |
+          # Nitro instances (t3) often show disks as /dev/nvmeXn1
+          # This command finds the device name regardless of the prefix
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
       retries: 15
-      delay: 10
+      delay: 5
 
-    - name: Step 6 - Mount Logic
+    - name: Step 6 - Universal Mount
       block:
         - name: Create mount point
           file:
@@ -101,6 +99,6 @@
             fstype: ext4
             state: mounted
 
-    - name: Success Summary
+    - name: Final Success Report
       debug:
         msg: "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
