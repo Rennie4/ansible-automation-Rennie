@@ -24,7 +24,6 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Randomizing avoids 'device busy' errors
         device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p','q','r','s'] | random }}" 
         state: present
 
@@ -54,20 +53,23 @@
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Universal Device Discovery (Maximum Patience)
+    - name: Force Kernel Hardware Rescan
+      shell: |
+        # This scans all SCSI hosts and forces the OS to see the new AWS hardware
+        for host in /sys/class/scsi_host/host*; do echo "- - -" > ${host}/scan; done
+        udevadm trigger
+        udevadm settle --timeout=10
+      changed_when: true
+
+    - name: Universal Device Discovery
       shell: 
         cmd: |
-          # Force the kernel to look for new hardware
-          for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
-          udevadm trigger && udevadm settle --timeout=30
-          
-          # Use the most direct path to find the disk serial
+          # Find the device using the serial ID
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
-      # Increased retries and delay to give the OS 5 full minutes if needed
       until: found_device.stdout != ""
-      retries: 30
-      delay: 10
+      retries: 10
+      delay: 5
 
     - name: Format and Mount
       block:
