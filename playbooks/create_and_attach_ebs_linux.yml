@@ -42,24 +42,31 @@
       ignore_errors: true
 
     - name: Universal Device Discovery
-      shell: |
-        # Force Kernel to scan for new hardware first
-        for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > $bus; done
-        udevadm settle
-        sleep 2
+      shell: 
+        cmd: |
+          # Force Kernel to scan for new hardware
+          for bus in /sys/class/scsi_host/host*/scan; do 
+            echo "- - -" > "$bus"
+          done
+          udevadm settle
+          sleep 2
 
-        # 1. Search by AWS Hardware Serial (Nitro)
-        DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_id_short'] }}" | awk '{print $1}' | head -n 1)
-        
-        # 2. Fallback: Search by Size (Excluding Root)
-        if [ -z "$DEVICE" ]; then
-          # Get root disk safely
-          ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE / | head -n 1) | head -n 1)
-          # Find any disk matching survey size that isn't root
-          DEVICE=$(lsblk -dpno NAME,SIZE | grep "{{ hostvars['localhost']['survey_size'] }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
-        fi
-        
-        echo "$DEVICE"
+          # 1. Search by AWS Hardware Serial (Nitro)
+          SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
+          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
+          
+          # 2. Fallback: Search by Size (Excluding Root)
+          if [ -z "$DEVICE" ]; then
+            TARGET_SIZE="{{ hostvars['localhost']['survey_size'] }}G"
+            ROOT_PART=$(findmnt -no SOURCE / | head -n 1)
+            ROOT_DISK=$(lsblk -no PKNAME "$ROOT_PART" | head -n 1)
+            # If ROOT_DISK is empty, it means root is a raw disk (no partition)
+            [ -z "$ROOT_DISK" ] && ROOT_DISK=$(basename "$ROOT_PART")
+            
+            DEVICE=$(lsblk -dpno NAME,SIZE | grep "$TARGET_SIZE" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+          fi
+          
+          echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
 
