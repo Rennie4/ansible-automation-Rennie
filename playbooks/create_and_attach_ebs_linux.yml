@@ -16,7 +16,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # Using a new device slot forces a new volume creation
+        # CRITICAL: Change this to /dev/sdi, /dev/sdj etc for subsequent disks
         device_name: "/dev/sdh" 
         tags:
           Name: "Data-Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
