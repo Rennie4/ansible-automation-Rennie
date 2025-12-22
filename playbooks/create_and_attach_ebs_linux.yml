@@ -11,8 +11,7 @@
     aws_instance: "{{ target_instance_id }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
-    volume_count: "{{ target_volume_count | int }}"
-    sizes_csv: "{{ target_volume_sizes_csv }}"
+    sizes_csv: "{{ target_volume_sizes_csv | default('') }}"
     fstype: "{{ target_fstype | default('ext4') }}"
     volume_type: "{{ target_volume_type | default('gp3') }}"
     delete_on_termination: "{{ target_delete_on_termination | default(false) | bool }}"
@@ -21,7 +20,7 @@
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
-    # Candidate device labels for the AWS API (OS will expose nvmeXnY on Nitro)
+    # Candidate API device labels (/dev/sdf, /dev/sdg, ...) — OS will expose nvme devices on Nitro
     attach_device_prefix: "/dev/sd"
     candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
@@ -46,24 +45,26 @@
         region: "{{ aws_region }}"
       register: whoami
 
-    - name: Validate instance and count
+    - name: Validate instance and sizes CSV presence
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
-          - volume_count | int > 0
-        fail_msg: "Survey validation failed: instance_id (i-xxxx) and volume_count (>0) required."
+          - sizes_csv | trim | length > 0
+        fail_msg: "Survey validation failed: instance_id (i-xxxx) and sizes CSV (e.g. '20,30,50') are required."
 
-    - name: Parse sizes from CSV and validate
+    - name: Parse sizes from CSV and coerce to int
       set_fact:
         sizes_list: "{{ sizes_csv | trim | split(',') | map('trim') | list }}"
         sizes_int_list: "{{ sizes_csv | trim | split(',') | map('trim') | map('int') | list }}"
-    - name: Validate sizes list length equals count and all > 0
+        volume_count: "{{ sizes_csv | trim | split(',') | map('trim') | list | length }}"
+
+    - name: Validate positive sizes were provided
       assert:
         that:
-          - sizes_int_list | length == volume_count | int
+          - (sizes_int_list | length) == (volume_count | int)
           - (sizes_int_list | min) > 0
         fail_msg: >-
-          Sizes CSV must contain exactly {{ volume_count }} positive integers (GiB). Received: {{ sizes_list }}
+          Sizes CSV must contain positive integers (GiB). Received: {{ sizes_list }}
 
     # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
@@ -78,7 +79,7 @@
           - instance_info.instances | length == 1
         fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
 
-    - name: Set instance facts
+    - name: Set instance facts and effective zone
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         aws_zone: >-
@@ -105,6 +106,7 @@
              | select('string')
              | list }}
         free_letters: "{{ candidate_letters | difference(used_letters) }}"
+
     - name: Validate we have enough free labels
       assert:
         that:
@@ -122,39 +124,75 @@
           - "AZ (effective): {{ aws_zone }}"
           - "Requested sizes (GiB): {{ sizes_int_list }}"
           - "Existing device names: {{ existing_device_names }}"
-          - "Free letters: {{ free_letters }}"
+          - "Free letters (to use): {{ free_letters[:volume_count] }}"
 
-    # ---------- Create volumes (loop per task) ----------
+    # ---------- Create volumes ----------
     - name: Create EBS volumes
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
-        volume_size: "{{ item.size }}"
+        volume_size: "{{ item }}"
         volume_type: "{{ volume_type }}"
         iops: "{{ iops }}"
         throughput: "{{ throughput }}"
         encrypted: "{{ encrypted }}"
         kms_key_id: "{{ kms_key_id }}"
         tags:
-          Name: "Reusable-Disk-{{ aws_instance }}-{{ item.size }}GiB-{{ ansible_date_time.epoch }}-{{ item.idx }}"
+          Name: "Reusable-Disk-{{ aws_instance }}-{{ item }}GiB-{{ ansible_date_time.epoch }}"
           Owner: "{{ lookup('env', 'USER') | default('awx') }}"
           ManagedBy: "Ansible"
           InstanceId: "{{ aws_instance }}"
           Region: "{{ aws_region }}"
-          Index: "{{ item.idx }}"
-          SizeGB: "{{ item.size }}"
+          SizeGB: "{{ item }}"
         state: present
-      loop: "{{ range(0, sizes_int_list | length) | list | map('int') | list }}"
+      loop: "{{ sizes_int_list }}"
       loop_control:
         index_var: idx
-        label: "{{ sizes_int_list[idx] }} GiB"
-      vars:
-        item:
-          idx: "{{ idx }}"
-          size: "{{ sizes_int_list[idx] }}"
+        label: "{{ item }} GiB"
       register: create_results
 
     - name: Ensure all volumes created
       assert:
         that:
           - create_results.results | length == (sizes_int_list | length)
+          - (create_results.results | map(attribute='volume_id') | list | select('string') | length) == (sizes_int_list | length)
+        fail_msg: "One or more volumes were not created (missing volume_id)."
+
+    # ---------- Attach volumes ----------
+    - name: Attach new volumes to instance
+      amazon.aws.ec2_vol:
+        region: "{{ aws_region }}"
+        instance: "{{ aws_instance }}"
+        volume_id: "{{ vol_res.volume_id }}"
+        device_name: "{{ attach_device_prefix }}{{ free_letters[idx] }}"
+        delete_on_termination: "{{ delete_on_termination }}"
+        state: present
+      loop: "{{ range(0, create_results.results | length) | zip(create_results.results) | list }}"
+      vars:
+        idx: "{{ item.0 }}"
+        vol_res: "{{ item.1 }}"
+      loop_control:
+        label: "vol={{ vol_res.volume_id }} -> {{ attach_device_prefix }}{{ free_letters[idx] }}"
+      register: attach_results
+
+    # ---------- Wait attachments ----------
+    - name: Wait until each volume is attached
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ vol_res.volume_id }}"
+      loop: "{{ range(0, create_results.results | length) | zip(create_results.results) | list }}"
+      vars:
+        idx: "{{ item.0 }}"
+        vol_res: "{{ item.1 }}"
+      register: _wait_result
+      until:
+        - _wait_result.volumes is defined
+        - _wait_result.volumes | length > 0
+        - _wait_result.volumes[0].attachment_set | length > 0
+        - _wait_result.volumes[0].attachment_set[0].instance_id == aws_instance
+        - _wait_result.volumes[0].attachment_set[0].status in ['attaching', 'attached']
+      retries: 30
+      delay: 5
+
+    # ---------- Collect created volume metadata ----------
