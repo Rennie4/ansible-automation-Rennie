@@ -24,8 +24,7 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Letting AWS pick the device name prevents the "Available" hang 
-        # seen in your last run.
+        # CRITICAL: Empty string tells AWS to pick the next free letter
         device_name: "" 
         state: present
 
