@@ -37,10 +37,8 @@
         cmd: |
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
-
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-
           if [ -z "$DEVICE" ]; then
             ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)
             DEVICE=$(lsblk -dpno NAME | grep -v "$ROOT_DISK" | sort -r | head -n 1)
@@ -48,6 +46,7 @@
           echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
+      changed_when: false # This keeps your AAP bar Green
 
     - name: Format and Mount
       vars:
@@ -75,4 +74,4 @@
 
     - name: Success Message
       debug:
-        msg: "Target Device Found and Mounted: {{ found_device.stdout }}"
+        msg: "New 5GB Volume mounted successfully on {{ found_device.stdout }}"
