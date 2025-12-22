@@ -4,9 +4,10 @@
   connection: local
   gather_facts: false
   vars:
-    # Hardcoded to prevent the recursion loop
+    # Hardcoded region to avoid survey loops
     aws_region: "eu-west-1"
-    # These match your EXACT survey variable names from image_4a6381.png
+    
+    # These now match your updated survey IDs exactly
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -81,7 +82,7 @@
             state: mounted
             opts: defaults
 
-    - name: Final Report
+    - name: Final Verification
       shell: "df -h | grep /data"
       register: final_status
 
