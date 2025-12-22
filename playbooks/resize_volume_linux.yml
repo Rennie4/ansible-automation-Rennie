@@ -4,6 +4,7 @@
   connection: local
   gather_facts: false
   vars:
+    # Variables from your AAP Survey
     region: "eu-west-1"
     volume_id: "{{ target_volume_id }}"
     new_size: "{{ target_new_size }}"
@@ -16,7 +17,7 @@
           volume-id: "{{ volume_id }}"
       register: vol_info
 
-    - name: Modify EBS volume size in AWS
+    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
       amazon.aws.ec2_vol:
         id: "{{ volume_id }}"
         volume_size: "{{ new_size }}"
@@ -24,49 +25,61 @@
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
       register: resize_result
-      ignore_errors: yes # Bypasses the 6-hour limit error to allow OS resize
+      ignore_errors: yes # Bypasses the 6-hour limit so the OS part can still run
 
-    - name: Wait for AWS to complete
+    - name: Wait for AWS backend
       pause:
         seconds: 30
       when: resize_result.changed
 
-- name: OS Configuration - Universal Linux Extend
+- name: OS Configuration - Universal Linux Setup
   hosts: linux_hosts
   become: yes
   vars:
+    # Clean ID for Serial matching
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
-    - name: Install growpart (Ubuntu/Debian)
+    - name: Ensure resize tools (growpart) are present
       apt:
         name: cloud-guest-utils
         state: present
         update_cache: yes
       ignore_errors: true
 
-    - name: Find Device Path and Resize
+    - name: Universal Device Discovery and Resize
       shell: |
+        # 1. Search by AWS Serial (Best for Nitro)
         DEVICE=$(lsblk -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}')
+        
+        # 2. Fallback: Search by Size matching the Survey (Best for Xen/Legacy)
         if [ -z "$DEVICE" ]; then
-          DEVICE=$(lsblk -dpno NAME,TYPE,MOUNTPOINT | grep "disk" | grep -v "/$" | awk '{print $1}' | head -n 1)
+          DEVICE=$(lsblk -dpno NAME,SIZE,MOUNTPOINT | grep "{{ target_new_size }}G" | grep -v "/$" | awk '{print $1}' | head -n 1)
         fi
 
         if [ -n "$DEVICE" ]; then
+          # Refresh hardware state
           echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
           
-          # Grow partition if needed
-          growpart $DEVICE 1 || echo "Partition already max size"
+          # 3. Handle Empty vs Existing Disks
+          if ! blkid $DEVICE; then
+              echo "New disk detected. Initializing..."
+              mkfs.ext4 -F $DEVICE
+              mkdir -p /mnt/data
+              mount $DEVICE /mnt/data
+          else
+              echo "Existing disk detected. Resizing..."
+              growpart $DEVICE 1 || echo "Partition already max size"
+              resize2fs ${DEVICE}1 || resize2fs $DEVICE || xfs_growfs $DEVICE || xfs_growfs /
+          fi
           
-          # Force filesystem resize (Ext4/XFS)
-          resize2fs ${DEVICE}p1 || resize2fs ${DEVICE}1 || resize2fs $DEVICE || xfs_growfs /
-          
-          # Show final human-readable disk space
-          df -h | grep "^$DEVICE" || df -h /
+          # Report status
+          df -h $DEVICE || df -h /
         else
-          echo "Device not found" && exit 1
+          echo "ERROR: Could not find disk matching Volume ID or Size {{ target_new_size }}G"
+          exit 1
         fi
       register: linux_resize_out
 
-    - name: Report Final Disk Space
+    - name: Report Final Status
       debug:
         msg: "{{ linux_resize_out.stdout_lines }}"
