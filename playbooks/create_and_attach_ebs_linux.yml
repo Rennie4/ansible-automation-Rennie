@@ -4,10 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    # Hardcoded to prevent survey loop errors
     aws_region: "eu-west-1"
-    
-    # Survey Variable Mapping
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -26,49 +23,34 @@
     - name: Set facts for OS discovery
       set_fact:
         vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
-        survey_size: "{{ aws_size }}"
 
 - name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
   become: yes
   tasks:
-    - name: Set Filesystem Type based on OS Family
+    - name: Set Filesystem Type
       set_fact:
-        # XFS for RedHat/AmazonLinux, Ext4 for Ubuntu/Debian
         preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
-
-    - name: Install required tools
-      package:
-        name:
-          - util-linux
-          - "{{ 'xfsprogs' if ansible_os_family == 'RedHat' else 'e2fsprogs' }}"
-        state: present
-      ignore_errors: true
 
     - name: Universal Device Discovery
       shell: 
         cmd: |
-          # Force Kernel to scan for new hardware
+          # 1. Force Kernel Rescan
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
-          udevadm settle
-          sleep 2
+          udevadm settle && sleep 5
 
-          # Match by Serial (Modern) or Fuzzy Size (Legacy)
+          # 2. Try Serial Number First (Nitro)
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-          
-          if [ -z "$DEVICE" ]; then
-            ROOT_PART=$(findmnt -no SOURCE / | head -n 1)
-            ROOT_DISK=$(lsblk -no PKNAME "$ROOT_PART" | head -n 1)
-            [ -z "$ROOT_DISK" ] && ROOT_DISK=$(basename "$ROOT_PART")
-            
-            TARGET_BYTES=$(( {{ hostvars['localhost']['survey_size'] }} * 1024 * 1024 * 1024 ))
-            MIN_BYTES=$(( $TARGET_BYTES - 536870912 )) 
-            MAX_BYTES=$(( $TARGET_BYTES + 536870912 )) 
 
-            DEVICE=$(lsblk -dpbno NAME,SIZE | awk -v min="$MIN_BYTES" -v max="$MAX_BYTES" -v root="$ROOT_DISK" \
-              '$2 >= min && $2 <= max && $1 !~ root {print $1}' | head -n 1)
+          # 3. Aggressive Fallback: Get the newest non-root disk
+          if [ -z "$DEVICE" ]; then
+            # Find the root disk name
+            ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)
+            # Find the last disk (alphabetically) that isn't the root disk
+            DEVICE=$(lsblk -dpno NAME | grep -v "$ROOT_DISK" | sort -r | head -n 1)
           fi
+
           echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
@@ -77,7 +59,7 @@
       vars:
         final_dev: "{{ found_device.stdout }}"
       block:
-        - name: Create mount directory
+        - name: Create directory
           file:
             path: /data
             state: directory
@@ -89,7 +71,7 @@
             dev: "{{ final_dev }}"
             force: no
 
-        - name: Mount volume by UUID (Persistent)
+        - name: Mount volume
           mount:
             path: /data
             src: "{{ final_dev }}"
@@ -99,8 +81,4 @@
 
     - name: Success Message
       debug:
-        msg: 
-          - "AWS Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
-          - "OS Device: {{ found_device.stdout }}"
-          - "Mount Point: /data"
-          - "Filesystem: {{ preferred_fs }}"
+        msg: "Target Device Found and Mounted: {{ found_device.stdout }}"
