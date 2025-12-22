@@ -1,28 +1,182 @@
 
-    # ---------- Build sizes list from CSV OR single size (+ default count=1) ----------
-    - name: Decide if CSV provided
-      set_fact:
-        use_csv: "{{ (sizes_csv | trim | length) > 0 }}"
+---
+- name: AWS Infrastructure - Create and Attach ONE Volume (hardened)
+  hosts: localhost
+  connection: local
+  gather_facts: true
 
-    - name: Compute count (default to 1 if single_count omitted/blank)
-      set_fact:
-        count_val: "{{ (single_count | default(1)) | int }}"
+  vars:
+    # Survey inputs
+    aws_instance: "{{ target_instance_id }}"
+    aws_size: "{{ target_vol_size | int }}"
+    aws_region: "{{ target_region | default('eu-west-1') }}"
+    target_az: "{{ target_availability_zone | default('') }}"
 
-    - name: Build sizes_int_list
-      set_fact:
-        sizes_int_list: >-
-          {{ use_csv
-             | ternary(
-                 sizes_csv | trim | split(',') | map('trim') | map('int') | list,
-                 ([ single_size | int ] * count_val)
-               )
-          }}
+    # Options
+    volume_type: "{{ target_volume_type | default('gp3') }}"
+    encrypted: "{{ target_encrypted | default(true) | bool }}"
+    kms_key_id: "{{ target_kms_key_id | default(omit) }}"
+    delete_on_termination: "{{ target_delete_on_termination | default(false) | bool }}"
+    iops: "{{ target_iops | default(omit) }}"
+    throughput: "{{ target_throughput | default(omit) }}"
 
-    - name: Validate sizes_int_list
+    # Device labels for AWS API (OS will expose NVMe names on Nitro)
+    attach_device_prefix: "/dev/sd"
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
+
+  tasks:
+    # ---------- Credential & input prechecks ----------
+    - name: Precheck - AWS env vars injected
       assert:
         that:
-          - sizes_int_list | length > 0
-          - (sizes_int_list | min) > 0
+          - lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
+          - lookup('env', 'AWS_SECRET_ACCESS_KEY') | length > 0
         fail_msg: >-
-          Provide either 'target_volume_sizes_csv' (e.g., 20,30,50)
-          OR 'target_vol_size' (e.g., 30) [with optional 'target_volume_count'; default is 1].
+          AWS credentials not found in environment. Ensure the Job Template has an
+          'Amazon Web Services' credential attached and the Execution Environment
+          includes boto3/botocore and amazon.aws collection.
+
+    - name: Normalize region from env if blank
+      set_fact:
+        aws_region: "{{ aws_region if aws_region|length>0 else (lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1')) }}"
+
+    - name: STS caller identity (sanity check)
+      amazon.aws.aws_caller_info:
+        region: "{{ aws_region }}"
+      register: whoami
+
+    - name: Validate instance id and size
+      assert:
+        that:
+          - aws_instance is match('^i-[0-9a-f]+$')
+          - aws_size | int > 0
+        fail_msg: "Survey validation failed: instance_id (i-xxxx) and size (>0 GiB) are required."
+
+    # ---------- Discover instance & effective AZ ----------
+    - name: Get instance details
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        instance_ids: ["{{ aws_instance }}"]
+      register: instance_info
+
+    - name: Fail if instance not found
+      assert:
+        that:
+          - instance_info.instances | length == 1
+        fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
+
+    - name: Set instance facts and effective zone
+      set_fact:
+        instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
+        aws_zone: >-
+          {{ (target_az | length > 0)
+             | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
+        existing_device_names: "{{ instance_info.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
+        target_ip: >-
+          {{ instance_info.instances[0].public_ip_address
+             if instance_info.instances[0].public_ip_address
+             else instance_info.instances[0].private_ip_address }}
+
+    - name: Assert zone matches instance AZ
+      assert:
+        that:
+          - aws_zone == instance_zone
+        fail_msg: >-
+          AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
+          EBS volumes must be created in the SAME AZ as the instance.
+
+    - name: Compute a free device label
+      set_fact:
+        used_letters: >-
+          {{ existing_device_names
+             | map('regex_search', '^/dev/sd([a-z]+)$')
+             | map('last')
+             | select('string')
+             | list }}
+        free_letters: "{{ candidate_letters | difference(used_letters) }}"
+    - name: Ensure at least one free label is available
+      assert:
+        that:
+          - free_letters | length > 0
+        fail_msg: >-
+          No free device labels available. Existing: {{ existing_device_names }}.
+          Detach an existing data volume or choose a different instance.
+    - name: Pick first free label
+      set_fact:
+        attach_label: "{{ attach_device_prefix }}{{ free_letters[0] }}"
+
+    - name: Debug - Plan
+      debug:
+        msg:
+          - "Account: {{ whoami.account }}"
+          - "Instance: {{ aws_instance }}"
+          - "Region: {{ aws_region }}"
+          - "AZ (effective): {{ aws_zone }}"
+          - "Requested size (GiB): {{ aws_size }}"
+          - "Attach label: {{ attach_label }}"
+          - "Existing device names: {{ existing_device_names }}"
+
+    # ---------- Create the volume ----------
+    - name: Create EBS volume
+      amazon.aws.ec2_vol:
+        region: "{{ aws_region }}"
+        zone: "{{ aws_zone }}"
+        volume_size: "{{ aws_size }}"
+        volume_type: "{{ volume_type }}"
+        iops: "{{ iops }}"
+        throughput: "{{ throughput }}"
+        encrypted: "{{ encrypted }}"
+        kms_key_id: "{{ kms_key_id }}"
+        tags:
+          Name: "Reusable-Disk-{{ aws_instance }}-{{ aws_size }}GiB-{{ ansible_date_time.epoch }}"
+          Owner: "{{ lookup('env', 'USER') | default('awx') }}"
+          ManagedBy: "Ansible"
+          InstanceId: "{{ aws_instance }}"
+          Region: "{{ aws_region }}"
+          SizeGB: "{{ aws_size }}"
+        state: present
+      register: raw_vol
+
+    - name: Ensure volume was created
+      assert:
+        that:
+          - raw_vol.volume_id is defined
+        fail_msg: "EBS volume creation failed—no volume_id returned. Check IAM/KMS permissions."
+
+    - name: Debug - Created volume
+      debug:
+        msg:
+          - "Volume ID: {{ raw_vol.volume_id }}"
+          - "Find it in console (Region={{ aws_region }}) by ID or Tag Name={{ 'Reusable-Disk-' ~ aws_instance ~ '-' ~ aws_size ~ 'GiB-' ~ ansible_date_time.epoch }}"
+
+    # ---------- Attach to the instance ----------
+    - name: Attach EBS volume to instance
+      amazon.aws.ec2_vol:
+        region: "{{ aws_region }}"
+        instance: "{{ aws_instance }}"
+        volume_id: "{{ raw_vol.volume_id }}"
+        device_name: "{{ attach_label }}"
+        delete_on_termination: "{{ delete_on_termination }}"
+        state: present
+      register: attach_result
+
+    - name: Wait until attached
+      amazon.aws.ec2_vol_info:
+        region: "{{ aws_region }}"
+        filters:
+          volume-id: "{{ raw_vol.volume_id }}"
+      register: vol_info
+      until:
+        - vol_info.volumes | length > 0
+        - vol_info.volumes[0].attachment_set | length > 0
+        - vol_info.volumes[0].attachment_set[0].instance_id == aws_instance
+        - vol_info.volumes[0].attachment_set[0].status in ['attaching', 'attached']
+      retries: 30
+      delay: 5
+
+    - name: Summary - Creation & Attachment
+      debug:
+        msg:
+          - "SUCCESS: Volume {{ raw_vol.volume_id }} ({{ aws_size }} GiB) created in {{ aws_zone }} and attached to {{ aws_instance }}."
+          - "Attachment label (API): {{ attach_label }}"
+          - "Console tip: EC2 > Volumes (Region: {{ aws_region }}), filter by ID {{ raw_vol.volume_id }} or Tag 'ManagedBy=Ansible'."
