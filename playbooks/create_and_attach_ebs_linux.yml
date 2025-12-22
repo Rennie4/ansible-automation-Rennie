@@ -5,6 +5,7 @@
   gather_facts: false
   vars:
     aws_region: "eu-west-1"
+    # Survey Variable Mapping
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -35,17 +36,17 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
-          # 1. Force Kernel Rescan
+          # 1. Force Kernel Rescan to ensure AWS hardware is visible
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
 
-          # 2. Try Serial Number First (Nitro)
+          # 2. Try Serial Number First (Best for Nitro)
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
 
-          # 3. Aggressive Fallback: Get the newest non-root disk
+          # 3. Aggressive Fallback: Get the newest non-root disk (Best for Legacy/Xen)
           if [ -z "$DEVICE" ]; then
-            # Find the root disk name
+            # Find the root disk name to exclude it
             ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)
             # Find the last disk (alphabetically) that isn't the root disk
             DEVICE=$(lsblk -dpno NAME | grep -v "$ROOT_DISK" | sort -r | head -n 1)
