@@ -6,8 +6,7 @@
   vars:
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
-    # The | int filter below fixes the "class str" error
-    aws_size: "{{ target_vol_size | int }}"
+    aws_size: "{{ target_vol_size | int }}" # Fixed the integer error from earlier
     aws_zone: "{{ target_zone }}"
 
   tasks:
@@ -17,10 +16,10 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # Reminder: Change this slot (/dev/sdi, etc.) for each new disk
-        device_name: "/dev/sdh" 
+        # REMOVED device_name: "/dev/sdh"
+        # Leaving it blank forces AWS to pick the next EMPTY slot automatically
         tags:
-          Name: "Data-Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
+          Name: "Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
         state: present
       register: ec2_vol_result
 
@@ -55,6 +54,7 @@
 
     - name: Set Target Path
       set_fact:
+        # Using the last 4 digits of the NEW volume ID ensures a unique folder
         target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb_{{ hostvars['localhost']['vol_id_short'][-4:] }}"
 
     - name: Format and Mount
