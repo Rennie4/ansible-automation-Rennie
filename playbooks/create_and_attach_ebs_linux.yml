@@ -6,13 +6,11 @@
   gather_facts: true
 
   vars:
-    # Survey inputs
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
 
-    # Options
     volume_type: "{{ target_volume_type | default('gp3') }}"
     encrypted: "{{ target_encrypted | default(true) | bool }}"
     kms_key_id: "{{ target_kms_key_id | default(omit) }}"
@@ -20,12 +18,10 @@
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
-    # Device labels for AWS API (OS will expose NVMe names on Nitro)
     attach_device_prefix: "/dev/sd"
     candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
-    # ---------- Credential & input prechecks ----------
     - name: Precheck - AWS env vars injected
       assert:
         that:
@@ -52,7 +48,6 @@
           - aws_size | int > 0
         fail_msg: "Survey validation failed: instance_id (i-xxxx) and size (>0 GiB) are required."
 
-    # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
@@ -85,22 +80,36 @@
           AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
           EBS volumes must be created in the SAME AZ as the instance.
 
-    - name: Compute a free device label
+    # ---- PATCHED DEVICE LABEL SELECTION ----
+    - name: Debug - existing device names from instance
+      debug:
+        var: existing_device_names
+
+    - name: Normalize device names list (keep only strings)
+      set_fact:
+        existing_device_names_clean: "{{ existing_device_names | select('string') | list }}"
+
+    - name: Extract used /dev/sd* LETTERS (ignore digits and non-sd devices)
       set_fact:
         used_letters: >-
-          {{ existing_device_names
-             | map('regex_search', '^/dev/sd([a-z]+)$')
-             | map('last')
-             | select('string')
+          {{ existing_device_names_clean
+             | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1')
+             | select('match', '^[a-z]+$')
              | list }}
+
+    - name: Compute free letters (candidates minus used)
+      set_fact:
         free_letters: "{{ candidate_letters | difference(used_letters) }}"
+
     - name: Ensure at least one free label is available
       assert:
         that:
           - free_letters | length > 0
         fail_msg: >-
-          No free device labels available. Existing: {{ existing_device_names }}.
+          No free device labels available. Used letters: {{ used_letters }}.
+          Existing device names: {{ existing_device_names_clean }}.
           Detach an existing data volume or choose a different instance.
+
     - name: Pick first free label
       set_fact:
         attach_label: "{{ attach_device_prefix }}{{ free_letters[0] }}"
@@ -114,9 +123,8 @@
           - "AZ (effective): {{ aws_zone }}"
           - "Requested size (GiB): {{ aws_size }}"
           - "Attach label: {{ attach_label }}"
-          - "Existing device names: {{ existing_device_names }}"
+          - "Existing device names: {{ existing_device_names_clean }}"
 
-    # ---------- Create the volume ----------
     - name: Create EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
@@ -149,7 +157,6 @@
           - "Volume ID: {{ raw_vol.volume_id }}"
           - "Find it in console (Region={{ aws_region }}) by ID or Tag Name={{ 'Reusable-Disk-' ~ aws_instance ~ '-' ~ aws_size ~ 'GiB-' ~ ansible_date_time.epoch }}"
 
-    # ---------- Attach to the instance ----------
     - name: Attach EBS volume to instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
