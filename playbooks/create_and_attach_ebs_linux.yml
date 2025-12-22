@@ -1,12 +1,12 @@
 
 ---
-- name: AWS Infrastructure - Create and Attach
+- name: AWS Infrastructure - Create and Attach Volume
   hosts: localhost
   connection: local
   gather_facts: true
 
-  # ---- Survey-driven variables ----
   vars:
+    # --- Survey-driven variables ---
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
@@ -18,190 +18,43 @@
     volume_type: "{{ target_volume_type | default('gp3') }}"
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
-    # Tagging helps visibility in console
     common_tags:
       Name: "Reusable-Disk-{{ ansible_date_time.epoch }}"
-      Owner: "{{ lookup('env', 'USER') | default('ansible') }}"
+      Owner: "{{ lookup('env', 'USER') | default('awx') }}"
       ManagedBy: "Ansible"
       InstanceId: "{{ aws_instance }}"
       Region: "{{ aws_region }}"
 
   tasks:
-    - name: Step 0 - Validate input variables
+    # --- Credential precheck: ensure AWX injected env vars ---
+    - name: Precheck - AWS environment variables injected
+      assert:
+        that:
+          - lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
+          - lookup('env', 'AWS_SECRET_ACCESS_KEY') | length > 0
+        fail_msg: >-
+          AWS credentials not found in environment. Ensure the Job Template has an
+          'Amazon Web Services' credential attached and the Execution Environment
+          supports amazon.aws. (Missing AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY)
+
+    - name: Precheck - Set region from env if not provided
+      set_fact:
+        aws_region: "{{ aws_region if aws_region|length>0 else (lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1')) }}"
+
+    - name: Precheck - Validate caller identity (sts:GetCallerIdentity)
+      amazon.aws.aws_caller_info:
+        region: "{{ aws_region }}"
+      register: whoami
+
+    - name: Debug - Caller info
+      debug:
+        msg:
+          - "AWS Account: {{ whoami.account }}"
+          - "ARN: {{ whoami.arn }}"
+          - "Region: {{ aws_region }}"
+
+    - name: Validate input variables
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
           - aws_size | int > 0
-        fail_msg: "Input validation failed. Ensure instance_id like i-xxxx and volume size > 0."
-
-    - name: Step 1 - Get Instance Details (Zone & IP)
-      amazon.aws.ec2_instance_info:
-        region: "{{ aws_region }}"
-        instance_ids: ["{{ aws_instance }}"]
-      register: instance_info
-
-    - name: Step 1.1 - Fail if instance not found
-      assert:
-        that:
-          - instance_info.instances | length == 1
-        fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
-
-    - name: Step 1.2 - Set Environment Facts
-      set_fact:
-        instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        aws_zone: >-
-          {{ (target_az | length > 0)
-             | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
-        target_ip: >-
-          {{ instance_info.instances[0].public_ip_address
-             if instance_info.instances[0].public_ip_address
-             else instance_info.instances[0].private_ip_address }}
-
-    - name: Step 1.3 - Validate instance AZ vs chosen AZ
-      assert:
-        that:
-          - aws_zone == instance_zone
-        fail_msg: >-
-          The selected AZ ({{ aws_zone }}) does not match the instance's AZ ({{ instance_zone }}).
-          EBS volumes must be created in the same AZ to attach. Fix survey AZ or omit it to use instance AZ.
-
-    - name: Debug - Instance discovery
-      debug:
-        msg:
-          - "Region: {{ aws_region }}"
-          - "Instance: {{ aws_instance }}"
-          - "Instance AZ: {{ instance_zone }}"
-          - "Using AZ: {{ aws_zone }}"
-          - "Attach device_name: {{ attach_device_name }}"
-          - "Target IP for SSH: {{ target_ip }}"
-
-    - name: Step 2 - Create EBS Volume
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        zone: "{{ aws_zone }}"
-        volume_size: "{{ aws_size }}"
-        volume_type: "{{ volume_type }}"
-        iops: "{{ iops }}"
-        throughput: "{{ throughput }}"
-        encrypted: "{{ encrypted }}"
-        kms_key_id: "{{ kms_key_id }}"
-        tags: "{{ common_tags }}"
-        state: present
-      register: raw_vol
-
-    - name: Debug - Volume creation result
-      debug:
-        var: raw_vol
-
-    - name: Step 2.1 - Fail if volume_id is missing
-      assert:
-        that:
-          - raw_vol.volume_id is defined
-        fail_msg: >-
-          Volume creation did not return a volume_id. Check AWS credentials/permissions
-          (ec2:CreateVolume, ec2:CreateTags), region, and module versions.
-
-    - name: Step 3 - Attach Volume to instance
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        instance: "{{ aws_instance }}"
-        volume_id: "{{ raw_vol.volume_id }}"
-        device_name: "{{ attach_device_name }}"
-        delete_on_termination: "{{ delete_on_termination }}"
-        state: present
-      register: attach_result
-
-    - name: Debug - Attachment result
-      debug:
-        var: attach_result
-
-    - name: Step 4 - Wait for Attachment Stability
-      amazon.aws.ec2_vol_info:
-        region: "{{ aws_region }}"
-        filters:
-          volume-id: "{{ raw_vol.volume_id }}"
-      register: vol_status
-      until:
-        - vol_status.volumes | length > 0
-        - vol_status.volumes[0].attachment_set | length > 0
-        - vol_status.volumes[0].attachment_set[0].instance_id == aws_instance
-        - vol_status.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 30
-      delay: 5
-
-    - name: Debug - Volume status
-      debug:
-        msg:
-          - "Volume ID: {{ raw_vol.volume_id }}"
-          - "Attachment status: {{ vol_status.volumes[0].attachment_set[0].status }}"
-          - "Console find tip: Filter by Tag 'Name={{ common_tags.Name }}' or by Volume ID."
-
-    - name: Step 5 - Update Dynamic Inventory
-      add_host:
-        name: "current_target"
-        ansible_host: "{{ target_ip }}"
-        ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/1278/ssh_key_data') }}"
-        groups: active_nodes
-
-- name: OS Configuration - Format and Mount
-  hosts: active_nodes
-  gather_facts: no
-  tasks:
-    - name: Step 6 - Wait for SSH Handshake
-      wait_for:
-        port: 22
-        host: "{{ ansible_host }}"
-        search_regex: OpenSSH
-        timeout: 300
-      delegate_to: localhost
-
-    - name: Step 7 - Find Device by Serial (NVMe/Nitro Compatible)
-      become: yes
-      shell: |
-        set -o pipefail
-        VOLNOHYP="{{ hostvars['localhost']['raw_vol']['volume_id'] | replace('-', '') }}"
-        # Prefer lsblk serial match
-        DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
-        if [ -z "$DEV" ]; then
-          # Fallback to by-id path (Ubuntu/Nitro)
-          DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
-          [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
-        fi
-        echo -n "$DEV"
-      register: found_device
-      until: found_device.stdout != ""
-      retries: 20
-      delay: 5
-      args:
-        executable: /bin/bash
-
-    - name: Step 7.1 - Get existing filesystem (idempotency)
-      become: yes
-      command: lsblk -no FSTYPE "{{ found_device.stdout }}"
-      register: fs_type
-
-    - name: Step 8 - Format and Mount
-      become: yes
-      vars:
-        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
-      block:
-        - name: Create Directory
-          file:
-            path: "{{ mpath }}"
-            state: directory
-            mode: '0755'
-
-        - name: Create Filesystem if none exists
-          filesystem:
-            fstype: ext4
-            dev: "{{ found_device.stdout }}"
-          when: fs_type.stdout | trim == ""
-
-        - name: Mount
-          mount:
-            path: "{{ mpath }}"
-            src: "{{ found_device.stdout }}"
-            fstype: ext4
-            state: mounted
-``
