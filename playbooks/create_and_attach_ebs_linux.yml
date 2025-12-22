@@ -4,7 +4,10 @@
   connection: local
   gather_facts: false
   vars:
+    # Hardcoded to prevent survey loop errors
     aws_region: "eu-west-1"
+    
+    # Survey Variable Mapping
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size }}"
     aws_zone: "{{ target_zone }}"
@@ -31,6 +34,7 @@
   tasks:
     - name: Set Filesystem Type based on OS Family
       set_fact:
+        # XFS for RedHat/AmazonLinux, Ext4 for Ubuntu/Debian
         preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
 
     - name: Install required tools
@@ -44,10 +48,12 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
+          # Force Kernel to scan for new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle
           sleep 2
 
+          # Match by Serial (Modern) or Fuzzy Size (Legacy)
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           
@@ -93,4 +99,8 @@
 
     - name: Success Message
       debug:
-        msg: "Disk mounted successfully on {{ found_device.stdout }}"
+        msg: 
+          - "AWS Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
+          - "OS Device: {{ found_device.stdout }}"
+          - "Mount Point: /data"
+          - "Filesystem: {{ preferred_fs }}"
