@@ -15,7 +15,6 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # Random name ensures AWS sees this as a brand new request
         name: "Disk-{{ 100 | random }}-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
@@ -25,8 +24,7 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # Using a high letter like /dev/sdp ensures we don't clash 
-        # with common lower slots like /dev/sdb or /dev/sdh
+        # Using /dev/sdp to match your successful manual-check screenshot
         device_name: "/dev/sdp" 
         state: present
 
@@ -45,10 +43,11 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Matches the NEW volume ID to the OS device name
+          # Get the full path (e.g., /dev/nvme1n1 or /dev/xvdp)
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-          echo "/dev/$(basename $DEVICE)"
+          echo "$DEVICE"
       register: found_device
+      failed_when: found_device.stdout == ""
 
     - name: Format and Mount
       block:
@@ -75,7 +74,7 @@
     - name: Final Success Message
       debug:
         msg: 
-          - "SUCCESS: Fresh disk attached and mounted!"
+          - "SUCCESS: Disk Live and Mounted!"
           - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
           - "Linux Path: {{ hostvars['localhost']['final_path'] }}"
-          - "Device Name: {{ found_device.stdout }}"
+          - "Device Found: {{ found_device.stdout }}"
