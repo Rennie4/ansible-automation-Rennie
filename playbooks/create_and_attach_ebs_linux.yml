@@ -16,13 +16,13 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # Removed hardcoded /dev/sdf to allow multiple disks
         state: present
       register: ec2_vol_result
 
     - name: Set facts for OS discovery
       set_fact:
         vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
+        survey_size: "{{ aws_size }}" # This is the fixed variable
 
 - name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
@@ -51,10 +51,12 @@
     - name: Format and Mount
       vars:
         final_dev: "{{ found_device.stdout }}"
+        # Using hostvars['localhost']['survey_size'] correctly here
+        target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb"
       block:
         - name: Create directory
           file:
-            path: "/data_{{ hostvars['localhost']['aws_size'] }}gb" # Dynamic path to avoid overlaps
+            path: "{{ target_path }}"
             state: directory
             mode: '0755'
 
@@ -66,7 +68,7 @@
 
         - name: Mount volume
           mount:
-            path: "/data_{{ hostvars['localhost']['aws_size'] }}gb"
+            path: "{{ target_path }}"
             src: "{{ final_dev }}"
             fstype: "{{ preferred_fs }}"
             state: mounted
@@ -74,4 +76,4 @@
 
     - name: Success Message
       debug:
-        msg: "New {{ hostvars['localhost']['aws_size'] }}GB Volume mounted on {{ found_device.stdout }}"
+        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB mounted on {{ found_device.stdout }} at /data_{{ hostvars['localhost']['survey_size'] }}gb"
