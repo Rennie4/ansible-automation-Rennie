@@ -1,0 +1,64 @@
+---
+- name: AWS Infrastructure - Resize EBS Volume
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    region: "eu-west-1"
+    volume_id: "{{ target_volume_id }}"
+    new_size: "{{ target_new_size }}"
+
+  tasks:
+    - name: Get current volume info
+      amazon.aws.ec2_vol_info:
+        region: "{{ region }}"
+        filters:
+          volume-id: "{{ volume_id }}"
+      register: vol_info
+
+    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
+      amazon.aws.ec2_vol:
+        id: "{{ volume_id }}"
+        volume_size: "{{ new_size }}"
+        volume_type: gp3
+        region: "{{ region }}"
+        zone: "{{ vol_info.volumes[0].zone }}"
+        modify_volume: true
+
+- name: Windows Configuration - Automatic Partition Extension
+  hosts: windows_hosts
+  gather_facts: false
+  tasks:
+    - name: Find disk and Extend (Nitro and Non-Nitro)
+      win_shell: |
+        $targetVolId = "{{ target_volume_id }}".Replace("-", "")
+        
+        # 1. Try Nitro Method (Serial Number contains Volume ID)
+        $disk = Get-Disk | Where-Object { $_.SerialNumber -like "*$targetVolId*" }
+        
+        # 2. Fallback for Non-Nitro (Check SCSI/Location if Serial doesn't match)
+        if (-not $disk) {
+            # On older instances, AWS maps /dev/xvdf to a specific SCSI LUN
+            # This is a broader search for any disk that is NOT Disk 0 and has space to grow
+            $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and $_.AllocatableSize -gt 0 } | Select-Object -First 1
+        }
+        
+        if ($disk) {
+            Update-HostStorageCache
+            $partition = $disk | Get-Partition | Where-Object { $_.DriveLetter }
+            
+            if ($partition) {
+                $maxSize = (Get-PartitionSupportedSize -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber).SizeMax
+                Resize-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Size $maxSize
+                Write-Host "Successfully extended Drive $($partition.DriveLetter) on Disk $($disk.Number)"
+            } else {
+                Write-Error "Found disk $($disk.Number), but no partition with a drive letter was found."
+            }
+        } else {
+            Write-Error "Could not find a Windows disk matching Volume ID {{ target_volume_id }} or any disk with unallocated space."
+        }
+      register: resize_out
+
+    - name: Final Result
+      debug:
+        msg: "{{ resize_out.stdout }}"
