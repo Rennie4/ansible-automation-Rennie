@@ -36,7 +36,6 @@
 
     - name: Set facts
       set_fact:
-        # Pulls current IP directly from AWS API
         target_ip: "{{ instance_info.instances[0].public_ip_address if instance_info.instances[0].public_ip_address else instance_info.instances[0].private_ip_address }}"
         vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-5:] }}"
@@ -46,17 +45,16 @@
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1252/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/1258/ssh_key_data"
         groups: active_nodes
 
 - name: OS Configuration - Format and Mount
   hosts: active_nodes
-  become: yes
   gather_facts: no
+  # Become is removed from here to prevent 'sudo' errors on localhost
   tasks:
-    - name: Step 5 - Wait for SSH Banner (Port 22 Handshake)
-      # This task checks for the actual SSH software version string. 
-      # If the service is 'Refusing', it will keep trying until the timeout.
+    - name: Step 5 - Wait for SSH Banner
+      # Runs locally without sudo to fix the 'rc 127' error
       wait_for:
         port: 22
         host: "{{ ansible_host }}"
@@ -66,6 +64,8 @@
       delegate_to: localhost
 
     - name: Step 6 - Hardware Discovery (NVMe Support)
+      # become is added specifically for this task
+      become: yes
       shell: 
         cmd: |
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
@@ -75,6 +75,7 @@
       delay: 5
 
     - name: Step 7 - Universal Mount
+      become: yes
       block:
         - name: Create mount point
           file:
