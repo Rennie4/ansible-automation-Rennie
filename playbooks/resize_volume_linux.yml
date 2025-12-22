@@ -4,7 +4,7 @@
   connection: local
   gather_facts: false
   vars:
-    # Variables pulled from your AAP Survey
+    # Pulls these from your AAP Survey
     region: "eu-west-1"
     volume_id: "{{ target_volume_id }}"
     new_size: "{{ target_new_size }}"
@@ -25,7 +25,7 @@
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
       register: resize_result
-      ignore_errors: yes # Bypasses the 6-hour AWS limit so the OS part can still run
+      ignore_errors: yes 
 
     - name: Wait for AWS backend
       pause:
@@ -36,44 +36,41 @@
   hosts: linux_hosts
   become: yes
   vars:
-    # Removes dashes to match the Hardware Serial (e.g., vol0e35...)
+    # Clean ID for hardware serial matching (e.g., vol0e35...)
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
   tasks:
-    - name: Ensure resize tools are present (Distro Agnostic)
+    - name: Ensure resize tools are present
       package:
-        name: 
-          - cloud-utils-growpart
-          - cloud-guest-utils
+        name: cloud-guest-utils
         state: present
       ignore_errors: true
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # 1. Search by AWS Serial (Best for Nitro/Newer Instances)
+        # 1. Locate device by AWS Serial (Hardware ID)
         DEVICE=$(lsblk -dpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}')
         
-        # 2. Fallback: Search by Size matching Survey (Best for Xen/Legacy)
+        # 2. Fallback: Search by Size matching Survey (Ignore root disk)
         if [ -z "$DEVICE" ]; then
           DEVICE=$(lsblk -dpno NAME,SIZE,MOUNTPOINT | grep "{{ target_new_size }}G" | grep -v "/$" | awk '{print $1}' | head -n 1)
         fi
 
         if [ -n "$DEVICE" ]; then
-          # Refresh hardware state
+          # Refresh kernel hardware view
           echo 1 > /sys/class/block/$(basename $DEVICE)/device/rescan
           
           # 3. Handle Empty vs Existing Disks
           if ! blkid $DEVICE; then
-              echo "New disk detected. Initializing..."
+              echo "EMPTY DISK DETECTED: Formatting and Mounting..."
               mkfs.ext4 -F $DEVICE
               mkdir -p /mnt/data
               mount $DEVICE /mnt/data
           else
-              echo "Existing disk detected. Analyzing layout..."
-              # Grow partition if it exists (handles sda1, xvda1, nvme0n1p1)
-              growpart $DEVICE 1 || growpart $DEVICE 2 || echo "No partition to grow (Raw Disk)"
+              echo "EXISTING DATA DETECTED: Resizing..."
+              # Try growing partition (e.g., p1 or 1)
+              growpart $DEVICE 1 || growpart $DEVICE 2 || echo "No partition (Raw Disk)"
               
-              # Force resize based on filesystem type (EXT4 or XFS)
-              # Checks for partition first, then falls back to raw device
+              # Force resize for EXT4 or XFS
               if blkid ${DEVICE}1 || blkid ${DEVICE}p1; then
                   PART=$(lsblk -np -o NAME $DEVICE | sed -n '2p')
                   resize2fs $PART || xfs_growfs $PART || xfs_growfs /
@@ -82,9 +79,9 @@
               fi
           fi
           
-          # Final report for logs
+          # Final report
           echo "TARGET_DEVICE: $DEVICE"
-          df -h $DEVICE || df -h /
+          df -h $DEVICE || df -h /mnt/data | grep dev
         else
           echo "ERROR: Could not find disk matching Volume ID or Size {{ target_new_size }}G"
           exit 1
