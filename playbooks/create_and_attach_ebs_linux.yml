@@ -6,7 +6,8 @@
   vars:
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
-    aws_size: "{{ target_vol_size }}"
+    # The | int filter below fixes the "class str" error
+    aws_size: "{{ target_vol_size | int }}"
     aws_zone: "{{ target_zone }}"
 
   tasks:
@@ -16,7 +17,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # CRITICAL: Change this to /dev/sdi, /dev/sdj etc for subsequent disks
+        # Reminder: Change this slot (/dev/sdi, etc.) for each new disk
         device_name: "/dev/sdh" 
         tags:
           Name: "Data-Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
