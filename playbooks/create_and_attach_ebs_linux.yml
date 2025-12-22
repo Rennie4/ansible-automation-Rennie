@@ -4,11 +4,11 @@
   connection: local
   gather_facts: false
   vars:
-    # AAP Survey Variables
+    # These match your AAP Survey Answer Variables exactly
     instance_id: "{{ target_instance_id }}"
     vol_size: "{{ target_vol_size }}"
-    region: "eu-west-1"
-    zone: "eu-west-1b"
+    region: "{{ region | default('eu-west-1') }}"
+    zone: "{{ zone | default('eu-west-1b') }}"
 
   tasks:
     - name: Create and Attach EBS Volume
@@ -21,51 +21,53 @@
         state: present
       register: ec2_vol_result
 
-    - name: Set Volume Serial fact for OS discovery
+    - name: Set facts for OS discovery
       set_fact:
+        # We store the Volume ID and Size to pass them to the Ubuntu play
         vol_id_short: "{{ ec2_vol_result.volume_id | replace('-', '') }}"
+        survey_size: "{{ vol_size }}"
 
 - name: OS Configuration - Universal Format and Mount
   hosts: linux_hosts
   become: yes
   tasks:
+    - name: Set Filesystem Type based on OS Family
+      set_fact:
+        # RHEL/CentOS use xfs; Ubuntu/Debian use ext4
+        preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
+
+    - name: Install required tools
+      package:
+        name:
+          - util-linux
+          - "{{ 'xfsprogs' if ansible_os_family == 'RedHat' else 'e2fsprogs' }}"
+        state: present
+      ignore_errors: true
+
     - name: Universal Device Discovery
       shell: |
         # 1. Search by AWS Hardware Serial (Nitro/Modern)
         DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_id_short'] }}" | awk '{print $1}' | head -n 1)
         
-        # 2. Fallback: Search by Size and exclude Root (Legacy Xen)
+        # 2. Fallback: Search by Size and exclude Root (Legacy Xen/T2)
         if [ -z "$DEVICE" ]; then
           ROOT_DISK=$(lsblk -no PKNAME $(lsblk -no NAME,MOUNTPOINT | grep -w "/" | awk '{print $1}'))
-          DEVICE=$(lsblk -rdpno NAME,SIZE | grep "{{ hostvars['localhost']['vol_size'] }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+          DEVICE=$(lsblk -rdpno NAME,SIZE | grep "{{ hostvars['localhost']['survey_size'] }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
         fi
         echo "$DEVICE"
       register: found_device
       failed_when: found_device.stdout == ""
 
-    - name: Set Filesystem Type based on OS Family
-      set_fact:
-        # RHEL/CentOS/AmazonLinux prefer xfs; Ubuntu/Debian prefer ext4
-        preferred_fs: "{{ 'xfs' if ansible_os_family == 'RedHat' else 'ext4' }}"
-
-    - name: Install required tools (Distro-Agnostic)
-      package:
-        name:
-          - util-linux
-          - "{{ 'xfsprogs' if preferred_fs == 'xfs' else 'e2fsprogs' }}"
-        state: present
-      ignore_errors: true
-
-    - name: Create mount directory
-      file:
-        path: /data
-        state: directory
-        mode: '0755'
-
     - name: Format and Mount
       vars:
         final_dev: "{{ found_device.stdout }}"
       block:
+        - name: Create mount directory
+          file:
+            path: /data
+            state: directory
+            mode: '0755'
+
         - name: Create filesystem
           filesystem:
             fstype: "{{ preferred_fs }}"
@@ -79,3 +81,11 @@
             fstype: "{{ preferred_fs }}"
             state: mounted
             opts: defaults
+
+    - name: Verify Final Status
+      shell: "df -h | grep /data"
+      register: final_status
+
+    - name: Final Report
+      debug:
+        msg: "Success! Disk mounted: {{ final_status.stdout }}"
