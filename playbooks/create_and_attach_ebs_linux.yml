@@ -2,7 +2,7 @@
 - name: AWS Infrastructure - Create and Attach
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true # We need this for the timestamp
   vars:
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
@@ -10,16 +10,16 @@
     aws_zone: "{{ target_zone }}"
 
   tasks:
-    - name: Create and Attach EBS Volume
+    - name: Force Create Unique EBS Volume
       amazon.aws.ec2_vol:
         instance: "{{ aws_instance }}"
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # name forces a unique entry in the AWS Console
-        name: "Disk-{{ aws_size }}gb-{{ 10000 | random }}"
-        # Using /dev/sdg to avoid clashing with your existing /dev/sdf
-        device_name: "/dev/sdg"
+        # This specific 'tags' block forces Ansible to see this as a NEW disk
+        tags:
+          Name: "Disk-{{ aws_size }}gb-{{ ansible_date_time.epoch }}"
+          UniqueRun: "{{ ansible_date_time.iso8601_micro }}"
         state: present
       register: ec2_vol_result
 
@@ -39,15 +39,10 @@
     - name: Universal Device Discovery
       shell: 
         cmd: |
-          # Force Kernel to see new hardware
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 5
-
-          # Match by Serial (EBS Volume ID)
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
-
-          # Fallback if Serial is masked
           if [ -z "$DEVICE" ]; then
             ROOT_DISK=$(lsblk -no PKNAME $(findmnt -no SOURCE /) | head -n 1)
             DEVICE=$(lsblk -dpno NAME | grep -v "$ROOT_DISK" | sort -r | head -n 1)
@@ -59,7 +54,7 @@
 
     - name: Set Target Path
       set_fact:
-        target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb"
+        target_path: "/data_{{ hostvars['localhost']['survey_size'] }}gb_{{ hostvars['localhost']['vol_id_short'] | last(4) }}"
 
     - name: Format and Mount
       vars:
@@ -87,4 +82,4 @@
 
     - name: Success Message
       debug:
-        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB ({{ hostvars['localhost']['vol_id_short'] }}) mounted on {{ found_device.stdout }} at {{ target_path }}"
+        msg: "Success! {{ hostvars['localhost']['survey_size'] }}GB mounted on {{ found_device.stdout }} at {{ target_path }}"
