@@ -4,7 +4,7 @@
   connection: local
   gather_facts: true
   vars:
-    # --- THESE PULL FROM YOUR SURVEY/TEMPLATE ---
+    # --- DYNAMIC INPUTS ---
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
@@ -16,7 +16,7 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
+        name: "Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
@@ -28,25 +28,25 @@
         device_name: "/dev/sd{{ ['f','g','h','i','j','k','l','m','n','o','p'] | random }}" 
         state: present
 
-    - name: Step 3 - Dynamic Discovery of Connection IP
+    - name: Step 3 - Refresh IP Discovery
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         instance_ids: ["{{ aws_instance }}"]
       register: instance_info
 
-    - name: Set facts for OS discovery
+    - name: Set facts
       set_fact:
-        # Use public_ip_address for sandbox, private_ip_address for production
+        # Pulls current IP directly from AWS API
         target_ip: "{{ instance_info.instances[0].public_ip_address if instance_info.instances[0].public_ip_address else instance_info.instances[0].private_ip_address }}"
         vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-5:] }}"
 
-    - name: Step 4 - Override Git Inventory
+    - name: Step 4 - Dynamic Inventory Override
       add_host:
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "{{ ssh_key_path | default('/runner/artifacts/1246/ssh_key_data') }}"
+        ansible_ssh_private_key_file: "/runner/artifacts/1252/ssh_key_data"
         groups: active_nodes
 
 - name: OS Configuration - Format and Mount
@@ -54,18 +54,24 @@
   become: yes
   gather_facts: no
   tasks:
-    - name: Step 5 - Wait for SSH Connectivity
-      wait_for_connection:
-        timeout: 300
+    - name: Step 5 - Wait for SSH Banner (Port 22 Handshake)
+      # This task checks for the actual SSH software version string. 
+      # If the service is 'Refusing', it will keep trying until the timeout.
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        search_regex: OpenSSH
+        delay: 5
+        timeout: 450
+      delegate_to: localhost
 
-    - name: Step 6 - Hardware Discovery (NVMe Compatible)
+    - name: Step 6 - Hardware Discovery (NVMe Support)
       shell: 
         cmd: |
-          # Works for both t2 (SATA) and t3 (NVMe) device names
           lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
-      retries: 15
+      retries: 20
       delay: 5
 
     - name: Step 7 - Universal Mount
@@ -89,6 +95,6 @@
             fstype: ext4
             state: mounted
 
-    - name: Success Summary
+    - name: Final Success Report
       debug:
         msg: "SUCCESS: {{ hostvars['localhost']['aws_size'] }}GB mounted on {{ ansible_host }} at {{ hostvars['localhost']['final_path'] }}"
