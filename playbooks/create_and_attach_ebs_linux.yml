@@ -6,7 +6,7 @@
   vars:
     aws_region: "eu-west-1"
     aws_instance: "{{ target_instance_id }}"
-    # This line captures the 'target_vol_size' directly from your Survey
+    # Links directly to your Survey input
     aws_size: "{{ target_vol_size | int }}"
     aws_zone: "{{ target_zone }}"
 
@@ -16,7 +16,6 @@
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
-        # Uses a random seed and timestamp for a unique name in the console
         name: "Survey-Disk-{{ 100 | random }}-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
@@ -26,7 +25,7 @@
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         id: "{{ raw_vol.volume_id }}"
-        # High letter randomization prevents clashing with your 5GB, 8GB, and 11GB disks
+        # Randomized letters avoid clashing with your 5, 8, 11, and 12GB disks
         device_name: "/dev/sd{{ ['h','i','j','k','l','m','n','o','p','q','r','s'] | random }}" 
         state: present
 
@@ -62,7 +61,6 @@
           for bus in /sys/class/scsi_host/host*/scan; do echo "- - -" > "$bus"; done
           udevadm settle && sleep 10
           SERIAL_ID="{{ hostvars['localhost']['vol_id_short'] }}"
-          # Matches the new disk by searching for the unique AWS Serial ID
           DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "$SERIAL_ID" | awk '{print $1}' | head -n 1)
           echo "$DEVICE"
       register: found_device
@@ -89,10 +87,16 @@
             state: mounted
             opts: defaults
 
-    - name: Final Success Message
+    - name: Final Storage Summary
+      shell: "df -h | grep data_"
+      register: storage_report
+      failed_when: false
+
+    - name: Success Message
       debug:
         msg: 
-          - "SUCCESS: Added your Survey-specified disk!"
-          - "Size requested: {{ hostvars['localhost']['aws_size'] }} GB"
-          - "Volume ID: {{ hostvars['localhost']['vol_id_short'] }}"
+          - "SUCCESS: Disk added via Survey!"
+          - "Size: {{ hostvars['localhost']['aws_size'] }} GB"
           - "Mount Point: {{ hostvars['localhost']['final_path'] }}"
+          - "Current Mounted Data Volumes:"
+          - "{{ storage_report.stdout_lines }}"
