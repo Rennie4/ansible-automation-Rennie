@@ -7,7 +7,7 @@
   gather_facts: true
 
   vars:
-    # --- Survey variables ---
+    # --- Survey vars ---
     aws_instance: "{{ target_instance_id }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
@@ -21,12 +21,12 @@
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
-    # Base device names for API attachment labels: /dev/sdf, /dev/sdg, ...
+    # Candidate device labels for the AWS API (OS will expose nvmeXnY on Nitro)
     attach_device_prefix: "/dev/sd"
-    attach_device_letters: ['f','g','h','i','j','k','l','m','n','o','p','q']
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
-    # ---------- Prechecks ----------
+    # ---------- Credential & input prechecks ----------
     - name: Precheck - AWS env vars injected
       assert:
         that:
@@ -37,29 +37,27 @@
           'Amazon Web Services' credential attached and the Execution Environment
           includes boto3/botocore and amazon.aws collection.
 
-    - name: Precheck - Normalize region
+    - name: Normalize region from env if blank
       set_fact:
         aws_region: "{{ aws_region if aws_region|length>0 else (lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1')) }}"
 
-    - name: Precheck - Caller identity (sts:GetCallerIdentity)
+    - name: STS caller identity (sanity check)
       amazon.aws.aws_caller_info:
         region: "{{ aws_region }}"
       register: whoami
 
-    - name: Validate survey inputs (instance, count)
+    - name: Validate instance and count
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
           - volume_count | int > 0
         fail_msg: "Survey validation failed: instance_id (i-xxxx) and volume_count (>0) required."
 
-    - name: Parse sizes from CSV and validate length
+    - name: Parse sizes from CSV and validate
       set_fact:
         sizes_list: "{{ sizes_csv | trim | split(',') | map('trim') | list }}"
-    - name: Coerce sizes to int and validate all > 0
-      set_fact:
-        sizes_int_list: "{{ sizes_list | map('int') | list }}"
-    - name: Validate sizes list length equals count and min > 0
+        sizes_int_list: "{{ sizes_csv | trim | split(',') | map('trim') | map('int') | list }}"
+    - name: Validate sizes list length equals count and all > 0
       assert:
         that:
           - sizes_int_list | length == volume_count | int
@@ -67,7 +65,7 @@
         fail_msg: >-
           Sizes CSV must contain exactly {{ volume_count }} positive integers (GiB). Received: {{ sizes_list }}
 
-    # ---------- Instance discovery ----------
+    # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
@@ -80,7 +78,7 @@
           - instance_info.instances | length == 1
         fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
 
-    - name: Set instance facts and effective zone
+    - name: Set instance facts
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         aws_zone: >-
@@ -90,192 +88,73 @@
           {{ instance_info.instances[0].public_ip_address
              if instance_info.instances[0].public_ip_address
              else instance_info.instances[0].private_ip_address }}
+        existing_device_names: "{{ instance_info.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
 
-    - name: Assert aws_zone matches instance AZ
+    - name: Assert zone matches
       assert:
         that:
           - aws_zone == instance_zone
-        fail_msg: >-
-          AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
-          EBS must be created in the SAME AZ as the instance.
+        fail_msg: "AZ mismatch: selected {{ aws_zone }} vs instance {{ instance_zone }}."
 
-    - name: Debug - Inputs
+    - name: Compute free device labels (avoid collisions)
+      set_fact:
+        used_letters: >-
+          {{ existing_device_names
+             | map('regex_search', '^/dev/sd([a-z]+)$')
+             | map('last')
+             | select('string')
+             | list }}
+        free_letters: "{{ candidate_letters | difference(used_letters) }}"
+    - name: Validate we have enough free labels
+      assert:
+        that:
+          - free_letters | length >= (sizes_int_list | length)
+        fail_msg: >-
+          Not enough free device labels. Used: {{ used_letters }}; Available: {{ free_letters }}.
+          Reduce count or detach existing volumes.
+
+    - name: Debug - Plan
       debug:
         msg:
           - "Account: {{ whoami.account }}"
           - "Instance: {{ aws_instance }}"
           - "Region: {{ aws_region }}"
           - "AZ (effective): {{ aws_zone }}"
-          - "Volumes to create: {{ volume_count }}"
-          - "Sizes (GiB): {{ sizes_int_list }}"
+          - "Requested sizes (GiB): {{ sizes_int_list }}"
+          - "Existing device names: {{ existing_device_names }}"
+          - "Free letters: {{ free_letters }}"
 
     # ---------- Create volumes (loop per task) ----------
     - name: Create EBS volumes
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
-        volume_size: "{{ item }}"
+        volume_size: "{{ item.size }}"
         volume_type: "{{ volume_type }}"
         iops: "{{ iops }}"
         throughput: "{{ throughput }}"
         encrypted: "{{ encrypted }}"
         kms_key_id: "{{ kms_key_id }}"
         tags:
-          Name: "Reusable-Disk-{{ aws_instance }}-{{ item }}GiB-{{ ansible_date_time.epoch }}"
+          Name: "Reusable-Disk-{{ aws_instance }}-{{ item.size }}GiB-{{ ansible_date_time.epoch }}-{{ item.idx }}"
           Owner: "{{ lookup('env', 'USER') | default('awx') }}"
           ManagedBy: "Ansible"
           InstanceId: "{{ aws_instance }}"
           Region: "{{ aws_region }}"
-          SizeGB: "{{ item }}"
+          Index: "{{ item.idx }}"
+          SizeGB: "{{ item.size }}"
         state: present
-      loop: "{{ sizes_int_list }}"
+      loop: "{{ range(0, sizes_int_list | length) | list | map('int') | list }}"
       loop_control:
         index_var: idx
-        label: "{{ item }} GiB"
+        label: "{{ sizes_int_list[idx] }} GiB"
+      vars:
+        item:
+          idx: "{{ idx }}"
+          size: "{{ sizes_int_list[idx] }}"
       register: create_results
 
-    - name: Ensure all volumes were created
+    - name: Ensure all volumes created
       assert:
         that:
           - create_results.results | length == (sizes_int_list | length)
-          - (create_results.results | map(attribute='volume_id') | list | select('string') | length) == (sizes_int_list | length)
-        fail_msg: "One or more EBS volumes did not return a volume_id."
-
-    # ---------- Attach volumes ----------
-    - name: Attach EBS volumes to instance
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        instance: "{{ aws_instance }}"
-        volume_id: "{{ res.volume_id }}"
-        device_name: "{{ attach_device_prefix }}{{ attach_device_letters[idx] }}"
-        delete_on_termination: "{{ delete_on_termination }}"
-        state: present
-      loop: "{{ range(0, create_results.results | length) | zip(create_results.results) | list }}"
-      vars:
-        idx: "{{ item.0 }}"
-        res: "{{ item.1 }}"
-      loop_control:
-        label: "vol={{ res.volume_id }} to {{ attach_device_prefix }}{{ attach_device_letters[idx] }}"
-      register: attach_results
-
-    # ---------- Wait for attachments ----------
-    - name: Wait until each volume is attached
-      amazon.aws.ec2_vol_info:
-        region: "{{ aws_region }}"
-        filters:
-          volume-id: "{{ res.volume_id }}"
-      loop: "{{ range(0, create_results.results | length) | zip(create_results.results) | list }}"
-      vars:
-        idx: "{{ item.0 }}"
-        res: "{{ item.1 }}"
-      register: wait_results
-      until:
-        - wait_results.volumes is defined
-        - wait_results.volumes | length > 0
-        - wait_results.volumes[0].attachment_set | length > 0
-        - wait_results.volumes[0].attachment_set[0].instance_id == aws_instance
-        - wait_results.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 30
-      delay: 5
-
-    # ---------- Collect created volume metadata ----------
-    - name: Initialize created_volumes list
-      set_fact:
-        created_volumes: []
-
-    - name: Append created volumes metadata
-      set_fact:
-        created_volumes: "{{ created_volumes + [ { 'index': idx, 'size_gb': res.item | int, 'volume_id': res.volume_id } ] }}"
-      loop: "{{ range(0, create_results.results | length) | zip(create_results.results) | list }}"
-      vars:
-        idx: "{{ item.0 }}"
-        res: "{{ item.1 }}"
-
-    - name: Debug - Created volumes
-      debug:
-        var: created_volumes
-
-    # ---------- Dynamic inventory for OS config ----------
-    - name: Add target to dynamic inventory
-      add_host:
-        name: "current_target"
-        ansible_host: "{{ target_ip }}"
-        ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
-        groups: active_nodes
-      vars:
-        created_volumes: "{{ created_volumes }}"
-        fstype: "{{ fstype }}"
-
-# Play 2: OS actions on the instance
-- name: OS Configuration - Format and Mount Multiple Volumes
-  hosts: active_nodes
-  gather_facts: no
-
-  tasks:
-    - name: Wait for SSH
-      wait_for:
-        port: 22
-        host: "{{ ansible_host }}"
-        search_regex: OpenSSH
-        timeout: 300
-      delegate_to: localhost
-
-    - name: Debug - Volumes to configure
-      debug:
-        var: hostvars['localhost']['created_volumes']
-
-    # Find devices by EBS serial for each volume
-    - name: Find device by EBS serial (Nitro/NVMe friendly)
-      become: yes
-      shell: |
-        set -o pipefail
-        VOLNOHYP="{{ item.volume_id | replace('-', '') }}"
-        DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
-        if [ -z "$DEV" ]; then
-          DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
-          [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
-        fi
-        echo -n "$DEV"
-      loop: "{{ hostvars['localhost']['created_volumes'] }}"
-      register: found_devices
-      args:
-        executable: /bin/bash
-      until: found_devices.stdout != ""
-      retries: 20
-      delay: 5
-
-    # Detect filesystem type on each found device
-    - name: Detect filesystem on each device
-      become: yes
-      command: lsblk -no FSTYPE "{{ item.stdout }}"
-      loop: "{{ found_devices.results }}"
-      register: fs_detect
-
-    # Create mount directories
-    - name: Create mount directories
-      become: yes
-      file:
-        path: "/data_{{ item.item.size_gb }}gb_{{ item.item.volume_id[-4:] }}"
-        state: directory
-        mode: '0755'
-      loop: "{{ found_devices.results }}"
-
-    # Create filesystem if none exists
-    - name: Create filesystem if none
-      become: yes
-      filesystem:
-        fstype: "{{ hostvars['localhost']['fstype'] }}"
-        dev: "{{ item.0.stdout }}"
-      loop: "{{ range(0, found_devices.results | length) | zip(found_devices.results, fs_detect.results) | list }}"
-      when: item.1.stdout | trim == ""
-
-    # Mount each device
-    - name: Mount filesystems
-      become: yes
-      mount:
-        path: "/data_{{ item.item.size_gb }}gb_{{ item.item.volume_id[-4:] }}"
-        src: "{{ item.stdout }}"
-        fstype: "{{ hostvars['localhost']['fstype'] }}"
-        state: mounted
-      loop: "{{ found_devices.results }}"
