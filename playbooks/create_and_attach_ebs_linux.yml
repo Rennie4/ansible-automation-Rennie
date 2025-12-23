@@ -1,96 +1,49 @@
 ---
-- name: AWS Infrastructure - Create and Attach
-  hosts: localhost
-  connection: local
-  gather_facts: true
-  
-  module_defaults:
-    amazon.aws.ec2_vol:
-      session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
-    amazon.aws.ec2_instance_info:
-      session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
-
-  vars:
-    aws_instance: "{{ target_instance_id }}"
-    aws_size: "{{ target_vol_size | int }}"
-    aws_region: "{{ target_region | default('eu-west-1') }}"
-    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
-
-  tasks:
-    - name: Step 1 - Get Instance Zone and IP
-      amazon.aws.ec2_instance_info:
-        region: "{{ aws_region }}"
-        instance_ids: ["{{ aws_instance }}"]
-      register: instance_info
-
-    - name: Step 2 - Create and Attach
-      amazon.aws.ec2_vol:
-        region: "{{ aws_region }}"
-        zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        volume_size: "{{ aws_size }}"
-        instance: "{{ aws_instance }}"
-        device_name: "/dev/sd{{ (candidate_letters | difference(instance_info.instances[0].block_device_mappings | map(attribute='device_name') | map('regex_replace', '^/dev/sd', '') | list))[0] }}"
-        state: present
-      register: new_vol
-
-    - name: Step 3 - Set Cross-Play Facts
-      set_fact:
-        vol_serial: "{{ new_vol.volume_id | replace('vol-', '') | replace('-', '') }}"
-        target_ip: "{{ instance_info.instances[0].public_ip_address or instance_info.instances[0].private_ip_address }}"
-
-    - name: Step 4 - Update Dynamic Inventory
-      add_host:
-        name: "current_target"
-        ansible_host: "{{ target_ip }}"
-        ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1466/ssh_key_data"
-        groups: active_nodes
-
-- name: OS Configuration - Format and Mount
-  hosts: active_nodes
+- name: Universal Linux Patching with Infinite Storage Persistence
+  hosts: all
   become: yes
-  gather_facts: no
-  vars:
-    # Moved here so it's available to ALL tasks in this play
-    mount_path: "/mnt/storage_{{ target_vol_size }}gb_{{ hostvars['localhost']['vol_serial'][-4:] }}"
+  gather_facts: yes
 
   tasks:
-    - name: Step 5 - Find OS Device Name
-      shell: |
-        lsblk -rdpno NAME,SERIAL | grep -i "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}'
-      register: found_device
-      until: found_device.stdout != ""
-      retries: 10
-      delay: 5
+    - name: Step 0.1 - Discover all attached EBS volumes
+      find:
+        paths: /dev/disk/by-id/
+        # Matches any Amazon EBS volume regardless of exact ID
+        patterns: "*Amazon_Elastic_Block_Store_vol*"
+      register: found_disks
+      when: ansible_os_family == "Debian"
 
-    - name: Step 6 - Prepare Mount Point
-      file:
-        path: "{{ mount_path }}"
-        state: directory
-        mode: '0755'
-
-    - name: Step 7 - Format the disk
-      filesystem:
+    - name: Step 0.2 - Ensure Mount Points and Safe fstab entries
+      ansible.posix.mount:
+        # Dynamically names folders based on the last 4 chars of the Volume ID
+        path: "/mnt/storage_ebs_{{ item.path | last_chars(4) }}"
+        src: "{{ item.path }}"
         fstype: ext4
-        dev: "{{ found_device.stdout }}"
-        force: no
-
-    - name: Step 8 - Mount with persistence
-      mount:
-        path: "{{ mount_path }}"
-        src: "{{ found_device.stdout }}"
-        fstype: ext4
+        # 'nofail' prevents the server from hanging if the disk isn't ready at boot
         opts: defaults,nofail
-        state: mounted
+        state: present 
+      loop: "{{ found_disks.files | default([]) }}"
+      when: ansible_os_family == "Debian" and found_disks.matched > 0
 
-    - name: Step 9 - Verify Disk Space
-      command: df -h "{{ mount_path }}"
-      register: disk_usage
+    - name: Step 1 - Debian/Ubuntu - Update Cache and Full Upgrade
+      apt:
+        update_cache: yes
+        upgrade: full
+      when: ansible_os_family == "Debian"
+      register: apt_result
 
-    - name: Final Success Report
-      debug:
-        msg: 
-          - "SUCCESS: {{ target_vol_size }}GB volume attached and mounted."
-          - "Mount Point: {{ mount_path }}"
-          - "Device Path: {{ found_device.stdout }}"
-          - "Status: {{ disk_usage.stdout_lines[1] }}"
+    - name: Step 4 - Force Reboot for Storage Verification
+      reboot:
+        msg: "Verifying persistence for all discovered drives."
+        reboot_timeout: 300
+        # Wait for the system to fully settle before re-connecting
+        post_reboot_delay: 30 
+      when: ansible_os_family == "Debian" 
+
+    - name: Step 5 - Verify All Mounts are active after Reboot
+      command: "mountpoint /mnt/storage_ebs_{{ item.path | last_chars(4) }}"
+      loop: "{{ found_disks.files | default([]) }}"
+      register: mount_results
+      changed_when: false
+      failed_when: mount_results.rc != 0
+      when: ansible_os_family == "Debian" and found_disks.matched > 0
