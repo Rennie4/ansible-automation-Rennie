@@ -1,0 +1,58 @@
+---
+- name: Universal Linux Patching with Dynamic Storage Verification
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  # These are the volumes you currently have or want to track
+  vars:
+    monitored_volumes:
+      - { size: '10', id: 'cfec' }
+      # You can add more lines here if you recreate the 11G or 12G disks
+
+  tasks:
+    - name: Step 1 - Debian/Ubuntu - Update Cache and Upgrade
+      apt:
+        update_cache: yes
+        upgrade: dist
+      when: ansible_os_family == "Debian"
+
+    - name: Step 2 - RedHat/Amazon Linux - Update All
+      dnf:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    - name: Step 3 - Check if Reboot is Required (Ubuntu)
+      stat:
+        path: /var/run/reboot-required
+      register: ubuntu_reboot_flag
+      when: ansible_os_family == "Debian"
+
+    - name: Step 4 - Reboot the server if needed
+      reboot:
+        msg: "Rebooting to apply system patches"
+        reboot_timeout: 300
+      when: >
+        (ubuntu_reboot_flag.stat is defined and ubuntu_reboot_flag.stat.exists)
+
+    - name: Step 5 - Verify Storage Mounts are Active
+      command: "mountpoint /mnt/storage_{{ item.size }}gb_{{ item.id }}"
+      loop: "{{ monitored_volumes }}"
+      register: mount_results
+      changed_when: false
+      failed_when: mount_results.rc != 0
+      # This ensures your 10G (...cfec) disk is still mounted after reboot
+
+    - name: Final Health Report
+      debug:
+        msg: 
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "PATCHING STATUS: Complete"
+          - "STORAGE STATUS: Verified and Mounted"
+          - "VOLUME CHECKED: /mnt/storage_{{ item.item.size }}gb_{{ item.item.id }}"
+          - "------------------------------------------------"
+      loop: "{{ mount_results.results }}"
+      loop_control:
+        label: "{{ item.item.id }}"
