@@ -1,61 +1,43 @@
 ---
-- name: Universal Linux Patching with Dynamic Storage Verification
+- name: Universal Linux Patching with Infinite Storage Persistence
   hosts: all
   become: yes
   gather_facts: yes
 
-  vars:
-    monitored_volumes:
-      - { size: '10', id: 'cfec' }
-
   tasks:
+    - name: Step 0.1 - Discover all attached EBS volumes
+      find:
+        paths: /dev/disk/by-id/
+        patterns: "nvme-Amazon_Elastic_Block_Store_vol*"
+      register: found_disks
+      when: ansible_os_family == "Debian"
+
+    - name: Step 0.2 - Ensure Mount Points and fstab entries exist
+      ansible.posix.mount:
+        # This extracts the last 4 characters of the ID for the folder name
+        path: "/mnt/storage_ebs_{{ item.path | last_chars(4) }}"
+        src: "{{ item.path }}"
+        fstype: ext4
+        state: mounted  # This 'mounts' now AND adds to 'fstab' for reboots
+      loop: "{{ found_disks.files }}"
+      when: ansible_os_family == "Debian"
+
     - name: Step 1 - Debian/Ubuntu - Update Cache and Full Upgrade
       apt:
         update_cache: yes
-        upgrade: full  # 'full' is more aggressive than 'dist' for Ubuntu 24.04
-        cache_valid_time: 3600
+        upgrade: full
       when: ansible_os_family == "Debian"
       register: apt_result
 
-    - name: Step 2 - RedHat/Amazon Linux - Update All
-      dnf:
-        name: "*"
-        state: latest
-      when: ansible_os_family == "RedHat"
-      register: dnf_result
-
-    - name: Step 3 - Check if Reboot is Required (Ubuntu)
-      stat:
-        path: /var/run/reboot-required
-      register: ubuntu_reboot_flag
-      when: ansible_os_family == "Debian"
-
     - name: Step 4 - Force Reboot for Storage Verification
       reboot:
-        msg: "Forcing reboot to verify 10GB volume persistence and apply all updates"
+        msg: "Verifying persistence for all discovered drives."
         reboot_timeout: 300
-      # This will now reboot if patches were found OR if we just want to test the mount
-      when: >
-        (ubuntu_reboot_flag.stat is defined and ubuntu_reboot_flag.stat.exists) or
-        (apt_result.changed | default(false)) or
-        (ansible_os_family == "Debian") 
+      when: ansible_os_family == "Debian" 
 
-    - name: Step 5 - Verify Storage Mounts are Active
-      command: "mountpoint /mnt/storage_{{ item.size }}gb_{{ item.id }}"
-      loop: "{{ monitored_volumes }}"
+    - name: Step 5 - Verify All Mounts are active after Reboot
+      command: "mountpoint /mnt/storage_ebs_{{ item.path | last_chars(4) }}"
+      loop: "{{ found_disks.files }}"
       register: mount_results
       changed_when: false
       failed_when: mount_results.rc != 0
-
-    - name: Final Health Report
-      debug:
-        msg: 
-          - "------------------------------------------------"
-          - "SERVER: {{ inventory_hostname }}"
-          - "PATCHING STATUS: Complete"
-          - "STORAGE STATUS: Verified and Mounted"
-          - "VOLUME CHECKED: /mnt/storage_{{ item.item.size }}gb_{{ item.item.id }}"
-          - "------------------------------------------------"
-      loop: "{{ mount_results.results }}"
-      loop_control:
-        label: "{{ item.item.id }}"
