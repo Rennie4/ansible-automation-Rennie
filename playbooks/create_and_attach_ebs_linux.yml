@@ -1,159 +1,69 @@
-
 ---
-- name: AWS Infrastructure - Create and Attach ONE EBS Volume
+- name: AWS Infrastructure - Create and Attach
   hosts: localhost
   connection: local
   gather_facts: true
 
   vars:
     # ===== Survey variables (exact names) =====
-    aws_instance: "{{ target_instance_id }}"                # e.g. i-043c4a9904b2ed301
-    aws_size: "{{ target_vol_size | int }}"                 # e.g. 40
-    aws_region: "{{ target_region | default('eu-west-1') }}"# optional; default eu-west-1
-    target_az: "{{ target_availability_zone | default('') }}" # e.g. eu-west-1b (must match instance AZ)
+    aws_instance: "{{ target_instance_id }}"
+    aws_size: "{{ target_vol_size | int }}"
+    aws_region: "{{ target_region | default('eu-west-1') }}"
+    target_az: "{{ target_availability_zone | default('') }}"
 
-    # Optional knobs (make these Survey questions if you want)
-    volume_type: "{{ target_volume_type | default('gp3') }}"
-    encrypted: "{{ target_encrypted | default(true) | bool }}"
-    kms_key_id: "{{ target_kms_key_id | default(omit) }}"
-    delete_on_termination: "{{ target_delete_on_termination | default(false) | bool }}"
-    iops: "{{ target_iops | default(omit) }}"
-    throughput: "{{ target_throughput | default(omit) }}"
-
-    # Attach label candidates for the AWS API (OS will expose NVMe names on Nitro)
+    # Configuration knobs
+    volume_type: "gp3"
+    encrypted: true
     attach_device_prefix: "/dev/sd"
-    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p']
 
   tasks:
-    # ---------- Prechecks ----------
-    - name: Precheck - AWS credentials injected (AWX Cloud credential or env vars)
-      assert:
-        that:
-          - lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
-          - lookup('env', 'AWS_SECRET_ACCESS_KEY') | length > 0
-        fail_msg: >-
-          AWS credentials not found. Attach an 'Amazon Web Services' credential to the Job Template
-          or export AWS_* env vars in the Execution Environment.
-
-    - name: Normalize region from env if blank
-      set_fact:
-        aws_region: "{{ aws_region if aws_region|length>0 else (lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1')) }}"
-
-    - name: Validate instance id and size (GiB)
-      assert:
-        that:
-          - aws_instance is match('^i-[0-9a-f]+$')
-          - aws_size | int > 0
-        fail_msg: "Validation failed: instance_id (i-xxxx) and size (>0 GiB) are required."
-
-    # ---------- Discover instance & effective AZ ----------
+    # 1. Discover instance & effective AZ
     - name: Get instance details
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         instance_ids: ["{{ aws_instance }}"]
       register: instance_info
 
-    - name: Fail if instance not found
-      assert:
-        that:
-          - instance_info.instances | length == 1
-        fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
-
-    - name: Set instance facts and effective zone (use survey AZ, else instance AZ)
+    - name: Set instance facts
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        aws_zone: >-
-          {{ (target_az | length > 0)
-             | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
+        target_ip: "{{ instance_info.instances[0].public_ip_address if instance_info.instances[0].public_ip_address else instance_info.instances[0].private_ip_address }}"
         existing_device_names: "{{ instance_info.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
 
-    - name: Assert zone matches instance AZ (AWS requires same AZ to attach)
-      assert:
-        that:
-          - aws_zone == instance_zone
-        fail_msg: >-
-          AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
-          EBS volumes must be created in the SAME AZ as the instance.
-
-    # ---------- Pick a safe API device label (avoid collisions like /dev/sda1, /dev/sdp) ----------
-    - name: Normalize device names list (keep only strings)
+    - name: Set effective zone
       set_fact:
-        existing_device_names_clean: "{{ existing_device_names | select('string') | list }}"
+        aws_zone: "{{ target_az if target_az|length > 0 else instance_zone }}"
 
-    - name: Extract used /dev/sd* LETTERS (ignore digits and non-sd devices)
+    # 2. Pick a safe API device label (Prevents collisions)
+    - name: Compute free letters
       set_fact:
-        used_letters: >-
-          {{ existing_device_names_clean
-             | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1')
-             | select('match', '^[a-z]+$')
-             | list }}
-
-    - name: Compute free letters (candidates minus used)
-      set_fact:
+        used_letters: "{{ existing_device_names | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1') | select('match', '^[a-z]+$') | list }}"
         free_letters: "{{ candidate_letters | difference(used_letters) }}"
-
-    - name: Ensure at least one free label is available
-      assert:
-        that:
-          - free_letters | length > 0
-        fail_msg: >-
-          No free device labels available. Used letters: {{ used_letters }}.
-          Existing device names: {{ existing_device_names_clean }}.
 
     - name: Pick first free label
       set_fact:
         attach_label: "{{ attach_device_prefix }}{{ free_letters[0] }}"
 
-    - name: Debug - Plan
-      debug:
-        msg:
-          - "Instance: {{ aws_instance }}"
-          - "Region: {{ aws_region }}"
-          - "AZ (effective): {{ aws_zone }}"
-          - "Requested size (GiB): {{ aws_size }}"
-          - "Attach label (API): {{ attach_label }}"
-          - "Existing device names: {{ existing_device_names_clean }}"
-
-    # ---------- Create the volume (same AZ as instance) ----------
+    # 3. Create and Attach
     - name: Create EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
         volume_size: "{{ aws_size }}"
         volume_type: "{{ volume_type }}"
-        iops: "{{ iops }}"
-        throughput: "{{ throughput }}"
         encrypted: "{{ encrypted }}"
-        kms_key_id: "{{ kms_key_id }}"
         tags:
-          Name: "Reusable-Disk-{{ aws_instance }}-{{ aws_size }}GiB-{{ ansible_date_time.epoch }}"
-          ManagedBy: "Ansible"
-          InstanceId: "{{ aws_instance }}"
-          Region: "{{ aws_region }}"
-          SizeGB: "{{ aws_size }}"
+          Name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
-    - name: Ensure volume was created
-      assert:
-        that:
-          - raw_vol.volume_id is defined
-        fail_msg: "EBS volume creation failed—no volume_id returned. Check IAM/KMS permissions."
-
-    - name: Debug - Created volume
-      debug:
-        msg:
-          - "Volume ID: {{ raw_vol.volume_id }}"
-          - "Console tip: EC2 > Volumes (Region={{ aws_region }}) — filter by ID or Tag 'ManagedBy=Ansible'"
-
-    # ---------- Attach to the instance ----------
-    - name: Attach EBS volume to instance
+    - name: Attach EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
         volume_id: "{{ raw_vol.volume_id }}"
         device_name: "{{ attach_label }}"
-        delete_on_termination: "{{ delete_on_termination }}"
         state: present
 
     - name: Wait until attached
@@ -165,14 +75,69 @@
       until:
         - vol_info.volumes | length > 0
         - vol_info.volumes[0].attachment_set | length > 0
-        - vol_info.volumes[0].attachment_set[0].instance_id == aws_instance
         - vol_info.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 30
+      retries: 20
       delay: 5
 
-    - name: Summary - Creation & Attachment
+    - name: Set OS Variables
+      set_fact:
+        vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
+        final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
+
+    - name: Override Inventory
+      add_host:
+        name: "current_target"
+        ansible_host: "{{ target_ip }}"
+        ansible_user: "ubuntu"
+        ansible_ssh_private_key_file: "/runner/artifacts/1278/ssh_key_data"
+        groups: active_nodes
+
+# ---------- Part 2: OS Configuration (The Missing Piece) ----------
+- name: OS Configuration - Format and Mount
+  hosts: active_nodes
+  gather_facts: no
+  tasks:
+    - name: Step 5 - Wait for SSH Banner
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        search_regex: OpenSSH
+        timeout: 300
+      delegate_to: localhost
+
+    - name: Step 6 - Hardware Discovery (Nitro/T3 Compatible)
+      become: yes
+      shell: 
+        cmd: |
+          # Finding device name by Serial ID because T3 uses NVMe names
+          lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
+      register: found_device
+      until: found_device.stdout != ""
+      retries: 15
+      delay: 5
+
+    - name: Step 7 - Format and Mount
+      become: yes
+      block:
+        - name: Create mount point
+          file:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            state: directory
+            mode: '0755'
+
+        - name: Create filesystem
+          filesystem:
+            fstype: ext4
+            dev: "{{ found_device.stdout }}"
+            force: no
+
+        - name: Mount
+          mount:
+            path: "{{ hostvars['localhost']['final_path'] }}"
+            src: "{{ found_device.stdout }}"
+            fstype: ext4
+            state: mounted
+
+    - name: Summary Report
       debug:
-        msg:
-          - "SUCCESS: Volume {{ raw_vol.volume_id }} ({{ aws_size }} GiB) created in {{ aws_zone }} and attached to {{ aws_instance }}."
-          - "Attachment label (API): {{ attach_label }}"
-          - "Note: On Nitro/Linux the OS device will appear as /dev/nvmeXnY (not {{ attach_label }})."
+        msg: "SUCCESS! {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
