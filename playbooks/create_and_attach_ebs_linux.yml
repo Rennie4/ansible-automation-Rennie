@@ -3,6 +3,16 @@
   hosts: localhost
   connection: local
   gather_facts: true
+  
+  # This block silences the deprecation warning by correctly mapping the session token
+  module_defaults:
+    amazon.aws.ec2_vol:
+      session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
+    amazon.aws.ec2_instance_info:
+      session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
+    amazon.aws.ec2_vol_info:
+      session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
+
   vars:
     # --- Survey Variables ---
     aws_instance: "{{ target_instance_id }}"
@@ -10,11 +20,10 @@
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
     
-    # --- Universal Config ---
     volume_type: "gp3"
     encrypted: true
     attach_device_prefix: "/dev/sd"
-    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p']
 
   tasks:
     - name: Step 1 - Get instance details
@@ -33,17 +42,14 @@
       set_fact:
         aws_zone: "{{ target_az if target_az|length > 0 else instance_zone }}"
 
-    - name: Step 4a - Identify used device letters
+    - name: Step 4 - Resolve Device Letter
       set_fact:
         used_letters: "{{ existing_device_names | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1') | select('match', '^[a-z]+$') | list }}"
-
-    - name: Step 4b - Compute available letters
+    
+    - name: Step 4b - Finalize Label
       set_fact:
         free_letters: "{{ candidate_letters | difference(used_letters) }}"
-
-    - name: Step 4c - Pick the first available label
-      set_fact:
-        attach_label: "{{ attach_device_prefix }}{{ free_letters[0] }}"
+        attach_label: "{{ attach_device_prefix }}{{ (candidate_letters | difference(existing_device_names | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1') | list))[0] }}"
 
     - name: Step 5 - Create EBS volume
       amazon.aws.ec2_vol:
@@ -53,7 +59,7 @@
         volume_type: "{{ volume_type }}"
         encrypted: "{{ encrypted }}"
         tags:
-          Name: "Disk-{{ aws_instance }}-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
+          Name: "Disk-{{ aws_instance }}-{{ aws_size }}GB"
         state: present
       register: raw_vol
 
@@ -61,11 +67,11 @@
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
-        volume_id: "{{ raw_vol.volume_id }}"
+        id: "{{ raw_vol.volume_id }}"
         device_name: "{{ attach_label }}"
         state: present
 
-    - name: Step 7 - Wait for Attachment Stability
+    - name: Step 7 - Wait for Attachment
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
@@ -75,12 +81,11 @@
         - vol_info.volumes | length > 0
         - vol_info.volumes[0].attachment_set | length > 0
         - vol_info.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 30
+      retries: 20
       delay: 5
 
     - name: Step 8 - Set OS variables
       set_fact:
-        # Serial on Nitro removes the 'vol-' prefix and the dash
         vol_serial: "{{ raw_vol.volume_id | replace('vol-', '') | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
@@ -89,7 +94,7 @@
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1447/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/1450/ssh_key_data"
         groups: active_nodes
 
 - name: OS Configuration - Format and Mount
@@ -104,13 +109,9 @@
         timeout: 300
       delegate_to: localhost
 
-    - name: Step 11 - Universal Device Discovery (SATA & NVMe)
+    - name: Step 11 - Universal Device Discovery
       become: yes
       shell: |
-        # This logic works for ALL instances:
-        # 1. On Nitro (T3/M5), lsblk shows the Volume ID as the Serial.
-        # 2. On Older (T2/M4), the Serial is often the Volume ID but without the 'vol-' prefix.
-        # This command finds the path regardless of the name (/dev/xvdf or /dev/nvme1n1)
         lsblk -rdpno NAME,SERIAL | grep -i "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
@@ -130,7 +131,6 @@
           filesystem:
             fstype: ext4
             dev: "{{ found_device.stdout }}"
-            # 'force: no' ensures we don't wipe data if you run this twice
             force: no
 
         - name: Mount volume
@@ -139,7 +139,3 @@
             src: "{{ found_device.stdout }}"
             fstype: ext4
             state: mounted
-
-    - name: Final Success Report
-      debug:
-        msg: "SUCCESS! {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }} on device {{ found_device.stdout }}"
