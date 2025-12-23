@@ -3,50 +3,49 @@
   hosts: localhost
   connection: local
   gather_facts: true
-
   vars:
-    # ===== Survey variables (exact names) =====
+    # --- Survey Variables ---
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
-
-    # Configuration knobs
+    
+    # --- Universal Config ---
     volume_type: "gp3"
     encrypted: true
     attach_device_prefix: "/dev/sd"
-    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p']
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
-    # 1. Discover instance & effective AZ
-    - name: Get instance details
+    - name: Step 1 - Get instance details
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         instance_ids: ["{{ aws_instance }}"]
       register: instance_info
 
-    - name: Set instance facts
+    - name: Step 2 - Set initial facts
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         target_ip: "{{ instance_info.instances[0].public_ip_address if instance_info.instances[0].public_ip_address else instance_info.instances[0].private_ip_address }}"
         existing_device_names: "{{ instance_info.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
 
-    - name: Set effective zone
+    - name: Step 3 - Set effective zone
       set_fact:
         aws_zone: "{{ target_az if target_az|length > 0 else instance_zone }}"
 
-    # 2. Pick a safe API device label (Prevents collisions)
-    - name: Compute free letters
+    - name: Step 4a - Identify used device letters
       set_fact:
         used_letters: "{{ existing_device_names | map('regex_replace', '^/dev/sd([a-z]+)[0-9]*$', '\\1') | select('match', '^[a-z]+$') | list }}"
+
+    - name: Step 4b - Compute available letters
+      set_fact:
         free_letters: "{{ candidate_letters | difference(used_letters) }}"
 
-    - name: Pick first free label
+    - name: Step 4c - Pick the first available label
       set_fact:
         attach_label: "{{ attach_device_prefix }}{{ free_letters[0] }}"
 
-    # 3. Create and Attach
-    - name: Create EBS volume
+    - name: Step 5 - Create EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ aws_zone }}"
@@ -54,11 +53,11 @@
         volume_type: "{{ volume_type }}"
         encrypted: "{{ encrypted }}"
         tags:
-          Name: "Survey-Disk-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
+          Name: "Disk-{{ aws_instance }}-{{ aws_size }}GB-{{ ansible_date_time.epoch }}"
         state: present
       register: raw_vol
 
-    - name: Attach EBS volume
+    - name: Step 6 - Attach to Instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         instance: "{{ aws_instance }}"
@@ -66,7 +65,7 @@
         device_name: "{{ attach_label }}"
         state: present
 
-    - name: Wait until attached
+    - name: Step 7 - Wait for Attachment Stability
       amazon.aws.ec2_vol_info:
         region: "{{ aws_region }}"
         filters:
@@ -76,28 +75,28 @@
         - vol_info.volumes | length > 0
         - vol_info.volumes[0].attachment_set | length > 0
         - vol_info.volumes[0].attachment_set[0].status in ['attaching', 'attached']
-      retries: 20
+      retries: 30
       delay: 5
 
-    - name: Set OS Variables
+    - name: Step 8 - Set OS variables
       set_fact:
-        vol_serial: "{{ raw_vol.volume_id | replace('-', '') }}"
+        # Serial on Nitro removes the 'vol-' prefix and the dash
+        vol_serial: "{{ raw_vol.volume_id | replace('vol-', '') | replace('-', '') }}"
         final_path: "/data_{{ aws_size }}gb_{{ raw_vol.volume_id[-4:] }}"
 
-    - name: Override Inventory
+    - name: Step 9 - Update dynamic inventory
       add_host:
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1278/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/1447/ssh_key_data"
         groups: active_nodes
 
-# ---------- Part 2: OS Configuration (The Missing Piece) ----------
 - name: OS Configuration - Format and Mount
   hosts: active_nodes
   gather_facts: no
   tasks:
-    - name: Step 5 - Wait for SSH Banner
+    - name: Step 10 - Wait for SSH Connectivity
       wait_for:
         port: 22
         host: "{{ ansible_host }}"
@@ -105,18 +104,20 @@
         timeout: 300
       delegate_to: localhost
 
-    - name: Step 6 - Hardware Discovery (Nitro/T3 Compatible)
+    - name: Step 11 - Universal Device Discovery (SATA & NVMe)
       become: yes
-      shell: 
-        cmd: |
-          # Finding device name by Serial ID because T3 uses NVMe names
-          lsblk -rdpno NAME,SERIAL | grep "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
+      shell: |
+        # This logic works for ALL instances:
+        # 1. On Nitro (T3/M5), lsblk shows the Volume ID as the Serial.
+        # 2. On Older (T2/M4), the Serial is often the Volume ID but without the 'vol-' prefix.
+        # This command finds the path regardless of the name (/dev/xvdf or /dev/nvme1n1)
+        lsblk -rdpno NAME,SERIAL | grep -i "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}' | head -n 1
       register: found_device
       until: found_device.stdout != ""
-      retries: 15
+      retries: 20
       delay: 5
 
-    - name: Step 7 - Format and Mount
+    - name: Step 12 - Universal Format and Mount
       become: yes
       block:
         - name: Create mount point
@@ -129,15 +130,16 @@
           filesystem:
             fstype: ext4
             dev: "{{ found_device.stdout }}"
+            # 'force: no' ensures we don't wipe data if you run this twice
             force: no
 
-        - name: Mount
+        - name: Mount volume
           mount:
             path: "{{ hostvars['localhost']['final_path'] }}"
             src: "{{ found_device.stdout }}"
             fstype: ext4
             state: mounted
 
-    - name: Summary Report
+    - name: Final Success Report
       debug:
-        msg: "SUCCESS! {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }}"
+        msg: "SUCCESS! {{ hostvars['localhost']['aws_size'] }}GB mounted at {{ hostvars['localhost']['final_path'] }} on device {{ found_device.stdout }}"
