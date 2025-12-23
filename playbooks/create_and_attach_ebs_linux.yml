@@ -11,67 +11,81 @@
       session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
 
   vars:
+    # --- Survey Inputs ---
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
-    volume_type: "gp3"
-    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p']
+    candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
-    - name: Step 1-4 - Logic for next available drive
+    - name: Step 1 - Get Instance Zone and IP
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         instance_ids: ["{{ aws_instance }}"]
       register: instance_info
 
-    - name: Step 5-6 - Create and Attach
+    - name: Step 2 - Create and Attach (Auto-detecting next letter)
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         volume_size: "{{ aws_size }}"
         instance: "{{ aws_instance }}"
+        # Logic picks the next letter automatically
         device_name: "/dev/sd{{ (candidate_letters | difference(instance_info.instances[0].block_device_mappings | map(attribute='device_name') | map('regex_replace', '^/dev/sd', '') | list))[0] }}"
         state: present
       register: new_vol
 
-    - name: Step 9 - Set Target Facts
+    - name: Step 3 - Set Cross-Play Facts
       set_fact:
         vol_serial: "{{ new_vol.volume_id | replace('vol-', '') | replace('-', '') }}"
         target_ip: "{{ instance_info.instances[0].public_ip_address or instance_info.instances[0].private_ip_address }}"
 
-    - name: Update inventory
+    - name: Step 4 - Update Dynamic Inventory
       add_host:
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1453/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/1463/ssh_key_data"
         groups: active_nodes
 
 - name: OS Configuration - Format and Mount
   hosts: active_nodes
   become: yes
+  gather_facts: no
   tasks:
-    - name: Step 11 - Discover exact new device
+    - name: Step 5 - Find OS Device Name (Universal)
       shell: |
         lsblk -rdpno NAME,SERIAL | grep -i "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}'
       register: found_device
+      until: found_device.stdout != ""
+      retries: 10
+      delay: 5
 
-    - name: Step 12 - Format and Mount
+    - name: Step 6 - Create and Mount
+      vars:
+        # Fixed: Using the survey variable directly to avoid the 'undefined' error
+        mount_path: "/mnt/storage_{{ target_vol_size }}gb_{{ hostvars['localhost']['vol_serial'][-4:] }}"
       block:
-        - name: Create unique mount point
+        - name: Create mount point directory
           file:
-            path: "/mnt/storage_{{ hostvars['localhost']['aws_size'] }}gb"
+            path: "{{ mount_path }}"
             state: directory
+            mode: '0755'
 
-        - name: Format
+        - name: Format the disk (ext4)
           filesystem:
             fstype: ext4
             dev: "{{ found_device.stdout }}"
+            force: no
 
-        - name: Mount with nofail (Safe for reboots)
+        - name: Mount with persistence
           mount:
-            path: "/mnt/storage_{{ hostvars['localhost']['aws_size'] }}gb"
+            path: "{{ mount_path }}"
             src: "{{ found_device.stdout }}"
             fstype: ext4
             opts: defaults,nofail
             state: mounted
+
+    - name: Final Success Report
+      debug:
+        msg: "SUCCESS: {{ target_vol_size }}GB mounted at {{ mount_path }}"
