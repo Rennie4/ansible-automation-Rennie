@@ -4,25 +4,25 @@
   become: yes
   gather_facts: yes
 
-  # These are the volumes you currently have or want to track
   vars:
     monitored_volumes:
       - { size: '10', id: 'cfec' }
 
   tasks:
-    - name: Step 1 - Debian/Ubuntu - Update Cache and Upgrade
+    - name: Step 1 - Debian/Ubuntu - Update Cache and Full Upgrade
       apt:
         update_cache: yes
-        upgrade: dist
+        upgrade: full  # 'full' is more aggressive than 'dist' for Ubuntu 24.04
+        cache_valid_time: 3600
       when: ansible_os_family == "Debian"
-      register: apt_result  # Captures if packages were actually updated
+      register: apt_result
 
     - name: Step 2 - RedHat/Amazon Linux - Update All
       dnf:
         name: "*"
         state: latest
       when: ansible_os_family == "RedHat"
-      register: dnf_result # Captures if packages were actually updated
+      register: dnf_result
 
     - name: Step 3 - Check if Reboot is Required (Ubuntu)
       stat:
@@ -30,15 +30,15 @@
       register: ubuntu_reboot_flag
       when: ansible_os_family == "Debian"
 
-    - name: Step 4 - Reboot the server if needed
+    - name: Step 4 - Force Reboot for Storage Verification
       reboot:
-        msg: "Rebooting to apply system patches and verify storage"
+        msg: "Forcing reboot to verify 10GB volume persistence and apply all updates"
         reboot_timeout: 300
-      # Reboots if the system flags it OR if any packages were changed in Step 1 or 2
+      # This will now reboot if patches were found OR if we just want to test the mount
       when: >
         (ubuntu_reboot_flag.stat is defined and ubuntu_reboot_flag.stat.exists) or
         (apt_result.changed | default(false)) or
-        (dnf_result.changed | default(false))
+        (ansible_os_family == "Debian") 
 
     - name: Step 5 - Verify Storage Mounts are Active
       command: "mountpoint /mnt/storage_{{ item.size }}gb_{{ item.id }}"
@@ -46,7 +46,6 @@
       register: mount_results
       changed_when: false
       failed_when: mount_results.rc != 0
-      # This ensures your 10G (...cfec) disk is still mounted after the reboot
 
     - name: Final Health Report
       debug:
