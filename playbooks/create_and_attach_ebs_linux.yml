@@ -1,16 +1,22 @@
 
 ---
-- name: AWS Infrastructure - Create and Attach ONE Volume (hardened)
+# File: create_and_attach_ebs_single.yml
+# Purpose: Create and attach ONE EBS volume to a Linux EC2 instance (survey-driven), then optionally format & mount.
+
+# Play 1: AWS actions (create + attach)
+- name: AWS Infrastructure - Create and Attach ONE EBS Volume
   hosts: localhost
   connection: local
   gather_facts: true
 
   vars:
+    # ===== Survey / extra vars (AWX prompts) =====
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
     target_az: "{{ target_availability_zone | default('') }}"
 
+    # Optional tuning
     volume_type: "{{ target_volume_type | default('gp3') }}"
     encrypted: "{{ target_encrypted | default(true) | bool }}"
     kms_key_id: "{{ target_kms_key_id | default(omit) }}"
@@ -18,36 +24,37 @@
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
+    # Optional OS step toggle (format & mount). Keep false for infra-only.
+    do_mount: "{{ target_do_mount | default(false) | bool }}"
+    fstype: "{{ target_fstype | default('ext4') }}"
+
+    # Candidate device labels for AWS API (OS will expose nvme devices on Nitro)
     attach_device_prefix: "/dev/sd"
     candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
-    - name: Precheck - AWS env vars injected
+    # ---------- Prechecks ----------
+    - name: Precheck - AWS credentials injected (AWX Amazon Web Services credential or env vars)
       assert:
         that:
           - lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
           - lookup('env', 'AWS_SECRET_ACCESS_KEY') | length > 0
         fail_msg: >-
-          AWS credentials not found in environment. Ensure the Job Template has an
-          'Amazon Web Services' credential attached and the Execution Environment
-          includes boto3/botocore and amazon.aws collection.
+          AWS credentials not found. Attach an 'Amazon Web Services' credential to the Job Template
+          or export AWS_* env vars in the Execution Environment.
 
     - name: Normalize region from env if blank
       set_fact:
         aws_region: "{{ aws_region if aws_region|length>0 else (lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1')) }}"
 
-    - name: STS caller identity (sanity check)
-      amazon.aws.aws_caller_info:
-        region: "{{ aws_region }}"
-      register: whoami
-
-    - name: Validate instance id and size
+    - name: Validate instance id and size (GiB)
       assert:
         that:
           - aws_instance is match('^i-[0-9a-f]+$')
           - aws_size | int > 0
-        fail_msg: "Survey validation failed: instance_id (i-xxxx) and size (>0 GiB) are required."
+        fail_msg: "Validation failed: instance_id (i-xxxx) and size (>0 GiB) are required."
 
+    # ---------- Discover instance & effective AZ ----------
     - name: Get instance details
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
@@ -60,7 +67,7 @@
           - instance_info.instances | length == 1
         fail_msg: "Instance {{ aws_instance }} not found in region {{ aws_region }}."
 
-    - name: Set instance facts and effective zone
+    - name: Set instance facts and effective zone (use survey AZ, else instance AZ)
       set_fact:
         instance_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         aws_zone: >-
@@ -72,7 +79,7 @@
              if instance_info.instances[0].public_ip_address
              else instance_info.instances[0].private_ip_address }}
 
-    - name: Assert zone matches instance AZ
+    - name: Assert zone matches instance AZ (AWS requires same AZ to attach)
       assert:
         that:
           - aws_zone == instance_zone
@@ -80,11 +87,7 @@
           AZ mismatch: selected AZ ({{ aws_zone }}) != instance AZ ({{ instance_zone }}).
           EBS volumes must be created in the SAME AZ as the instance.
 
-    # ---- PATCHED DEVICE LABEL SELECTION ----
-    - name: Debug - existing device names from instance
-      debug:
-        var: existing_device_names
-
+    # ---------- Pick a safe API device label (avoid collisions like /dev/sda1, /dev/sdp) ----------
     - name: Normalize device names list (keep only strings)
       set_fact:
         existing_device_names_clean: "{{ existing_device_names | select('string') | list }}"
@@ -108,7 +111,6 @@
         fail_msg: >-
           No free device labels available. Used letters: {{ used_letters }}.
           Existing device names: {{ existing_device_names_clean }}.
-          Detach an existing data volume or choose a different instance.
 
     - name: Pick first free label
       set_fact:
@@ -117,14 +119,13 @@
     - name: Debug - Plan
       debug:
         msg:
-          - "Account: {{ whoami.account }}"
           - "Instance: {{ aws_instance }}"
           - "Region: {{ aws_region }}"
           - "AZ (effective): {{ aws_zone }}"
           - "Requested size (GiB): {{ aws_size }}"
-          - "Attach label: {{ attach_label }}"
-          - "Existing device names: {{ existing_device_names_clean }}"
+          - "Attach label (API): {{ attach_label }}"
 
+    # ---------- Create the volume (same AZ as instance) ----------
     - name: Create EBS volume
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
@@ -137,7 +138,6 @@
         kms_key_id: "{{ kms_key_id }}"
         tags:
           Name: "Reusable-Disk-{{ aws_instance }}-{{ aws_size }}GiB-{{ ansible_date_time.epoch }}"
-          Owner: "{{ lookup('env', 'USER') | default('awx') }}"
           ManagedBy: "Ansible"
           InstanceId: "{{ aws_instance }}"
           Region: "{{ aws_region }}"
@@ -155,8 +155,9 @@
       debug:
         msg:
           - "Volume ID: {{ raw_vol.volume_id }}"
-          - "Find it in console (Region={{ aws_region }}) by ID or Tag Name={{ 'Reusable-Disk-' ~ aws_instance ~ '-' ~ aws_size ~ 'GiB-' ~ ansible_date_time.epoch }}"
+          - "Console tip: EC2 > Volumes (Region={{ aws_region }}) — filter by ID or Tag 'ManagedBy=Ansible'"
 
+    # ---------- Attach to the instance ----------
     - name: Attach EBS volume to instance
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
@@ -186,4 +187,82 @@
         msg:
           - "SUCCESS: Volume {{ raw_vol.volume_id }} ({{ aws_size }} GiB) created in {{ aws_zone }} and attached to {{ aws_instance }}."
           - "Attachment label (API): {{ attach_label }}"
-          - "Console tip: EC2 > Volumes (Region: {{ aws_region }}), filter by ID {{ raw_vol.volume_id }} or Tag 'ManagedBy=Ansible'."
+          - "Note: On Nitro/Linux the OS device will likely be /dev/nvmeXnY (not {{ attach_label }})."
+
+    # ---------- Optionally enable OS mount step ----------
+    - name: Add target to dynamic inventory (for OS mount step)
+      add_host:
+        name: "current_target"
+        ansible_host: "{{ target_ip }}"
+        ansible_user: "ubuntu"
+        ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
+        groups: active_nodes
+      when: do_mount
+      vars:
+        raw_vol: "{{ raw_vol }}"
+        aws_size: "{{ aws_size }}"
+        fstype: "{{ fstype }}"
+
+# Play 2: OS actions (optional format & mount on Linux)
+- name: OS Configuration - Format and Mount (NVMe/Nitro-safe)
+  hosts: active_nodes
+  gather_facts: no
+  tasks:
+    - name: Wait for SSH
+      wait_for:
+        port: 22
+        host: "{{ ansible_host }}"
+        search_regex: OpenSSH
+        timeout: 300
+      delegate_to: localhost
+
+    - name: Find device by EBS serial (works for NVMe/Nitro)
+      become: yes
+      shell: |
+        set -euo pipefail
+        VOLNOHYP="{{ hostvars['localhost']['raw_vol']['volume_id'] | replace('-', '') }}"
+        for i in $(seq 1 20); do
+          DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
+          if [ -z "$DEV" ]; then
+            DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
+            [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
+          fi
+          if [ -n "$DEV" ]; then echo -n "$DEV"; exit 0; fi
+          sleep 5
+        done
+        exit 1
+      register: found_device
+      args:
+        executable: /bin/bash
+
+    - name: Detect existing filesystem
+      become: yes
+      command: lsblk -no FSTYPE "{{ found_device.stdout }}"
+      register: fs_type
+
+    - name: Create mount directory
+      become: yes
+      vars:
+        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
+      file:
+        path: "{{ mpath }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create filesystem if none
+      become: yes
+      filesystem:
+        fstype: "{{ hostvars['localhost']['fstype'] }}"
+        dev: "{{ found_device.stdout }}"
+      when: fs_type.stdout | trim == ""
+
+    - name: Mount filesystem
+      become: yes
+      vars:
+        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
+      mount:
+        path: "{{ mpath }}"
+        src: "{{ found_device.stdout }}"
+        fstype: "{{ hostvars['localhost']['fstype'] }}"
+        state: mounted
+``
