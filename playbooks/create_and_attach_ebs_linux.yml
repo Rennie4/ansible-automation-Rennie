@@ -11,7 +11,6 @@
       session_token: "{{ lookup('env', 'AWS_SESSION_TOKEN') | default(omit) }}"
 
   vars:
-    # --- Survey Inputs ---
     aws_instance: "{{ target_instance_id }}"
     aws_size: "{{ target_vol_size | int }}"
     aws_region: "{{ target_region | default('eu-west-1') }}"
@@ -24,13 +23,12 @@
         instance_ids: ["{{ aws_instance }}"]
       register: instance_info
 
-    - name: Step 2 - Create and Attach (Auto-detecting next letter)
+    - name: Step 2 - Create and Attach
       amazon.aws.ec2_vol:
         region: "{{ aws_region }}"
         zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         volume_size: "{{ aws_size }}"
         instance: "{{ aws_instance }}"
-        # Logic picks the next letter automatically
         device_name: "/dev/sd{{ (candidate_letters | difference(instance_info.instances[0].block_device_mappings | map(attribute='device_name') | map('regex_replace', '^/dev/sd', '') | list))[0] }}"
         state: present
       register: new_vol
@@ -45,15 +43,19 @@
         name: "current_target"
         ansible_host: "{{ target_ip }}"
         ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "/runner/artifacts/1463/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/1466/ssh_key_data"
         groups: active_nodes
 
 - name: OS Configuration - Format and Mount
   hosts: active_nodes
   become: yes
   gather_facts: no
+  vars:
+    # Moved here so it's available to ALL tasks in this play
+    mount_path: "/mnt/storage_{{ target_vol_size }}gb_{{ hostvars['localhost']['vol_serial'][-4:] }}"
+
   tasks:
-    - name: Step 5 - Find OS Device Name (Universal)
+    - name: Step 5 - Find OS Device Name
       shell: |
         lsblk -rdpno NAME,SERIAL | grep -i "{{ hostvars['localhost']['vol_serial'] }}" | awk '{print $1}'
       register: found_device
@@ -61,31 +63,34 @@
       retries: 10
       delay: 5
 
-    - name: Step 6 - Create and Mount
-      vars:
-        # Fixed: Using the survey variable directly to avoid the 'undefined' error
-        mount_path: "/mnt/storage_{{ target_vol_size }}gb_{{ hostvars['localhost']['vol_serial'][-4:] }}"
-      block:
-        - name: Create mount point directory
-          file:
-            path: "{{ mount_path }}"
-            state: directory
-            mode: '0755'
+    - name: Step 6 - Prepare Mount Point
+      file:
+        path: "{{ mount_path }}"
+        state: directory
+        mode: '0755'
 
-        - name: Format the disk (ext4)
-          filesystem:
-            fstype: ext4
-            dev: "{{ found_device.stdout }}"
-            force: no
+    - name: Step 7 - Format the disk
+      filesystem:
+        fstype: ext4
+        dev: "{{ found_device.stdout }}"
+        force: no
 
-        - name: Mount with persistence
-          mount:
-            path: "{{ mount_path }}"
-            src: "{{ found_device.stdout }}"
-            fstype: ext4
-            opts: defaults,nofail
-            state: mounted
+    - name: Step 8 - Mount with persistence
+      mount:
+        path: "{{ mount_path }}"
+        src: "{{ found_device.stdout }}"
+        fstype: ext4
+        opts: defaults,nofail
+        state: mounted
+
+    - name: Step 9 - Verify Disk Space
+      command: df -h "{{ mount_path }}"
+      register: disk_usage
 
     - name: Final Success Report
       debug:
-        msg: "SUCCESS: {{ target_vol_size }}GB mounted at {{ mount_path }}"
+        msg: 
+          - "SUCCESS: {{ target_vol_size }}GB volume attached and mounted."
+          - "Mount Point: {{ mount_path }}"
+          - "Device Path: {{ found_device.stdout }}"
+          - "Status: {{ disk_usage.stdout_lines[1] }}"
