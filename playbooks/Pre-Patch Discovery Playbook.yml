@@ -1,6 +1,6 @@
 ---
 - name: Pre-Patch Discovery Report
-  hosts: active_nodes
+  hosts: all
   become: yes
   gather_facts: yes
 
