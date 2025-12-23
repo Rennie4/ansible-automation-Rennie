@@ -1,0 +1,29 @@
+---
+- name: Pre-Patch Discovery Report
+  hosts: active_nodes
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Ubuntu/Debian - Update Cache and Check
+      apt:
+        update_cache: yes
+      check_mode: yes
+      register: ubuntu_check
+      when: ansible_os_family == "Debian"
+
+    - name: RedHat/Amazon Linux - Check Updates
+      dnf:
+        list: updates
+      register: redhat_check
+      when: ansible_os_family == "RedHat"
+
+    - name: Final Discovery Report
+      debug:
+        msg:
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "PATCHES AVAILABLE: {{ 'YES' if (ubuntu_check.changed or (redhat_check.results | default([]) | length > 0)) else 'NO' }}"
+          - "REBOOT PENDING: {{ 'YES' if (ansible_facts['lsb']['id'] == 'Ubuntu' and lookup('file', '/var/run/reboot-required', errors='ignore')) else 'NO' }}"
+          - "------------------------------------------------"
