@@ -1,22 +1,18 @@
 
 ---
-# File: create_and_attach_ebs_single.yml
-# Purpose: Create and attach ONE EBS volume to a Linux EC2 instance (survey-driven), then optionally format & mount.
-
-# Play 1: AWS actions (create + attach)
 - name: AWS Infrastructure - Create and Attach ONE EBS Volume
   hosts: localhost
   connection: local
   gather_facts: true
 
   vars:
-    # ===== Survey / extra vars (AWX prompts) =====
-    aws_instance: "{{ target_instance_id }}"
-    aws_size: "{{ target_vol_size | int }}"
-    aws_region: "{{ target_region | default('eu-west-1') }}"
-    target_az: "{{ target_availability_zone | default('') }}"
+    # ===== Survey variables (exact names) =====
+    aws_instance: "{{ target_instance_id }}"                # e.g. i-043c4a9904b2ed301
+    aws_size: "{{ target_vol_size | int }}"                 # e.g. 40
+    aws_region: "{{ target_region | default('eu-west-1') }}"# optional; default eu-west-1
+    target_az: "{{ target_availability_zone | default('') }}" # e.g. eu-west-1b (must match instance AZ)
 
-    # Optional tuning
+    # Optional knobs (make these Survey questions if you want)
     volume_type: "{{ target_volume_type | default('gp3') }}"
     encrypted: "{{ target_encrypted | default(true) | bool }}"
     kms_key_id: "{{ target_kms_key_id | default(omit) }}"
@@ -24,17 +20,13 @@
     iops: "{{ target_iops | default(omit) }}"
     throughput: "{{ target_throughput | default(omit) }}"
 
-    # Optional OS step toggle (format & mount). Keep false for infra-only.
-    do_mount: "{{ target_do_mount | default(false) | bool }}"
-    fstype: "{{ target_fstype | default('ext4') }}"
-
-    # Candidate device labels for AWS API (OS will expose nvme devices on Nitro)
+    # Attach label candidates for the AWS API (OS will expose NVMe names on Nitro)
     attach_device_prefix: "/dev/sd"
     candidate_letters: ['f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u']
 
   tasks:
     # ---------- Prechecks ----------
-    - name: Precheck - AWS credentials injected (AWX Amazon Web Services credential or env vars)
+    - name: Precheck - AWS credentials injected (AWX Cloud credential or env vars)
       assert:
         that:
           - lookup('env', 'AWS_ACCESS_KEY_ID') | length > 0
@@ -74,10 +66,6 @@
           {{ (target_az | length > 0)
              | ternary(target_az, instance_info.instances[0].placement.availability_zone) }}
         existing_device_names: "{{ instance_info.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
-        target_ip: >-
-          {{ instance_info.instances[0].public_ip_address
-             if instance_info.instances[0].public_ip_address
-             else instance_info.instances[0].private_ip_address }}
 
     - name: Assert zone matches instance AZ (AWS requires same AZ to attach)
       assert:
@@ -124,6 +112,7 @@
           - "AZ (effective): {{ aws_zone }}"
           - "Requested size (GiB): {{ aws_size }}"
           - "Attach label (API): {{ attach_label }}"
+          - "Existing device names: {{ existing_device_names_clean }}"
 
     # ---------- Create the volume (same AZ as instance) ----------
     - name: Create EBS volume
@@ -166,7 +155,6 @@
         device_name: "{{ attach_label }}"
         delete_on_termination: "{{ delete_on_termination }}"
         state: present
-      register: attach_result
 
     - name: Wait until attached
       amazon.aws.ec2_vol_info:
@@ -187,82 +175,4 @@
         msg:
           - "SUCCESS: Volume {{ raw_vol.volume_id }} ({{ aws_size }} GiB) created in {{ aws_zone }} and attached to {{ aws_instance }}."
           - "Attachment label (API): {{ attach_label }}"
-          - "Note: On Nitro/Linux the OS device will likely be /dev/nvmeXnY (not {{ attach_label }})."
-
-    # ---------- Optionally enable OS mount step ----------
-    - name: Add target to dynamic inventory (for OS mount step)
-      add_host:
-        name: "current_target"
-        ansible_host: "{{ target_ip }}"
-        ansible_user: "ubuntu"
-        ansible_ssh_private_key_file: "{{ lookup('env', 'ANSIBLE_PRIVATE_KEY_FILE') | default('/runner/artifacts/{{ ansible_job_id }}/ssh_key_data') }}"
-        groups: active_nodes
-      when: do_mount
-      vars:
-        raw_vol: "{{ raw_vol }}"
-        aws_size: "{{ aws_size }}"
-        fstype: "{{ fstype }}"
-
-# Play 2: OS actions (optional format & mount on Linux)
-- name: OS Configuration - Format and Mount (NVMe/Nitro-safe)
-  hosts: active_nodes
-  gather_facts: no
-  tasks:
-    - name: Wait for SSH
-      wait_for:
-        port: 22
-        host: "{{ ansible_host }}"
-        search_regex: OpenSSH
-        timeout: 300
-      delegate_to: localhost
-
-    - name: Find device by EBS serial (works for NVMe/Nitro)
-      become: yes
-      shell: |
-        set -euo pipefail
-        VOLNOHYP="{{ hostvars['localhost']['raw_vol']['volume_id'] | replace('-', '') }}"
-        for i in $(seq 1 20); do
-          DEV="$(lsblk -rdpno NAME,SERIAL | awk -v v="$VOLNOHYP" '$2 == v {print $1; exit}')"
-          if [ -z "$DEV" ]; then
-            DEV="$(ls -1 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol* 2>/dev/null | head -n1)"
-            [ -n "$DEV" ] && DEV="$(readlink -f "$DEV")"
-          fi
-          if [ -n "$DEV" ]; then echo -n "$DEV"; exit 0; fi
-          sleep 5
-        done
-        exit 1
-      register: found_device
-      args:
-        executable: /bin/bash
-
-    - name: Detect existing filesystem
-      become: yes
-      command: lsblk -no FSTYPE "{{ found_device.stdout }}"
-      register: fs_type
-
-    - name: Create mount directory
-      become: yes
-      vars:
-        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
-      file:
-        path: "{{ mpath }}"
-        state: directory
-        mode: '0755'
-
-    - name: Create filesystem if none
-      become: yes
-      filesystem:
-        fstype: "{{ hostvars['localhost']['fstype'] }}"
-        dev: "{{ found_device.stdout }}"
-      when: fs_type.stdout | trim == ""
-
-    - name: Mount filesystem
-      become: yes
-      vars:
-        mpath: "/data_{{ hostvars['localhost']['aws_size'] }}gb_{{ hostvars['localhost']['raw_vol']['volume_id'][-4:] }}"
-      mount:
-        path: "{{ mpath }}"
-        src: "{{ found_device.stdout }}"
-        fstype: "{{ hostvars['localhost']['fstype'] }}"
-        state: mounted
-``
+          - "Note: On Nitro/Linux the OS device will appear as /dev/nvmeXnY (not {{ attach_label }})."
