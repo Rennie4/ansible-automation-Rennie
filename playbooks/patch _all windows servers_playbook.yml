@@ -1,6 +1,6 @@
 ---
 - name: Universal Windows Patching
-  hosts: windows_hosts
+  hosts: all
   tasks:
     - name: Install All Security Updates
       ansible.windows.win_updates:
