@@ -1,6 +1,6 @@
 ---
 - name: Universal Windows Pre-Patch Discovery
-  hosts: windows_hosts
+  hosts: all
   gather_facts: yes
 
   tasks:
