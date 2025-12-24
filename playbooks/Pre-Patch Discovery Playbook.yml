@@ -1,6 +1,6 @@
 ---
 - name: Pre-Patch Discovery Report
-  hosts: all
+  hosts: linux_hosts
   become: yes
   gather_facts: yes
 
@@ -18,12 +18,25 @@
       register: redhat_check
       when: ansible_os_family == "RedHat"
 
+    - name: Check Reboot Required (Ubuntu/Debian)
+      stat:
+        path: /var/run/reboot-required
+      register: ubuntu_reboot
+      when: ansible_os_family == "Debian"
+
+    - name: Check Reboot Required (RedHat/Amazon Linux)
+      command: needs-restarting -r
+      register: redhat_reboot
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "RedHat"
+
     - name: Final Discovery Report
       debug:
         msg:
           - "------------------------------------------------"
           - "SERVER: {{ inventory_hostname }}"
           - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "PATCHES AVAILABLE: {{ 'YES' if (ubuntu_check.changed or (redhat_check.results | default([]) | length > 0)) else 'NO' }}"
-          - "REBOOT PENDING: {{ 'YES' if (ansible_facts['lsb']['id'] == 'Ubuntu' and lookup('file', '/var/run/reboot-required', errors='ignore')) else 'NO' }}"
+          - "PATCHES AVAILABLE: {{ 'YES' if ((ubuntu_check is defined and ubuntu_check.changed) or (redhat_check is defined and redhat_check.results | default([]) | length > 0)) else 'NO' }}"
+          - "REBOOT PENDING: {{ 'YES' if ((ubuntu_reboot.stat is defined and ubuntu_reboot.stat.exists) or (redhat_reboot.rc is defined and redhat_reboot.rc != 0)) else 'NO' }}"
           - "------------------------------------------------"
