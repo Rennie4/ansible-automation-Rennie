@@ -1,0 +1,30 @@
+---
+- name: Universal Windows Pre-Patch Discovery
+  hosts: windows
+  gather_facts: yes
+
+  tasks:
+    - name: Search for Missing Updates
+      ansible.windows.win_updates:
+        state: searched
+        category_names:
+          - SecurityUpdates
+          - CriticalUpdates
+          - UpdateRollups
+      register: win_update_results
+
+    - name: Check for Pending Reboot (Universal Registry Check)
+      ansible.windows.win_shell: |
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+        if (Test-Path $regPath) { return "True" } else { return "False" }
+      register: win_reboot_check
+
+    - name: Final Discovery Report
+      debug:
+        msg:
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "PATCHES AVAILABLE: {{ 'YES' if win_update_results.found_update_count > 0 else 'NO' }}"
+          - "REBOOT PENDING: {{ 'YES' if win_reboot_check.stdout == 'True' else 'NO' }}"
+          - "------------------------------------------------"
