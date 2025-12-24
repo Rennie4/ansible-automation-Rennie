@@ -1,0 +1,39 @@
+---
+- name: Post-Patch Verification Report
+  hosts: linux_hosts
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # --- Check for Remaining Updates (Ubuntu/Debian) ---
+    - name: Ubuntu/Debian - Final Update Count
+      shell: "apt list --upgradable 2>/dev/null | grep -v 'Listing...' | wc -l"
+      register: ubuntu_final_count
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    # --- Check for Remaining Updates (RedHat/Amazon Linux) ---
+    - name: RedHat/Amazon Linux - Final Update Count
+      shell: "dnf check-update --quiet | grep -v '^$' | wc -l"
+      register: redhat_final_count
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "RedHat"
+
+    # --- Universal Uptime Check ---
+    - name: Get System Uptime
+      shell: "uptime -p"
+      register: linux_uptime
+      changed_when: false
+
+    # --- Final Post-Patch Truth Report ---
+    - name: Final Success Report
+      debug:
+        msg:
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "STATUS: POST-PATCH COMPLETED"
+          - "UPTIME: {{ linux_uptime.stdout }}"
+          - "PATCHES REMAINING: {{ ubuntu_final_count.stdout | default('0') if ansible_os_family == 'Debian' else redhat_final_count.stdout | default('0') }}"
+          - "REBOOT SUCCESS: {{ 'YES' if ('minute' in linux_uptime.stdout or 'hour' in linux_uptime.stdout and 'day' not in linux_uptime.stdout) else 'CHECK UPTIME' }}"
+          - "------------------------------------------------"
