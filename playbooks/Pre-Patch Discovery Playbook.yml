@@ -5,19 +5,22 @@
   gather_facts: yes
 
   tasks:
-    - name: Ubuntu/Debian - Update Cache and Check
-      apt:
-        update_cache: yes
-      check_mode: yes
-      register: ubuntu_check
+    # --- Ubuntu/Debian Update Check ---
+    - name: Ubuntu/Debian - Count Upgradable Packages
+      shell: "apt list --upgradable 2>/dev/null | grep -v 'Listing...' | wc -l"
+      register: ubuntu_count
+      changed_when: false
       when: ansible_os_family == "Debian"
 
-    - name: RedHat/Amazon Linux - Check Updates
-      dnf:
-        list: updates
-      register: redhat_check
+    # --- RedHat/Amazon Linux Update Check ---
+    - name: RedHat/Amazon Linux - Count Updates
+      shell: "dnf check-update --quiet | grep -v '^$' | wc -l"
+      register: redhat_count
+      failed_when: false
+      changed_when: false
       when: ansible_os_family == "RedHat"
 
+    # --- Universal Reboot Checks ---
     - name: Check Reboot Required (Ubuntu/Debian)
       stat:
         path: /var/run/reboot-required
@@ -31,12 +34,13 @@
       changed_when: false
       when: ansible_os_family == "RedHat"
 
+    # --- The Final Truth Report ---
     - name: Final Discovery Report
       debug:
         msg:
           - "------------------------------------------------"
           - "SERVER: {{ inventory_hostname }}"
           - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
-          - "PATCHES AVAILABLE: {{ 'YES' if ((ubuntu_check is defined and ubuntu_check.changed) or (redhat_check is defined and redhat_check.results | default([]) | length > 0)) else 'NO' }}"
+          - "PATCHES AVAILABLE: {{ 'YES' if ((ubuntu_count.stdout | default('0') | int > 0) or (redhat_count.stdout | default('0') | int > 0)) else 'NO' }}"
           - "REBOOT PENDING: {{ 'YES' if ((ubuntu_reboot.stat is defined and ubuntu_reboot.stat.exists) or (redhat_reboot.rc is defined and redhat_reboot.rc != 0)) else 'NO' }}"
           - "------------------------------------------------"
