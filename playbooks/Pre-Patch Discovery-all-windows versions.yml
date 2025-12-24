@@ -1,6 +1,6 @@
 ---
 - name: Universal Windows Pre-Patch Discovery
-  hosts: all
+  hosts: all  # Targeted at your Windows-Inventory-Rennie
   gather_facts: yes
 
   tasks:
@@ -27,4 +27,8 @@
           - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
           - "PATCHES AVAILABLE: {{ 'YES' if win_update_results.found_update_count > 0 else 'NO' }}"
           - "REBOOT PENDING: {{ 'YES' if win_reboot_check.stdout == 'True' else 'NO' }}"
+          - "------------------------------------------------"
+          - "LIST OF PENDING UPDATES:"
+          # This extracts the titles of the updates for all hosts
+          - "{{ win_update_results.updates | dict2items | map(attribute='value.title') | list if win_update_results.found_update_count > 0 else 'No Updates Pending' }}"
           - "------------------------------------------------"
