@@ -1,0 +1,25 @@
+---
+- name: Universal Windows Patching
+  hosts: windows
+  tasks:
+    - name: Install All Security Updates
+      ansible.windows.win_updates:
+        category_names:
+          - SecurityUpdates
+          - CriticalUpdates
+        state: installed
+        # Automatically reboots only if required
+        reboot: yes
+        reboot_timeout: 1200 
+      register: patch_res
+
+    - name: Post-Patch Verification
+      ansible.windows.win_powershell:
+        script: |
+          $uptime = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          return "System is Online. Uptime: $($uptime.TotalMinutes.ToString('F2')) minutes"
+      register: uptime_output
+
+    - name: Final Verification
+      debug:
+        msg: "{{ uptime_output.output[0] }}"
