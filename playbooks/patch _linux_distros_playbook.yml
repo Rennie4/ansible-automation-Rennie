@@ -5,7 +5,8 @@
   gather_facts: yes
 
   tasks:
-    # --- STEP 1: PRE-PATCH STORAGE PERSISTENCE ---
+    # --- PHASE 1: DYNAMIC STORAGE DISCOVERY & PERSISTENCE ---
+    # This step finds volumes automatically without hardcoded values.
     - name: Discover all attached EBS volumes
       find:
         paths: /dev/disk/by-id/
@@ -14,15 +15,16 @@
 
     - name: Ensure Mount Points and fstab entries exist (Safe Mode)
       ansible.posix.mount:
-        # Uses Python slicing [-4:] to get the last 4 characters of the disk ID
+        # Dynamically names the mount point using the last 4 chars of the ID
         path: "/mnt/storage_ebs_{{ item.path[-4:] }}"
         src: "{{ item.path }}"
         fstype: ext4
-        opts: defaults,nofail  # CRITICAL: prevents maintenance mode on boot failure
+        # 'nofail' ensures the server boots even if a volume is missing/changed
+        opts: defaults,nofail  
         state: mounted
       loop: "{{ found_disks.files | default([]) }}"
 
-    # --- STEP 2: PATCHING ---
+    # --- PHASE 2: DISTRIBUTION-AWARE PATCHING ---
     - name: Patch Debian/Ubuntu Distros
       apt:
         update_cache: yes
@@ -39,14 +41,17 @@
       when: ansible_os_family == "RedHat"
       register: dnf_res
 
-    # --- STEP 3: REBOOT & VERIFY ---
+    # --- PHASE 3: REBOOT & VERIFICATION ---
     - name: Reboot if updates were applied
       reboot:
         msg: "Rebooting after patching to verify storage persistence."
         reboot_timeout: 300
-      when: (apt_res is changed) or (dnf_res is changed)
+      # Uses 'default(false)' to prevent errors when variables are missing
+      when: >
+        (apt_res is changed | default(false)) or 
+        (dnf_res is changed | default(false))
 
-    - name: Verify All Mounts are active after Reboot
+    - name: Post-Reboot Verification of Storage
       command: "mountpoint /mnt/storage_ebs_{{ item.path[-4:] }}"
       loop: "{{ found_disks.files | default([]) }}"
       register: mount_results
