@@ -1,16 +1,13 @@
 ---
 - name: Universal Windows Pre-Patch Discovery
-  hosts: all  # Targeted at your Windows-Inventory-Rennie
+  hosts: all  # Using 'all' for maximum flexibility across 200 servers [cite: 2025-12-24]
   gather_facts: yes
 
   tasks:
-    - name: Search for Missing Updates
+    - name: Search for ALL Missing Updates
       ansible.windows.win_updates:
         state: searched
-        category_names:
-          - SecurityUpdates
-          - CriticalUpdates
-          - UpdateRollups
+        # Removing category_names makes it search for everything available
       register: win_update_results
 
     - name: Check for Pending Reboot (Universal Registry Check)
@@ -26,9 +23,9 @@
           - "SERVER: {{ inventory_hostname }}"
           - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
           - "PATCHES AVAILABLE: {{ 'YES' if win_update_results.found_update_count > 0 else 'NO' }}"
+          - "TOTAL COUNT: {{ win_update_results.found_update_count }}"
           - "REBOOT PENDING: {{ 'YES' if win_reboot_check.stdout == 'True' else 'NO' }}"
           - "------------------------------------------------"
           - "LIST OF PENDING UPDATES:"
-          # This extracts the titles of the updates for all hosts
           - "{{ win_update_results.updates | dict2items | map(attribute='value.title') | list if win_update_results.found_update_count > 0 else 'No Updates Pending' }}"
           - "------------------------------------------------"
