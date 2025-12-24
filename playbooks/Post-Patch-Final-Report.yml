@@ -1,0 +1,28 @@
+---
+- name: Post-Post Patching Verification
+  hosts: all
+  gather_facts: yes
+
+  tasks:
+    - name: Final Search for Updates
+      ansible.windows.win_updates:
+        state: searched
+      register: final_update_results
+
+    - name: Get System Uptime
+      ansible.windows.win_powershell:
+        script: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $uptime = (Get-Date) - $os.LastBootUpTime
+          return "System is Online. Uptime: $($uptime.Days)d $($uptime.Hours)h $($uptime.Minutes)m"
+      register: uptime_output
+
+    - name: Final Success Report
+      debug:
+        msg:
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "STATUS: COMPLETED"
+          - "UPTIME: {{ uptime_output.output[0] }}"
+          - "REMAINING PATCHES: {{ final_update_results.found_update_count }}"
+          - "------------------------------------------------"
