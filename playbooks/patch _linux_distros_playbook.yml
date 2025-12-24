@@ -1,43 +1,54 @@
 ---
-- name: Universal Linux Patching with Infinite Storage Persistence
-  hosts: all
+- name: Universal Linux Patching with Storage Persistence
+  hosts: linux_hosts
   become: yes
   gather_facts: yes
 
   tasks:
-    - name: Step 0.1 - Discover all attached EBS volumes
+    # --- STEP 1: PRE-PATCH STORAGE PERSISTENCE ---
+    - name: Discover all attached EBS volumes
       find:
         paths: /dev/disk/by-id/
         patterns: "nvme-Amazon_Elastic_Block_Store_vol*"
       register: found_disks
-      when: ansible_os_family == "Debian"
 
-    - name: Step 0.2 - Ensure Mount Points and fstab entries exist
+    - name: Ensure Mount Points and fstab entries exist (Safe Mode)
       ansible.posix.mount:
-        # This extracts the last 4 characters of the ID for the folder name
-        path: "/mnt/storage_ebs_{{ item.path | last_chars(4) }}"
+        # Uses Python slicing [-4:] to get the last 4 characters of the disk ID
+        path: "/mnt/storage_ebs_{{ item.path[-4:] }}"
         src: "{{ item.path }}"
         fstype: ext4
-        state: mounted  # This 'mounts' now AND adds to 'fstab' for reboots
-      loop: "{{ found_disks.files }}"
-      when: ansible_os_family == "Debian"
+        opts: defaults,nofail  # CRITICAL: prevents maintenance mode on boot failure
+        state: mounted
+      loop: "{{ found_disks.files | default([]) }}"
 
-    - name: Step 1 - Debian/Ubuntu - Update Cache and Full Upgrade
+    # --- STEP 2: PATCHING ---
+    - name: Patch Debian/Ubuntu Distros
       apt:
         update_cache: yes
-        upgrade: full
+        upgrade: dist
+        autoremove: yes
       when: ansible_os_family == "Debian"
-      register: apt_result
+      register: apt_res
 
-    - name: Step 4 - Force Reboot for Storage Verification
+    - name: Patch RedHat/Amazon Linux Distros
+      dnf:
+        name: "*"
+        state: latest
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+      register: dnf_res
+
+    # --- STEP 3: REBOOT & VERIFY ---
+    - name: Reboot if updates were applied
       reboot:
-        msg: "Verifying persistence for all discovered drives."
+        msg: "Rebooting after patching to verify storage persistence."
         reboot_timeout: 300
-      when: ansible_os_family == "Debian" 
+      when: (apt_res is changed) or (dnf_res is changed)
 
-    - name: Step 5 - Verify All Mounts are active after Reboot
-      command: "mountpoint /mnt/storage_ebs_{{ item.path | last_chars(4) }}"
-      loop: "{{ found_disks.files }}"
+    - name: Verify All Mounts are active after Reboot
+      command: "mountpoint /mnt/storage_ebs_{{ item.path[-4:] }}"
+      loop: "{{ found_disks.files | default([]) }}"
       register: mount_results
       changed_when: false
       failed_when: mount_results.rc != 0
