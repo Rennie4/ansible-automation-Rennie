@@ -22,17 +22,17 @@
 
     - name: Final User-Friendly Report
       debug:
-        msg: |
-          ------------------------------------------------
-          SERVER: {{ inventory_hostname }}
-          STORAGE HEALTH CHECK (LINUX)
-          ------------------------------------------------
+        msg:
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "STORAGE HEALTH CHECK (LINUX)"
+          - "------------------------------------------------"
           {% for line in linux_disk_raw.stdout_lines %}
           {% set parts = line.split('|') %}
-          MOUNT: {{ parts[0] }}
-          EBS VOLUME: {{ parts[1] }}
-          CAPACITY: {{ parts[3] }} Free / {{ parts[2] }} total
-          HEALTH: {{ parts[4] }} Used
-          STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if parts[4]|replace('%','')|int > 90 else 'HEALTHY' }}
-          ------------------------------------------------
+          - "MOUNT: {{ parts[0] }}"
+          - "EBS VOLUME: {{ parts[1] }}"
+          - "CAPACITY: {{ parts[3] }} Free / {{ parts[2] }} total"
+          - "HEALTH: {{ parts[4] }} Used"
+          - "STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if parts[4]|replace('%','')|int > 90 else 'HEALTHY' }}"
+          - "------------------------------------------------"
           {% endfor %}
