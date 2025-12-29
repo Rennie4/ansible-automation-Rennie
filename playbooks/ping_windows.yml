@@ -5,11 +5,15 @@
   tasks:
     - name: Ping Windows host
       ansible.windows.win_ping:
+      register: ping_output  # This captures the "pong" response
 
-    - name: Display Windows OS details
+    - name: Display Connectivity and OS details
       ansible.builtin.debug:
-        msg: >-
-          SUCCESS: Connected to {{ inventory_hostname }}.
-          OS family={{ ansible_facts['os_family'] }},
-          OS Name={{ ansible_facts['distribution'] | default('Windows') }},
-          Build Version={{ ansible_facts['distribution_version'] }}.
+        msg: 
+          - "ping: {{ ping_output.ping }}"  # This displays "pong"
+          - "------------------------------------------------"
+          - "SUCCESS: Connected to {{ inventory_hostname }}."
+          - "OS family: {{ ansible_facts['os_family'] }}"
+          - "OS Name: {{ ansible_facts['distribution'] | default('Windows') }}"
+          - "Build Version: {{ ansible_facts['distribution_version'] }}"
+          - "------------------------------------------------"
