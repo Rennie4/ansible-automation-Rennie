@@ -25,16 +25,21 @@
 
     - name: Final User-Friendly Report
       debug:
-        msg: |
-          ------------------------------------------------
-          SERVER: {{ inventory_hostname }}
-          STORAGE HEALTH CHECK
-          ------------------------------------------------
-          {% for disk in disk_info.output %}
-          DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('No Label') }}]
-          EBS VOLUME: {{ disk.EBS_ID }}
-          CAPACITY: {{ disk.FreeGB }}GB Free / {{ disk.TotalGB }}GB total
-          HEALTH: {{ disk.PercentFree }}% Available
-          STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if disk.PercentFree | float < 10 else 'HEALTHY' }}
-          ------------------------------------------------
-          {% endfor %}
+        msg: >-
+          {{
+            [
+              "------------------------------------------------",
+              "SERVER: " ~ inventory_hostname,
+              "STORAGE HEALTH CHECK",
+              "------------------------------------------------"
+            ] +
+            (disk_info.output | map('json_query', 
+              'join(`\n`, [
+                "DRIVE: " + DriveLetter + " [" + VolumeName + "]",
+                "EBS VOLUME: " + EBS_ID,
+                "CAPACITY: " + to_string(FreeGB) + "GB Free / " + to_string(TotalGB) + "GB total",
+                "HEALTH: " + to_string(PercentFree) + "% Available",
+                "------------------------------------------------"
+              ])'
+            ) | list)
+          }}
