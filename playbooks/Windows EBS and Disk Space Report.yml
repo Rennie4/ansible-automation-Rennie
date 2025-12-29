@@ -17,6 +17,7 @@
                   TotalGB     = [math]::Round($LogicalDisk.Size / 1GB, 2)
                   FreeGB      = [math]::Round($LogicalDisk.FreeSpace / 1GB, 2)
                   PercentFree = [math]::Round(($LogicalDisk.FreeSpace / $LogicalDisk.Size) * 100, 2)
+                  # Dynamically captures the EBS ID from the serial number
                   EBS_ID      = $DiskDrive.SerialNumber -replace '.*(vol-[a-zA-Z0-9]+).*','$1'
               }
           }
@@ -25,16 +26,16 @@
 
     - name: Final User-Friendly Report
       debug:
-        msg: |
-          ------------------------------------------------
-          SERVER: {{ inventory_hostname }}
-          STORAGE HEALTH CHECK
-          ------------------------------------------------
-          {% for disk in disk_info.output %}
-          DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('System/Root') }}]
-          EBS VOLUME: {{ disk.EBS_ID }}
-          CAPACITY: {{ disk.FreeGB }}GB Free / {{ disk.TotalGB }}GB total
-          HEALTH: {{ disk.PercentFree }}% Available
-          STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if disk.PercentFree | float < 10 else 'HEALTHY' }}
-          ------------------------------------------------
-          {% endfor %}
+        msg: 
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "STORAGE HEALTH CHECK"
+          - "------------------------------------------------"
+          - "{% for disk in disk_info.output %}"
+          - "DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('System/Root') }}]"
+          - "EBS VOLUME: {{ disk.EBS_ID }}"
+          - "CAPACITY: {{ disk.FreeGB }}GB Free / {{ disk.TotalGB }}GB total"
+          - "HEALTH: {{ disk.PercentFree }}% Available"
+          - "STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if disk.PercentFree | float < 10 else 'HEALTHY' }}"
+          - "------------------------------------------------"
+          - "{% endfor %}"
