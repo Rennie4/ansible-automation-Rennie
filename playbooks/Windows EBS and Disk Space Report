@@ -1,0 +1,40 @@
+---
+- name: Windows EBS and Disk Space Report
+  hosts: windows_hosts
+  gather_facts: no
+  tasks:
+    - name: Fetch EBS and Disk Data
+      ansible.windows.win_powershell:
+        script: |
+          $Results = Get-CimInstance Win32_DiskDrive | ForEach-Object {
+              $Drive = $_
+              $Partition = Get-CimAssociatedInstance -InputObject $Drive -ResultClassName Win32_DiskPartition
+              $LogicalDisk = Get-CimAssociatedInstance -InputObject $Partition -ResultClassName Win32_LogicalDisk
+              
+              [PSCustomObject]@{
+                  DriveLetter = $LogicalDisk.DeviceID
+                  VolumeName  = $LogicalDisk.VolumeName
+                  TotalGB     = [math]::Round($LogicalDisk.Size / 1GB, 2)
+                  FreeGB      = [math]::Round($LogicalDisk.FreeSpace / 1GB, 2)
+                  PercentFree = [math]::Round(($LogicalDisk.FreeSpace / $LogicalDisk.Size) * 100, 2)
+                  # Fetches the serial (EBS Volume ID) without hardcoding values
+                  EBS_ID      = $Drive.SerialNumber -replace '.*(vol-[a-zA-Z0-9]+).*','$1'
+              }
+          }
+          return $Results
+      register: disk_info
+
+    - name: Final User-Friendly Report
+      debug:
+        msg: 
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "REPORT: STORAGE HEALTH CHECK"
+          - "------------------------------------------------"
+          - "{% for disk in disk_info.output %}"
+          - "DRIVE: {{ disk.DriveLetter }} ({{ disk.VolumeName | default('No Label') }})"
+          - "EBS VOLUME: {{ disk.EBS_ID }}"
+          - "CAPACITY: {{ disk.FreeGB }}GB Free of {{ disk.TotalGB }}GB ({{ disk.PercentFree }}%)"
+          - "STATUS: {{ 'CRITICAL - LOW SPACE' if disk.PercentFree | float < 10 else 'HEALTHY' }}"
+          - "------------------------------------------------"
+          - "{% endfor %}"
