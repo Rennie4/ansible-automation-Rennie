@@ -6,10 +6,10 @@
     - name: Fetch EBS and Disk Data
       ansible.windows.win_powershell:
         script: |
-          $Results = Get-CimInstance Win32_DiskDrive | ForEach-Object {
-              $Drive = $_
-              $Partition = Get-CimAssociatedInstance -InputObject $Drive -ResultClassName Win32_DiskPartition
-              $LogicalDisk = Get-CimAssociatedInstance -InputObject $Partition -ResultClassName Win32_LogicalDisk
+          $Results = Get-CimInstance Win32_LogicalDisk | ForEach-Object {
+              $LogicalDisk = $_
+              $Partition = Get-CimAssociatedInstance -InputObject $LogicalDisk -ResultClassName Win32_DiskPartition
+              $DiskDrive = Get-CimAssociatedInstance -InputObject $Partition -ResultClassName Win32_DiskDrive
               
               [PSCustomObject]@{
                   DriveLetter = $LogicalDisk.DeviceID
@@ -17,7 +17,8 @@
                   TotalGB     = [math]::Round($LogicalDisk.Size / 1GB, 2)
                   FreeGB      = [math]::Round($LogicalDisk.FreeSpace / 1GB, 2)
                   PercentFree = [math]::Round(($LogicalDisk.FreeSpace / $LogicalDisk.Size) * 100, 2)
-                  EBS_ID      = $Drive.SerialNumber -replace '.*(vol-[a-zA-Z0-9]+).*','$1'
+                  # Strips the AWS suffix to show the clean EBS ID
+                  EBS_ID      = $DiskDrive.SerialNumber -replace '.*(vol-[a-zA-Z0-9]+).*','$1'
               }
           }
           return $Results
@@ -25,15 +26,16 @@
 
     - name: Final User-Friendly Report
       debug:
-        msg: |
-          ------------------------------------------------
-          SERVER: {{ inventory_hostname }}
-          REPORT: STORAGE HEALTH CHECK
-          ------------------------------------------------
-          {% for disk in disk_info.output %}
-          DRIVE: {{ disk.DriveLetter }} ({{ disk.VolumeName | default('No Label') }})
-          EBS VOLUME: {{ disk.EBS_ID }}
-          CAPACITY: {{ disk.FreeGB }}GB Free of {{ disk.TotalGB }}GB ({{ disk.PercentFree }}%)
-          STATUS: {{ 'CRITICAL - LOW SPACE' if disk.PercentFree | float < 10 else 'HEALTHY' }}
-          ------------------------------------------------
-          {% endfor %}
+        msg: 
+          - "------------------------------------------------"
+          - "SERVER: {{ inventory_hostname }}"
+          - "STORAGE HEALTH CHECK"
+          - "------------------------------------------------"
+          - "{% for disk in disk_info.output %}"
+          - "DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('System Root') }}]"
+          - "EBS VOLUME: {{ disk.EBS_ID }}"
+          - "CAPACITY: {{ disk.FreeGB }}GB Free / {{ disk.TotalGB }}GB total"
+          - "HEALTH: {{ disk.PercentFree }}% Available"
+          - "STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if disk.PercentFree | float < 10 else 'HEALTHY' }}"
+          - "------------------------------------------------"
+          - "{% endfor %}"
