@@ -17,7 +17,7 @@
                   TotalGB     = [math]::Round($LogicalDisk.Size / 1GB, 2)
                   FreeGB      = [math]::Round($LogicalDisk.FreeSpace / 1GB, 2)
                   PercentFree = [math]::Round(($LogicalDisk.FreeSpace / $LogicalDisk.Size) * 100, 2)
-                  # Strips the AWS suffix to show the clean EBS ID
+                  # Pulls the EBS ID from the drive serial number
                   EBS_ID      = $DiskDrive.SerialNumber -replace '.*(vol-[a-zA-Z0-9]+).*','$1'
               }
           }
@@ -32,7 +32,7 @@
           - "STORAGE HEALTH CHECK"
           - "------------------------------------------------"
           - "{% for disk in disk_info.output %}"
-          - "DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('System Root') }}]"
+          - "DRIVE: {{ disk.DriveLetter }} [{{ disk.VolumeName | default('No Label') }}]"
           - "EBS VOLUME: {{ disk.EBS_ID }}"
           - "CAPACITY: {{ disk.FreeGB }}GB Free / {{ disk.TotalGB }}GB total"
           - "HEALTH: {{ disk.PercentFree }}% Available"
