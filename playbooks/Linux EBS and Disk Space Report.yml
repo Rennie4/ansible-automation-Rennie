@@ -6,11 +6,10 @@
     - name: Fetch EBS and Disk Data
       shell: |
         df -h --output=target,source,size,avail,pcent | tail -n +2 | while read target source size avail pcent; do
-          # Extract the device name (e.g., nvme1n1)
+          # Extract device name
           DEV_NAME=$(echo $source | sed 's|/dev/||')
           
-          # Get the EBS Volume ID from the NVMe/Disk serial number
-          # AWS maps the Vol-ID into the serial or symlinks
+          # Get EBS Volume ID from serial or symlinks
           if [ -b "/dev/$DEV_NAME" ]; then
             SERIAL=$(lsblk -dno SERIAL /dev/$DEV_NAME 2>/dev/null | grep "^vol-" || echo "internal-storage")
           else
@@ -23,17 +22,17 @@
 
     - name: Final User-Friendly Report
       debug:
-        msg:
-          - "------------------------------------------------"
-          - "SERVER: {{ inventory_hostname }}"
-          - "STORAGE HEALTH CHECK (LINUX)"
-          - "------------------------------------------------"
+        msg: |
+          ------------------------------------------------
+          SERVER: {{ inventory_hostname }}
+          STORAGE HEALTH CHECK (LINUX)
+          ------------------------------------------------
           {% for line in linux_disk_raw.stdout_lines %}
           {% set parts = line.split('|') %}
-          - "MOUNT: {{ parts[0] }}"
-          - "EBS VOLUME: {{ parts[1] }}"
-          - "CAPACITY: {{ parts[3] }} Free / {{ parts[2] }} total"
-          - "HEALTH: {{ parts[4] }} Used"
-          - "STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if parts[4]|replace('%','')|int > 90 else 'HEALTHY' }}"
-          - "------------------------------------------------"
+          MOUNT: {{ parts[0] }}
+          EBS VOLUME: {{ parts[1] }}
+          CAPACITY: {{ parts[3] }} Free / {{ parts[2] }} total
+          HEALTH: {{ parts[4] }} Used
+          STATUS: {{ '!!! CRITICAL LOW SPACE !!!' if parts[4]|replace('%','')|int > 90 else 'HEALTHY' }}
+          ------------------------------------------------
           {% endfor %}
