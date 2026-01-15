@@ -1,0 +1,27 @@
+---
+- name: Create Local Admin User Account
+  hosts: "{{ target_hosts | default('all') }}"
+  gather_facts: no
+  vars:
+    # Variables defined here for easy reuse and portability
+    local_username: "test"
+    local_password: "P@ssw0rd10"
+    local_admin_group: "Administrators"
+
+  tasks:
+    - name: Create the local user account
+      ansible.windows.win_user:
+        name: "{{ local_username }}"
+        password: "{{ local_password }}"
+        state: present
+        groups:
+          - "{{ local_admin_group }}"
+        password_never_expires: yes
+        user_cannot_change_password: no
+        state: present
+      register: user_creation_status
+
+    - name: Confirm the account is ready
+      ansible.builtin.debug:
+        msg: "Account '{{ local_username }}' has been created and added to '{{ local_admin_group }}' on {{ inventory_hostname }}."
+      when: not user_creation_status.failed
