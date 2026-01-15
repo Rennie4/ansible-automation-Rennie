@@ -1,0 +1,33 @@
+---
+- name: Multi-Account and Profile Purge
+  hosts: "{{ target_hosts | default('all') }}"
+  gather_facts: no
+  vars:
+    # You can list as many accounts here as you want
+    accounts_to_remove: 
+      - "test"
+      - "admin-test"
+      - "temp-user"
+
+  tasks:
+    - name: Delete local user accounts
+      ansible.windows.win_user:
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ accounts_to_remove }}"
+      register: user_results
+
+    - name: Completely remove user profile directories
+      community.windows.win_user_profile:
+        name: "{{ item }}"
+        state: absent
+        remove_directory: yes
+      loop: "{{ accounts_to_remove }}"
+      ignore_errors: yes
+      register: profile_results
+
+    - name: Summary of Cleanup
+      ansible.builtin.debug:
+        msg: "Cleaned up account and profile for: {{ item.item }}"
+      loop: "{{ user_results.results }}"
+      when: item.changed
