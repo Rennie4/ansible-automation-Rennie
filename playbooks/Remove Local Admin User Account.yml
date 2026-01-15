@@ -3,7 +3,7 @@
   hosts: windows_server
   gather_facts: no
   vars:
-    # List the users you want to purge here
+    # Add or remove users from this list as needed
     users_to_purge:
       - test
       - admin-test
@@ -17,21 +17,20 @@
 
     - name: Remove User Profile Registry Keys (Prevents Temp Profile Errors)
       ansible.windows.win_shell: |
-        $users = @("{{ users_to_purge | join('","') }}")
-        foreach ($user in $users) {
-            $objUser = New-Object System.Security.Principal.NTAccount($user)
-            try {
-                $sid = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).Value
-                $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
-                if (Test-Path $registryPath) {
-                    Remove-Item -Path $registryPath -Recurse -Force
+        $UserList = @("{{ users_to_purge | join('","') }}")
+        $ProfileList = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList"
+        
+        Get-ChildItem -Path $ProfileList | ForEach-Object {
+            $Path = Get-ItemProperty -Path $_.PSPath
+            foreach ($User in $UserList) {
+                if ($Path.ProfileImagePath -like "*\$User") {
+                    Remove-Item -Path $_.PSPath -Recurse -Force
+                    Write-Output "Deleted Registry Profile for $User"
                 }
-            } catch {
-                # User SID not found, likely already deleted
-                Write-Output "SID for $user not found, skipping registry cleanup."
             }
         }
       register: reg_cleanup
+      changed_when: "'Deleted Registry Profile' in reg_cleanup.stdout"
 
     - name: Forcefully remove the C:\Users folder
       ansible.windows.win_file:
