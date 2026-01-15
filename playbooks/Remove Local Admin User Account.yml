@@ -1,37 +1,45 @@
 ---
 - name: Complete Purge of User and Profile (No Collection Needed)
-  hosts: "{{ target_hosts | default('all') }}"
+  hosts: windows_server
   gather_facts: no
   vars:
-    # List any accounts here that you want to completely vanish
-    accounts_to_remove:
-      - "test"
-      - "admin-test"
+    # List the users you want to purge here
+    users_to_purge:
+      - test
+      - admin-test
 
   tasks:
     - name: Delete the local user account from SAM database
       ansible.windows.win_user:
         name: "{{ item }}"
         state: absent
-      loop: "{{ accounts_to_remove }}"
-      register: user_removal
+      loop: "{{ users_to_purge }}"
 
-    - name: Forcefully remove the C:\Users folder for these accounts
+    - name: Remove User Profile Registry Keys (Prevents Temp Profile Errors)
       ansible.windows.win_shell: |
-        $UserPath = "C:\Users\{{ item }}"
-        if (Test-Path $UserPath) {
-            # Take ownership and remove recursively
-            Remove-Item -Path $UserPath -Recurse -Force
-            Write-Output "Deleted profile folder for {{ item }}"
-        } else {
-            Write-Output "No profile folder found for {{ item }}"
+        $users = @("{{ users_to_purge | join('","') }}")
+        foreach ($user in $users) {
+            $objUser = New-Object System.Security.Principal.NTAccount($user)
+            try {
+                $sid = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).Value
+                $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
+                if (Test-Path $registryPath) {
+                    Remove-Item -Path $registryPath -Recurse -Force
+                }
+            } catch {
+                # User SID not found, likely already deleted
+                Write-Output "SID for $user not found, skipping registry cleanup."
+            }
         }
-      loop: "{{ accounts_to_remove }}"
-      # We only try to delete the folder if the user was successfully removed or didn't exist
-      ignore_errors: yes
+      register: reg_cleanup
+
+    - name: Forcefully remove the C:\Users folder
+      ansible.windows.win_file:
+        path: "C:\\Users\\{{ item }}"
+        state: absent
+      loop: "{{ users_to_purge }}"
 
     - name: Summary of Cleanup Results
       ansible.builtin.debug:
-        msg: "Cleaned up: {{ item.item }}"
-      loop: "{{ user_removal.results }}"
-      when: item.changed or item.state == 'absent'
+        msg: "Cleaned up: {{ item }}"
+      loop: "{{ users_to_purge }}"
