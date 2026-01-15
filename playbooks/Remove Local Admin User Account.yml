@@ -6,7 +6,7 @@
     # Add or remove users from this list as needed
     users_to_purge:
       - test
-      - admin-test
+      - test-admin
 
   tasks:
     - name: Delete the local user account from SAM database
