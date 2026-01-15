@@ -9,6 +9,7 @@
       - "Guest"
       - "DefaultAccount"
       - "WDAGUtilityAccount"
+    report_path: "C:\\AuditReports"
 
   tasks:
     - name: Get list of all local users
@@ -20,20 +21,24 @@
       ansible.builtin.set_fact:
         detected_users: "{{ local_users_raw.stdout_lines | difference(system_accounts) }}"
 
+    - name: Ensure report directory exists
+      ansible.windows.win_file:
+        path: "{{ report_path }}"
+        state: directory
+
     - name: Summary of Detected Local Accounts
       ansible.builtin.debug:
         msg: |
-          "SCAN COMPLETE"
-          "----------------------------------------"
-          "Total Custom Users Found: {{ detected_users | length }}"
-          "User List: {{ detected_users }}"
-          "----------------------------------------"
+          SCAN COMPLETE
+          ----------------------------------------
+          Total Custom Users Found: {{ detected_users | length }}
+          User List: {{ detected_users if detected_users | length > 0 else 'None' }}
+          ----------------------------------------
 
-    - name: Optional - Save report to local file
-      ansible.builtin.copy:
+    - name: Save report to local file
+      ansible.windows.win_copy:
         content: |
           Inventory Report for {{ inventory_hostname }}
-          Date: {{ ansible_date_time.date | default('N/A') }}
-          Detected Users: {{ detected_users | join(', ') }}
-        dest: "C:\\temp\\user_audit_report.txt"
-      ignore_errors: yes
+          Total Custom Users: {{ detected_users | length }}
+          Detected Users: {{ detected_users | join(', ') if detected_users | length > 0 else 'None' }}
+        dest: "{{ report_path }}\\user_audit.txt"
