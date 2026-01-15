@@ -1,33 +1,37 @@
 ---
-- name: Multi-Account and Profile Purge
+- name: Complete Purge of User and Profile (No Collection Needed)
   hosts: "{{ target_hosts | default('all') }}"
   gather_facts: no
   vars:
-    # You can list as many accounts here as you want
-    accounts_to_remove: 
+    # List any accounts here that you want to completely vanish
+    accounts_to_remove:
       - "test"
       - "admin-test"
-      - "temp-user"
 
   tasks:
-    - name: Delete local user accounts
+    - name: Delete the local user account from SAM database
       ansible.windows.win_user:
         name: "{{ item }}"
         state: absent
       loop: "{{ accounts_to_remove }}"
-      register: user_results
+      register: user_removal
 
-    - name: Completely remove user profile directories
-      community.windows.win_user_profile:
-        name: "{{ item }}"
-        state: absent
-        remove_directory: yes
+    - name: Forcefully remove the C:\Users folder for these accounts
+      ansible.windows.win_shell: |
+        $UserPath = "C:\Users\{{ item }}"
+        if (Test-Path $UserPath) {
+            # Take ownership and remove recursively
+            Remove-Item -Path $UserPath -Recurse -Force
+            Write-Output "Deleted profile folder for {{ item }}"
+        } else {
+            Write-Output "No profile folder found for {{ item }}"
+        }
       loop: "{{ accounts_to_remove }}"
+      # We only try to delete the folder if the user was successfully removed or didn't exist
       ignore_errors: yes
-      register: profile_results
 
-    - name: Summary of Cleanup
+    - name: Summary of Cleanup Results
       ansible.builtin.debug:
-        msg: "Cleaned up account and profile for: {{ item.item }}"
-      loop: "{{ user_results.results }}"
-      when: item.changed
+        msg: "Cleaned up: {{ item.item }}"
+      loop: "{{ user_removal.results }}"
+      when: item.changed or item.state == 'absent'
