@@ -1,0 +1,70 @@
+---
+- name: Multi-OS Patching & Compliance Report
+  hosts: all
+  gather_facts: yes
+  # Using a dynamic filename to avoid conflicts
+  vars:
+    report_file: "/tmp/patch_report_{{ lookup('pipe', 'date +%Y%m%d_%H%M') }}.csv"
+
+  tasks:
+    # --- HEADER ---
+    - name: Initialize CSV Report Header
+      run_once: true
+      delegate_to: localhost
+      copy:
+        dest: "{{ report_file }}"
+        content: "Hostname,OS,Status,Updates_Found,Updates_Installed,Reboot_Required\n"
+
+    # --- RHEL LOGIC ---
+    - name: RHEL - Check and Apply
+      when: ansible_os_family == "RedHat"
+      block:
+        - name: Check available updates
+          dnf:
+            list: updates
+          register: rhel_updates
+
+        - name: Apply Security Patches
+          dnf:
+            name: "*"
+            state: latest
+            security: yes
+          register: rhel_patch_run
+
+        - name: Check Reboot Requirement
+          command: needs-restarting -r
+          register: rhel_reboot
+          ignore_errors: yes
+          changed_when: false
+
+    # --- WINDOWS LOGIC ---
+    - name: Windows - Check and Apply
+      when: ansible_os_family == "Windows"
+      block:
+        - name: Windows Updates
+          ansible.windows.win_updates:
+            category_names:
+              - SecurityUpdates
+              - CriticalUpdates
+            state: installed
+          register: win_patch_run
+
+    # --- APPEND DATA ---
+    - name: Record Data to Central Report
+      delegate_to: localhost
+      lineinfile:
+        path: "{{ report_file }}"
+        line: >-
+          {{ inventory_hostname }},
+          {{ ansible_os_family }},
+          {{ 'Changed' if ((rhel_patch_run is defined and rhel_patch_run.changed) or (win_patch_run is defined and win_patch_run.changed)) else 'No Change' }},
+          {{ rhel_updates.results | length if rhel_updates.results is defined else (win_patch_run.found_update_count | default(0)) }},
+          {{ rhel_patch_run.results | length if rhel_patch_run.results is defined else (win_patch_run.installed_update_count | default(0)) }},
+          {{ 'Yes' if ((rhel_reboot is defined and rhel_reboot.rc != 0) or (win_patch_run is defined and win_patch_run.reboot_required)) else 'No' }}
+
+    # --- DISPLAY REPORT IN AAP CONSOLE ---
+    - name: Display Final Report in Job Output
+      run_once: true
+      delegate_to: localhost
+      debug:
+        msg: "{{ lookup('file', report_file).splitlines() }}"
