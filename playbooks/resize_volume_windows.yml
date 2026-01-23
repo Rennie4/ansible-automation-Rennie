@@ -26,7 +26,6 @@
         seconds: 15
       when: modification_result.changed
 
-    # NEW TASK: This tells Ansible to recognize the IP from your survey
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
@@ -35,7 +34,6 @@
         ansible_winrm_server_cert_validation: ignore
 
 - name: Windows Configuration - Automatic Partition Extension
-  # We now target the group created in the task above
   hosts: dynamic_windows_hosts
   gather_facts: false
   tasks:
@@ -43,8 +41,11 @@
       ansible.windows.win_shell: |
         $targetVolId = "{{ target_volume_id }}".Replace("-", "")
         Update-HostStorageCache
+        
+        # Identify disk by AWS Volume ID Serial
         $disk = Get-Disk | Where-Object { $_.SerialNumber -like "*$targetVolId*" }
         
+        # Fallback for older instances or non-nitro
         if (-not $disk) {
             $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and $_.AllocatableSize -gt 0 } | Select-Object -First 1
         }
