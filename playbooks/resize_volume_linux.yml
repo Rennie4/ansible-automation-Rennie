@@ -4,23 +4,29 @@
   connection: local
   gather_facts: false
   vars:
-    # 1. Permanent Region
     region: "eu-west-1"
-    # 2. Dynamic variables with safety checks
-    target_instance_id: "{{ instance_id | default('') }}"
-    target_new_size: "{{ new_size | default('') }}"
+    # These match the variables from your AWX/Controller Survey
+    target_ip: "{{ instance_ip_address }}"
+    target_new_size: "{{ new_size_gb }}"
 
   tasks:
-    - name: Pre-flight Check - Ensure variables are provided
-      fail:
-        msg: "ERROR: You must provide 'instance_id' and 'new_size' (e.g. -e \"instance_id=i-xxxx new_size=20\")"
-      when: target_instance_id == "" or target_new_size == ""
+    - name: Get Instance ID from IP Address
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+          ip-address: "{{ target_ip }}"
+      register: instance_info
 
-    - name: Get current volume info
+    - name: Set Instance ID variable
+      set_fact:
+        target_instance_id: "{{ instance_info.instances[0].instance_id }}"
+
+    - name: Get current volume info for this instance
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
+          # Covers all common root device names
           attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
       register: vol_info
 
@@ -34,7 +40,7 @@
 
     - name: Handle AWS Modification Limits
       fail:
-        msg: "AWS Limit Reached: This volume has been resized too many times in 24h or is still optimizing."
+        msg: "AWS Limit Reached: Volume resized 4 times in 24h or is still optimizing."
       when: 
         - volume_modification.failed is defined
         - "'VolumeModificationRateExceeded' in volume_modification.msg"
@@ -45,9 +51,9 @@
 
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
-        name: "{{ target_public_ip }}"
+        name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2142/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2145/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
@@ -67,15 +73,15 @@
       shell: |
         # Identify current root partition
         SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
-        # Identify parent disk (supports nvme and xvd)
+        # Identify parent disk
         PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
         # Identify partition number
         PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
 
-        # Grow partition table
+        # 1. Expand partition
         growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
 
-        # Expand Filesystem (XFS or EXT4)
+        # 2. Expand Filesystem
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
@@ -86,4 +92,4 @@
 
     - name: Final Verification
       debug:
-        msg: "Disk resized successfully. Current status: {{ resize_out.stdout_lines }}"
+        msg: "Success! OS Output: {{ resize_out.stdout_lines }}"
