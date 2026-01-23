@@ -4,9 +4,9 @@
   connection: local
   gather_facts: false
   vars:
-    # No hardcoded values for volume size
+    # Set to your specific region to prevent 'undefined' errors
+    region: "eu-west-1"
     target_instance_id: "{{ instance_id }}"
-    region: "{{ aws_region }}"
 
   tasks:
     - name: Get current volume info
@@ -14,13 +14,15 @@
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
-          attachment.device: "/dev/sda1"
+          # Checks all common AWS device mappings to find the root volume
+          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
       register: vol_info
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         id: "{{ vol_info.volumes[0].id }}"
+        # new_size must be passed as an extra var at runtime
         volume_size: "{{ new_size }}"
       register: volume_modification
 
@@ -32,8 +34,8 @@
       ansible.builtin.add_host:
         name: "{{ target_public_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2136/ssh_key_data"
-        ansible_user: ec2-user 
+        ansible_ssh_private_key_file: "/runner/artifacts/2139/ssh_key_data"
+        ansible_user: "{{ remote_user | default('ec2-user') }}"
 
 - name: OS Configuration - Universal Multi-Distro Setup
   hosts: target_nodes
@@ -50,25 +52,25 @@
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # Dynamically find the root device and partition index
-        ROOT_DEV=$(lsblk -no PKNAME $(findmnt / -n -o SOURCE))
-        PART_NUM=$(lsblk -no PARTN $(findmnt / -n -o SOURCE))
+        # Find the device name for the root partition (e.g., /dev/nvme0n1p1)
+        ROOT_PART=$(findmnt / -n -o SOURCE)
         
-        if [ -z "$ROOT_DEV" ]; then
-          # Fallback for systems where PKNAME is empty (NVMe direct)
-          ROOT_DEV=$(findmnt / -n -o SOURCE | sed 's/p[0-9].*//;s/[0-9].*//')
-          PART_NUM=$(findmnt / -n -o SOURCE | grep -o '[0-9]*$')
-        fi
+        # Find the parent disk (e.g., /dev/nvme0n1)
+        PARENT_DISK=$(lsblk -no PKNAME $ROOT_PART)
+        
+        # Find the partition number (e.g., 1)
+        PART_NUM=$(lsblk -no PARTN $ROOT_PART)
 
-        # Grow the partition
-        growpart /dev/$ROOT_DEV $PART_NUM || echo "Partition already grown"
+        # 1. Expand the partition table
+        # We use /dev/$PARENT_DISK to ensure we target the physical device
+        growpart /dev/$PARENT_DISK $PART_NUM || echo "Partition already grown"
 
-        # Grow the Filesystem (XFS or EXT4)
+        # 2. Expand the Filesystem
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
         else
-          resize2fs /dev/${ROOT_DEV}${PART_NUM}
+          resize2fs $ROOT_PART
         fi
       register: resize_out
 
