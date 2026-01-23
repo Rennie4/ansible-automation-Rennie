@@ -3,96 +3,75 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    # No hardcoded values for volume size
+    target_instance_id: "{{ instance_id }}"
+    region: "{{ aws_region }}"
+
   tasks:
     - name: Get current volume info
       amazon.aws.ec2_vol_info:
-        region: "eu-west-1"
+        region: "{{ region }}"
         filters:
-          volume-id: "{{ target_volume_id }}"
+          attachment.instance-id: "{{ target_instance_id }}"
+          attachment.device: "/dev/sda1"
       register: vol_info
 
-    # This task prevents the "IncorrectModificationState" error
-    - name: Wait for any existing volume modifications to complete
-      amazon.aws.ec2_vol_info:
-        region: "eu-west-1"
-        filters:
-          volume-id: "{{ target_volume_id }}"
-      register: current_vol
-      until: "current_vol.volumes[0].attachment_set[0].status == 'attached' and (current_vol.volumes[0].modification_state | default('completed') == 'completed')"
-      retries: 10
-      delay: 30
-
-    - name: "Modify EBS volume {{ target_volume_id }} to {{ target_new_size }} GB"
+    - name: Modify EBS volume
       amazon.aws.ec2_vol:
-        id: "{{ target_volume_id }}"
-        volume_size: "{{ target_new_size }}"
-        volume_type: gp3
-        region: "eu-west-1"
-        zone: "{{ vol_info.volumes[0].zone }}"
-        modify_volume: true
-      register: resize_result
+        region: "{{ region }}"
+        id: "{{ vol_info.volumes[0].id }}"
+        volume_size: "{{ new_size }}"
+      register: volume_modification
 
     - name: Wait for AWS backend to present new blocks
       ansible.builtin.pause:
         seconds: 20
-      when: resize_result.changed
 
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
-        name: "{{ target_ip }}"
-        groups: dynamic_linux_hosts
-        ansible_user: "{{ ansible_user | default('ubuntu') }}"
-        ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file | default(omit) }}"
-        ansible_connection: ssh
+        name: "{{ target_public_ip }}"
+        groups: target_nodes
+        ansible_ssh_private_key_file: "/runner/artifacts/2136/ssh_key_data"
+        ansible_user: ec2-user 
 
 - name: OS Configuration - Universal Multi-Distro Setup
-  hosts: dynamic_linux_hosts
-  become: yes
+  hosts: target_nodes
+  become: true
   gather_facts: true
-  vars:
-    vol_id_short: "{{ target_volume_id | replace('-', '') }}"
 
   tasks:
     - name: Ensure resize tools are present
       ansible.builtin.package:
         name:
-          - "{{ 'cloud-utils-growpart' if ansible_os_family == 'RedHat' else 'cloud-guest-utils' }}"
-          - util-linux
-          - xfsprogs
+          - cloud-utils-growpart
+          - gdisk
         state: present
-      ignore_errors: true
 
     - name: Universal Device Discovery and Resize
-      ansible.builtin.shell: |
-        # Find by Serial (Nitro)
-        DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
-
-        if [ -n "$DEVICE" ]; then
-          PARENT_NAME=$(lsblk -no PKNAME "$DEVICE")
-          
-          if [ -z "$PARENT_NAME" ]; then
-             DISK_PATH="$DEVICE"
-             echo 1 > "/sys/class/block/$(basename $DEVICE)/device/rescan" 2>/dev/null || true
-          else
-             DISK_PATH="/dev/$PARENT_NAME"
-             PART_NUM=$(echo "$DEVICE" | grep -o '[0-9]\+$')
-             echo 1 > "/sys/class/block/$PARENT_NAME/device/rescan" 2>/dev/null || true
-             growpart "$DISK_PATH" "$PART_NUM" || echo "Already grown"
-          fi
-
-          FS_TYPE=$(lsblk -no FSTYPE "$DEVICE")
-          if [ "$FS_TYPE" == "xfs" ]; then
-              xfs_growfs "$DEVICE"
-          else
-              resize2fs "$DEVICE"
-          fi
-          df -h "$DEVICE"
-        else
-          echo "ERROR: Disk {{ target_volume_id }} not found"
-          exit 1
+      shell: |
+        # Dynamically find the root device and partition index
+        ROOT_DEV=$(lsblk -no PKNAME $(findmnt / -n -o SOURCE))
+        PART_NUM=$(lsblk -no PARTN $(findmnt / -n -o SOURCE))
+        
+        if [ -z "$ROOT_DEV" ]; then
+          # Fallback for systems where PKNAME is empty (NVMe direct)
+          ROOT_DEV=$(findmnt / -n -o SOURCE | sed 's/p[0-9].*//;s/[0-9].*//')
+          PART_NUM=$(findmnt / -n -o SOURCE | grep -o '[0-9]*$')
         fi
-      register: linux_resize_out
+
+        # Grow the partition
+        growpart /dev/$ROOT_DEV $PART_NUM || echo "Partition already grown"
+
+        # Grow the Filesystem (XFS or EXT4)
+        FS_TYPE=$(findmnt / -n -o FSTYPE)
+        if [ "$FS_TYPE" == "xfs" ]; then
+          xfs_growfs /
+        else
+          resize2fs /dev/${ROOT_DEV}${PART_NUM}
+        fi
+      register: resize_out
 
     - name: Report Final Status
-      ansible.builtin.debug:
-        msg: "{{ linux_resize_out.stdout_lines }}"
+      debug:
+        msg: "{{ resize_out.stdout_lines }}"
