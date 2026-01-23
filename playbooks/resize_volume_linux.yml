@@ -5,7 +5,7 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Mapping variables from your AWX Survey
+    # Mapping variables from your AWX/Controller Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
 
