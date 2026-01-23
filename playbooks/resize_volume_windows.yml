@@ -5,52 +5,64 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    volume_id: "{{ target_volume_id }}"
-    new_size: "{{ target_new_size }}"
 
   tasks:
     - name: Get current volume info
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
-          volume-id: "{{ volume_id }}"
+          volume-id: "{{ target_volume_id }}"
       register: vol_info
 
-    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
+    - name: "Modify EBS volume {{ target_volume_id }} to {{ target_new_size }} GB"
       amazon.aws.ec2_vol:
-        id: "{{ volume_id }}"
-        volume_size: "{{ new_size }}"
+        id: "{{ target_volume_id }}"
+        volume_size: "{{ target_new_size }}"
         volume_type: gp3
         region: "{{ region }}"
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
+      register: modification_result
+
+    - name: Wait for AWS to register volume modification
+      ansible.builtin.pause:
+        seconds: 15
+      when: modification_result.changed
 
 - name: Windows Configuration - Automatic Partition Extension
-  hosts: windows_hosts
+  # Targets the specific IP provided in the AAP Survey
+  hosts: "{{ target_ip }}"
   gather_facts: false
   tasks:
     - name: Find disk and Extend (Nitro and Non-Nitro)
-      win_shell: |
+      ansible.windows.win_shell: |
         $targetVolId = "{{ target_volume_id }}".Replace("-", "")
+        
+        # Ensure Windows rescans the hardware for new space
+        Update-HostStorageCache
+        
+        # Match by Volume ID
         $disk = Get-Disk | Where-Object { $_.SerialNumber -like "*$targetVolId*" }
+        
+        # Fallback for older instance types
         if (-not $disk) {
             $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and $_.AllocatableSize -gt 0 } | Select-Object -First 1
         }
+
         if ($disk) {
-            Update-HostStorageCache
             $partition = $disk | Get-Partition | Where-Object { $_.DriveLetter }
             if ($partition) {
                 $maxSize = (Get-PartitionSupportedSize -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber).SizeMax
                 Resize-Partition -DiskNumber $disk.Number -PartitionNumber $partition.PartitionNumber -Size $maxSize
-                Write-Host "Successfully extended Drive $($partition.DriveLetter) on Disk $($disk.Number)"
+                return "Successfully extended Drive $($partition.DriveLetter) on Disk $($disk.Number)"
             } else {
-                Write-Error "Found disk $($disk.Number), but no partition with a letter found."
+                throw "Partition with letter not found on Disk $($disk.Number)."
             }
         } else {
-            Write-Error "Could not find a disk matching {{ target_volume_id }} or with unallocated space."
+            throw "Disk matching {{ target_volume_id }} not found on host {{ target_ip }}."
         }
       register: resize_out
 
     - name: Final Result
-      debug:
+      ansible.builtin.debug:
         msg: "{{ resize_out.stdout | default('Disk check complete') }}"
