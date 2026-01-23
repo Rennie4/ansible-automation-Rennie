@@ -4,7 +4,6 @@
   connection: local
   gather_facts: false
   vars:
-    # Set to your specific region to prevent 'undefined' errors
     region: "eu-west-1"
     target_instance_id: "{{ instance_id }}"
 
@@ -14,66 +13,66 @@
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
-          # Checks all common AWS device mappings to find the root volume
-          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
+          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1"]
       register: vol_info
+
+    - name: Check for pending modifications
+      amazon.aws.ec2_vol_info:
+        region: "{{ region }}"
+        filters:
+          volume-id: "{{ vol_info.volumes[0].id }}"
+      register: modification_status
+
+    # This prevents the "Rate Exceeded" crash by checking status first
+    - name: Wait if volume is still optimizing from previous resize
+      amazon.aws.ec2_vol_info:
+        region: "{{ region }}"
+        filters:
+          volume-id: "{{ vol_info.volumes[0].id }}"
+      register: wait_status
+      until: wait_status.volumes[0].status != "optimizing"
+      retries: 10
+      delay: 30
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         id: "{{ vol_info.volumes[0].id }}"
-        # new_size must be passed as an extra var at runtime
         volume_size: "{{ new_size }}"
+        modify_volume: true
       register: volume_modification
+      ignore_errors: yes
 
-    - name: Wait for AWS backend to present new blocks
-      ansible.builtin.pause:
-        seconds: 20
+    - name: Handle Rate Limit Error
+      fail:
+        msg: "AWS Limit Hit: You have modified this volume 4 times in 24h. Check 'aws ec2 describe-volumes-modifications' for your reset time."
+      when: 
+        - volume_modification.failed is defined 
+        - "'VolumeModificationRateExceeded' in volume_modification.msg"
 
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
         name: "{{ target_public_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2139/ssh_key_data"
-        ansible_user: "{{ remote_user | default('ec2-user') }}"
+        ansible_ssh_private_key_file: "/runner/artifacts/{{ artifact_id | default('2139') }}/ssh_key_data"
+        ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
   hosts: target_nodes
   become: true
-  gather_facts: true
-
   tasks:
-    - name: Ensure resize tools are present
-      ansible.builtin.package:
-        name:
-          - cloud-utils-growpart
-          - gdisk
-        state: present
-
-    - name: Universal Device Discovery and Resize
+    - name: Universal Resize Logic
       shell: |
-        # Find the device name for the root partition (e.g., /dev/nvme0n1p1)
         ROOT_PART=$(findmnt / -n -o SOURCE)
-        
-        # Find the parent disk (e.g., /dev/nvme0n1)
         PARENT_DISK=$(lsblk -no PKNAME $ROOT_PART)
-        
-        # Find the partition number (e.g., 1)
         PART_NUM=$(lsblk -no PARTN $ROOT_PART)
 
-        # 1. Expand the partition table
-        # We use /dev/$PARENT_DISK to ensure we target the physical device
-        growpart /dev/$PARENT_DISK $PART_NUM || echo "Partition already grown"
+        growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
 
-        # 2. Expand the Filesystem
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
         else
           resize2fs $ROOT_PART
         fi
-      register: resize_out
-
-    - name: Report Final Status
-      debug:
-        msg: "{{ resize_out.stdout_lines }}"
+      register: os_res
