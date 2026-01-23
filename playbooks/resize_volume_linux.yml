@@ -5,7 +5,7 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Mapping variables from your AWX Survey
+    # Variables from your AWX/Ansible Controller Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
 
@@ -41,7 +41,7 @@
 
     - name: Handle AWS Modification Limits (Only if Failed)
       fail:
-        msg: "AWS Limit Reached: Volume resized 4 times in 24h or is still optimizing."
+        msg: "AWS Limit Reached: Volume modified 4x in 24h or is still optimizing."
       when: 
         - volume_modification.failed is defined 
         - volume_modification.failed 
@@ -55,7 +55,7 @@
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2152/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2155/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
@@ -64,26 +64,24 @@
   gather_facts: true
 
   tasks:
+    - name: Capture size before resize
+      command: df -h / --output=size
+      register: size_before
+      changed_when: false
+
     - name: Ensure resize tools are present
       ansible.builtin.package:
-        name:
-          - cloud-utils-growpart
-          - gdisk
+        name: [cloud-utils-growpart, gdisk]
         state: present
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # Identify current root partition
         SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
-        # Identify parent disk
         PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
-        # Identify partition number
         PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
 
-        # 1. Expand partition
         growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
 
-        # 2. Expand Filesystem
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
@@ -92,6 +90,10 @@
         fi
       register: resize_out
 
-    - name: Final Verification
+    - name: Final Disk Summary
       debug:
-        msg: "Success! Disk resized. OS Output: {{ resize_out.stdout_lines }}"
+        msg: 
+          - "OLD SIZE: {{ size_before.stdout_lines[1] | trim }}"
+          - "NEW SIZE: {{ item }}"
+      loop: "{{ resize_out.stdout_lines }}"
+      when: "'changed' in item or 'blocks' in item or 'data blocks' in item"
