@@ -3,13 +3,10 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    region: "eu-west-1"
-
   tasks:
     - name: Get current volume info
       amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
+        region: "eu-west-1"
         filters:
           volume-id: "{{ target_volume_id }}"
       register: vol_info
@@ -19,7 +16,7 @@
         id: "{{ target_volume_id }}"
         volume_size: "{{ target_new_size }}"
         volume_type: gp3
-        region: "{{ region }}"
+        region: "eu-west-1"
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
       register: modification_result
@@ -29,22 +26,25 @@
         seconds: 15
       when: modification_result.changed
 
+    # NEW TASK: This tells Ansible to recognize the IP from your survey
+    - name: Add target IP to temporary inventory
+      ansible.builtin.add_host:
+        name: "{{ target_ip }}"
+        groups: dynamic_windows_hosts
+        ansible_connection: winrm
+        ansible_winrm_server_cert_validation: ignore
+
 - name: Windows Configuration - Automatic Partition Extension
-  # Targets the specific IP provided in the AAP Survey
-  hosts: "{{ target_ip }}"
+  # We now target the group created in the task above
+  hosts: dynamic_windows_hosts
   gather_facts: false
   tasks:
-    - name: Find disk and Extend (Nitro and Non-Nitro)
+    - name: Find disk and Extend
       ansible.windows.win_shell: |
         $targetVolId = "{{ target_volume_id }}".Replace("-", "")
-        
-        # Ensure Windows rescans the hardware for new space
         Update-HostStorageCache
-        
-        # Match by Volume ID
         $disk = Get-Disk | Where-Object { $_.SerialNumber -like "*$targetVolId*" }
         
-        # Fallback for older instance types
         if (-not $disk) {
             $disk = Get-Disk | Where-Object { $_.Number -ne 0 -and $_.AllocatableSize -gt 0 } | Select-Object -First 1
         }
