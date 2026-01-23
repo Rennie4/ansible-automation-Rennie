@@ -1,0 +1,13 @@
+---
+- name: Get Uptime for Linux Instances
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Get uptime status
+      ansible.builtin.command: uptime -p
+      register: linux_uptime
+      changed_when: false
+
+    - name: Display Linux Uptime
+      ansible.builtin.debug:
+        msg: "Instance {{ inventory_hostname }} uptime is: {{ linux_uptime.stdout }}"
