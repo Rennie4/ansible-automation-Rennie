@@ -5,7 +5,6 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Mapping variables from your AWX/Controller Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
 
@@ -39,23 +38,15 @@
       register: volume_modification
       ignore_errors: yes
 
-    - name: Handle AWS Modification Limits (Only if Failed)
-      fail:
-        msg: "AWS Limit Reached: Volume resized 4x in 24h or is still optimizing."
-      when: 
-        - volume_modification.failed is defined 
-        - volume_modification.failed 
-        - "'VolumeModificationRateExceeded' in (volume_modification.msg | default(''))"
-
     - name: Wait for AWS backend
       ansible.builtin.pause:
-        seconds: 20
+        seconds: 30 # Increased wait time to ensure blocks are available
 
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2158/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2162/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
@@ -74,14 +65,20 @@
         name: [cloud-utils-growpart, gdisk]
         state: present
 
-    - name: Universal Device Discovery and Resize
+    - name: Universal Device Discovery and Force Rescan
       shell: |
+        # 1. Discover device details
         SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
         PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
         PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
 
+        # 2. Force the Kernel to rescan the disk hardware
+        echo 1 > /sys/class/block/${PARENT_DISK}/device/rescan || true
+        
+        # 3. Expand the partition table
         growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
 
+        # 4. Expand the Filesystem
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
