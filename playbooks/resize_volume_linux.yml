@@ -4,75 +4,86 @@
   connection: local
   gather_facts: false
   vars:
+    # 1. Permanent Region
     region: "eu-west-1"
-    target_instance_id: "{{ instance_id }}"
+    # 2. Dynamic variables with safety checks
+    target_instance_id: "{{ instance_id | default('') }}"
+    target_new_size: "{{ new_size | default('') }}"
 
   tasks:
+    - name: Pre-flight Check - Ensure variables are provided
+      fail:
+        msg: "ERROR: You must provide 'instance_id' and 'new_size' (e.g. -e \"instance_id=i-xxxx new_size=20\")"
+      when: target_instance_id == "" or target_new_size == ""
+
     - name: Get current volume info
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
-          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1"]
+          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
       register: vol_info
-
-    - name: Check for pending modifications
-      amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
-        filters:
-          volume-id: "{{ vol_info.volumes[0].id }}"
-      register: modification_status
-
-    # This prevents the "Rate Exceeded" crash by checking status first
-    - name: Wait if volume is still optimizing from previous resize
-      amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
-        filters:
-          volume-id: "{{ vol_info.volumes[0].id }}"
-      register: wait_status
-      until: wait_status.volumes[0].status != "optimizing"
-      retries: 10
-      delay: 30
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         id: "{{ vol_info.volumes[0].id }}"
-        volume_size: "{{ new_size }}"
-        modify_volume: true
+        volume_size: "{{ target_new_size }}"
       register: volume_modification
       ignore_errors: yes
 
-    - name: Handle Rate Limit Error
+    - name: Handle AWS Modification Limits
       fail:
-        msg: "AWS Limit Hit: You have modified this volume 4 times in 24h. Check 'aws ec2 describe-volumes-modifications' for your reset time."
+        msg: "AWS Limit Reached: This volume has been resized too many times in 24h or is still optimizing."
       when: 
-        - volume_modification.failed is defined 
+        - volume_modification.failed is defined
         - "'VolumeModificationRateExceeded' in volume_modification.msg"
+
+    - name: Wait for AWS backend
+      ansible.builtin.pause:
+        seconds: 20
 
     - name: Add target IP to temporary inventory
       ansible.builtin.add_host:
         name: "{{ target_public_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/{{ artifact_id | default('2139') }}/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2142/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
   hosts: target_nodes
   become: true
-  tasks:
-    - name: Universal Resize Logic
-      shell: |
-        ROOT_PART=$(findmnt / -n -o SOURCE)
-        PARENT_DISK=$(lsblk -no PKNAME $ROOT_PART)
-        PART_NUM=$(lsblk -no PARTN $ROOT_PART)
+  gather_facts: true
 
+  tasks:
+    - name: Ensure resize tools are present
+      ansible.builtin.package:
+        name:
+          - cloud-utils-growpart
+          - gdisk
+        state: present
+
+    - name: Universal Device Discovery and Resize
+      shell: |
+        # Identify current root partition
+        SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
+        # Identify parent disk (supports nvme and xvd)
+        PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
+        # Identify partition number
+        PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
+
+        # Grow partition table
         growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
 
+        # Expand Filesystem (XFS or EXT4)
         FS_TYPE=$(findmnt / -n -o FSTYPE)
         if [ "$FS_TYPE" == "xfs" ]; then
           xfs_growfs /
         else
-          resize2fs $ROOT_PART
+          resize2fs $SPECIFIC_DEV
         fi
-      register: os_res
+      register: resize_out
+
+    - name: Final Verification
+      debug:
+        msg: "Disk resized successfully. Current status: {{ resize_out.stdout_lines }}"
