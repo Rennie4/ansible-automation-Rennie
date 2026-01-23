@@ -1,0 +1,17 @@
+---
+- name: Get Uptime for Windows Instances
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Query Windows System Uptime
+      ansible.windows.win_powershell:
+        script: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          $uptime = (Get-Date) - $os.LastBootUpTime
+          return "$($uptime.Days) days, $($uptime.Hours) hours, $($uptime.Minutes) minutes"
+      register: win_uptime
+      changed_when: false
+
+    - name: Display Windows Uptime
+      ansible.builtin.debug:
+        msg: "Windows Instance {{ inventory_hostname }} uptime is: {{ win_uptime.output[0] }}"
