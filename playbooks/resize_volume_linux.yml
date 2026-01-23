@@ -11,6 +11,17 @@
           volume-id: "{{ target_volume_id }}"
       register: vol_info
 
+    # This task prevents the "IncorrectModificationState" error
+    - name: Wait for any existing volume modifications to complete
+      amazon.aws.ec2_vol_info:
+        region: "eu-west-1"
+        filters:
+          volume-id: "{{ target_volume_id }}"
+      register: current_vol
+      until: "current_vol.volumes[0].attachment_set[0].status == 'attached' and (current_vol.volumes[0].modification_state | default('completed') == 'completed')"
+      retries: 10
+      delay: 30
+
     - name: "Modify EBS volume {{ target_volume_id }} to {{ target_new_size }} GB"
       amazon.aws.ec2_vol:
         id: "{{ target_volume_id }}"
@@ -21,7 +32,7 @@
         modify_volume: true
       register: resize_result
 
-    - name: Wait for AWS backend
+    - name: Wait for AWS backend to present new blocks
       ansible.builtin.pause:
         seconds: 20
       when: resize_result.changed
@@ -30,7 +41,6 @@
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: dynamic_linux_hosts
-        # These lines ensure the credentials you provided in AAP are passed to the IP
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_private_key_file: "{{ ansible_ssh_private_key_file | default(omit) }}"
         ansible_connection: ssh
