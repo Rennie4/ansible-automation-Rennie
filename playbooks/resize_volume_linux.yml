@@ -5,7 +5,7 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Variables from your AWX/Ansible Controller Survey
+    # Mapping variables from your AWX Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
 
@@ -41,7 +41,7 @@
 
     - name: Handle AWS Modification Limits (Only if Failed)
       fail:
-        msg: "AWS Limit Reached: Volume modified 4x in 24h or is still optimizing."
+        msg: "AWS Limit Reached: Volume resized 4x in 24h or is still optimizing."
       when: 
         - volume_modification.failed is defined 
         - volume_modification.failed 
@@ -55,7 +55,7 @@
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2155/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2158/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
@@ -90,10 +90,15 @@
         fi
       register: resize_out
 
+    - name: Capture size after resize
+      command: df -h / --output=size
+      register: size_after
+      changed_when: false
+
     - name: Final Disk Summary
       debug:
         msg: 
-          - "OLD SIZE: {{ size_before.stdout_lines[1] | trim }}"
-          - "NEW SIZE: {{ item }}"
-      loop: "{{ resize_out.stdout_lines }}"
-      when: "'changed' in item or 'blocks' in item or 'data blocks' in item"
+          - "-------------------------------------------"
+          - "OLD DISK SIZE: {{ size_before.stdout_lines[1] | trim }}"
+          - "NEW DISK SIZE: {{ size_after.stdout_lines[1] | trim }}"
+          - "-------------------------------------------"
