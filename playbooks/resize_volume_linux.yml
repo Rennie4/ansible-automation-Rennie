@@ -5,34 +5,35 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # These match the variables from your AWX/Controller Survey
+    # Variables from your AWX Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
 
   tasks:
-    - name: Get Instance ID from IP Address
+    - name: Get Instance ID and Zone from IP Address
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
         filters:
           ip-address: "{{ target_ip }}"
       register: instance_info
 
-    - name: Set Instance ID variable
+    - name: Set Instance Details
       set_fact:
         target_instance_id: "{{ instance_info.instances[0].instance_id }}"
+        target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
 
-    - name: Get current volume info for this instance
+    - name: Get current volume info
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
-          # Covers all common root device names
           attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
       register: vol_info
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
+        zone: "{{ target_zone }}" # This fixes the 'specify zone' error
         id: "{{ vol_info.volumes[0].id }}"
         volume_size: "{{ target_new_size }}"
       register: volume_modification
@@ -53,7 +54,7 @@
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2145/ssh_key_data"
+        ansible_ssh_private_key_file: "/runner/artifacts/2149/ssh_key_data"
         ansible_user: ec2-user
 
 - name: OS Configuration - Universal Multi-Distro Setup
@@ -71,11 +72,11 @@
 
     - name: Universal Device Discovery and Resize
       shell: |
-        # Identify current root partition
+        # Find the root partition device
         SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
-        # Identify parent disk
+        # Find parent disk
         PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
-        # Identify partition number
+        # Find partition number
         PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
 
         # 1. Expand partition
