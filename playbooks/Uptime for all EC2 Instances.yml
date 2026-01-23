@@ -1,0 +1,31 @@
+---
+- name: Get Uptime for all EC2 Instances
+  hosts: all
+  gather_facts: true
+  tasks:
+
+    # --- LINUX UPTIME ---
+    - name: Get uptime for Linux instances
+      ansible.builtin.command: uptime -p
+      register: linux_uptime
+      when: ansible_os_family != "Windows"
+      changed_when: false
+
+    # --- WINDOWS UPTIME ---
+    - name: Get uptime for Windows instances
+      ansible.windows.win_powershell:
+        script: |
+          $uptime = Get-Uptime
+          return "$($uptime.Days) days, $($uptime.Hours) hours, $($uptime.Minutes) minutes"
+      register: win_uptime
+      when: ansible_os_family == "Windows"
+      changed_when: false
+
+    # --- DISPLAY RESULTS ---
+    - name: Show Uptime Result
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            linux_uptime.stdout if ansible_os_family != 'Windows'
+            else win_uptime.output[0]
+          }}
