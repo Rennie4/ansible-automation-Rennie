@@ -3,99 +3,100 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    region: "eu-west-1"
-    volume_id: "{{ target_volume_id }}"
-    new_size: "{{ target_new_size }}"
-
   tasks:
     - name: Get current volume info
       amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
+        region: "eu-west-1"
         filters:
-          volume-id: "{{ volume_id }}"
+          volume-id: "{{ target_volume_id }}"
       register: vol_info
 
-    - name: "Modify EBS volume {{ volume_id }} to {{ new_size }} GB"
+    - name: "Modify EBS volume {{ target_volume_id }} to {{ target_new_size }} GB"
       amazon.aws.ec2_vol:
-        id: "{{ volume_id }}"
-        volume_size: "{{ new_size }}"
-        region: "{{ region }}"
+        id: "{{ target_volume_id }}"
+        volume_size: "{{ target_new_size }}"
+        volume_type: gp3
+        region: "eu-west-1"
         zone: "{{ vol_info.volumes[0].zone }}"
         modify_volume: true
       register: resize_result
-      ignore_errors: yes 
 
     - name: Wait for AWS backend
-      pause:
-        seconds: 30
+      ansible.builtin.pause:
+        seconds: 20
       when: resize_result.changed
 
+    - name: Add target IP to temporary inventory
+      ansible.builtin.add_host:
+        name: "{{ target_ip }}"
+        groups: dynamic_linux_hosts
+        ansible_connection: ssh
+
 - name: OS Configuration - Universal Multi-Distro Setup
-  hosts: linux_hosts
+  hosts: dynamic_linux_hosts
   become: yes
+  gather_facts: true
   vars:
+    # Cleans the Volume ID for matching Nitro Serial numbers
     vol_id_short: "{{ target_volume_id | replace('-', '') }}"
+
   tasks:
-    - name: Ensure resize tools are present
-      package:
-        name: 
-          - cloud-guest-utils
+    - name: Ensure resize tools are present across distros
+      ansible.builtin.package:
+        name:
+          - "{{ 'cloud-utils-growpart' if ansible_os_family == 'RedHat' else 'cloud-guest-utils' }}"
           - util-linux
+          - xfsprogs
+          - e2fsprogs
         state: present
       ignore_errors: true
 
     - name: Universal Device Discovery and Resize
-      shell: |
-        # 1. FIND BY MOUNTPOINT (Most reliable for existing data disks)
-        # findmnt returns the source device for a specific mount point
-        DEVICE=$(findmnt -no SOURCE /data || findmnt -no SOURCE /mnt/data)
+      ansible.builtin.shell: |
+        # 1. FIND BY SERIAL (Nitro) - Safest method
+        DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
 
-        # 2. FALLBACK: FIND BY SERIAL (Nitro instances)
+        # 2. FALLBACK: FIND BY MOUNTPOINT
         if [ -z "$DEVICE" ]; then
-          DEVICE=$(lsblk -rdpno NAME,SERIAL | grep "{{ vol_id_short }}" | awk '{print $1}' | head -n 1)
-        fi
-
-        # 3. FALLBACK: FIND BY SIZE (New disks not yet mounted)
-        if [ -z "$DEVICE" ]; then
-          ROOT_DISK=$(lsblk -no PKNAME $(lsblk -no NAME,MOUNTPOINT | grep -w "/" | awk '{print $1}'))
-          DEVICE=$(lsblk -rdpno NAME,SIZE | grep "{{ target_new_size }}G" | grep -v "$ROOT_DISK" | awk '{print $1}' | head -n 1)
+          DEVICE=$(findmnt -no SOURCE /data || findmnt -no SOURCE /mnt/data || findmnt -no SOURCE /)
         fi
 
         if [ -n "$DEVICE" ]; then
-          # Get the parent disk name (e.g., if DEVICE is /dev/xvdf1, PARENT is xvdf)
+          # Identify if it is a partition or a raw disk
           PARENT_NAME=$(lsblk -no PKNAME "$DEVICE")
-          [ -z "$PARENT_NAME" ] && PARENT_NAME=$(basename "$DEVICE")
-
-          # Refresh kernel hardware view
-          echo 1 > "/sys/class/block/$PARENT_NAME/device/rescan"
-          sleep 2
           
-          echo "STATUS: Working on device $DEVICE"
-
-          if ! blkid "$DEVICE"; then
-              echo "STATUS: Blank disk. Initializing..."
-              mkfs.ext4 -F "$DEVICE"
-              mkdir -p /data
-              mount "$DEVICE" /data
+          if [ -z "$PARENT_NAME" ]; then
+             # It's a raw disk (no partition table)
+             DISK_PATH="$DEVICE"
+             echo 1 > "/sys/class/block/$(basename $DEVICE)/device/rescan" 2>/dev/null || true
           else
-              echo "STATUS: Existing data found. Resizing..."
-              # Grow partition if it exists
-              growpart "/dev/$PARENT_NAME" 1 || growpart "/dev/$PARENT_NAME" 2 || echo "Raw disk resize"
-              
-              # Perform the actual filesystem grow (Ext4 or XFS)
-              resize2fs "$DEVICE" || xfs_growfs "$DEVICE" || xfs_growfs /data
+             # It's a partition, find the parent disk (e.g., nvme0n1)
+             DISK_PATH="/dev/$PARENT_NAME"
+             PART_NUM=$(echo "$DEVICE" | grep -o '[0-9]\+$')
+             echo 1 > "/sys/class/block/$PARENT_NAME/device/rescan" 2>/dev/null || true
+             
+             # Grow the partition table
+             growpart "$DISK_PATH" "$PART_NUM" || echo "Partition already grown"
+          fi
+
+          # Detect Filesystem and Grow
+          FS_TYPE=$(lsblk -no FSTYPE "$DEVICE")
+          if [ "$FS_TYPE" == "xfs" ]; then
+              xfs_growfs "$DEVICE"
+          elif [ "$FS_TYPE" == "ext4" ] || [ "$FS_TYPE" == "ext3" ]; then
+              resize2fs "$DEVICE"
+          else
+              echo "Unknown FS Type: $FS_TYPE. Manual intervention required."
+              exit 1
           fi
           
-          echo "TARGET_DEVICE: $DEVICE"
           df -h "$DEVICE"
         else
-          echo "ERROR: Could not find disk by Mountpoint (/data), Serial, or Size"
-          lsblk -f
+          echo "ERROR: Could not find disk matching {{ target_volume_id }} on {{ target_ip }}"
           exit 1
         fi
       register: linux_resize_out
 
     - name: Report Final Status
-      debug:
+      ansible.builtin.debug:
         msg: "{{ linux_resize_out.stdout_lines }}"
