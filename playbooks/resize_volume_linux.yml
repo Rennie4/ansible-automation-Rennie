@@ -1,4 +1,5 @@
 ---
+# PLAY 1: AWS Infrastructure Modification
 - name: AWS Infrastructure - Resize Linux EBS Volume
   hosts: localhost
   connection: local
@@ -47,6 +48,7 @@
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
 
+# PLAY 2: OS Level Expansion & Verification
 - name: OS Configuration - Expand Filesystem
   hosts: target_nodes
   become: true
@@ -63,18 +65,16 @@
       vars:
         clean_id: "{{ host_volume_id | replace('vol-', 'vol') }}"
       shell: |
-        # Find device using serial (using 'cut' instead of 'awk' to avoid { } errors)
+        # Find device using serial
         DEV_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
         
         if [ -n "$DEV_NAME" ]; then
           DEV_PATH="/dev/$DEV_NAME"
-          # Get partition number
           P_NUM=$(lsblk -no PARTN "$DEV_PATH" | head -n 1)
           
-          # 1. Grow partition
+          # Grow partition and filesystem
           growpart "$DEV_PATH" "$P_NUM" || echo "Already grown"
           
-          # 2. Grow Filesystem
           F_TYPE=$(findmnt -n -o FSTYPE /)
           if [ "$F_TYPE" = "xfs" ]; then
             xfs_growfs /
@@ -83,15 +83,22 @@
             resize2fs "$R_DEV"
           fi
         else
-          echo "Volume {{ clean_id }} not found on this OS"
+          echo "Volume {{ clean_id }} not found"
           exit 1
         fi
-      register: resize_result
 
-    - name: Final Disk Summary
+    - name: VERIFICATION - Check Physical Disk Size
+      command: lsblk -dno NAME,SIZE /dev/{{ host_volume_id | replace('vol-', '') | truncate(12, True, '') }}
+      register: block_check
+      ignore_errors: true
+
+    - name: VERIFICATION - Check Filesystem Size
       command: df -h /
-      register: final_disk_output
+      register: fs_check
 
-    - name: Display Result
+    - name: FINAL REPORT
       debug:
-        msg: "Success! New Disk State: {{ final_disk_output.stdout_lines[1] }}"
+        msg: 
+          - "AWS Volume ID: {{ host_volume_id }}"
+          - "Physical Disk Size: {{ block_check.stdout | default('Check manually') }}"
+          - "Filesystem Usage: {{ fs_check.stdout_lines[1] }}"
