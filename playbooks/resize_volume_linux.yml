@@ -5,39 +5,32 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
+    # Mapping Survey variables to Playbook variables
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
+    target_volume_id: "{{ volume_id }}" # From survey: "Enter the Volume ID"
 
   tasks:
-    - name: Get Instance ID and Zone
+    - name: Get Instance and Zone details
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
         filters:
           ip-address: "{{ target_ip }}"
       register: instance_info
 
-    - name: Set Instance Details
+    - name: Set Zone Fact
       set_fact:
-        target_instance_id: "{{ instance_info.instances[0].instance_id }}"
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-
-    - name: Get Root Volume ID
-      amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
-        filters:
-          attachment.instance-id: "{{ target_instance_id }}"
-          # We look for the volume actually attached as the root device
-          attachment.device: "{{ instance_info.instances[0].root_device_name }}"
-      register: vol_info
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
-        id: "{{ vol_info.volumes[0].id }}"
+        zone: "{{ target_zone }}"  # This fixes the "must specify zone" error
+        id: "{{ target_volume_id }}"
         volume_size: "{{ target_new_size }}"
       register: volume_modification
 
-    - name: Wait for AWS Optimization
+    - name: Wait for AWS propagation
       ansible.builtin.pause:
         seconds: 20
 
@@ -45,7 +38,7 @@
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_user: ec2-user # Adjust if using 'ubuntu' or 'admin'
+        ansible_user: ec2-user 
 
 - name: OS Configuration - Universal Multi-Distro Setup
   hosts: target_nodes
@@ -53,45 +46,32 @@
   gather_facts: true
 
   tasks:
-    - name: Install resize tools (Distro Agnostic)
+    - name: Install resize tools
       ansible.builtin.package:
         name: 
           - "{{ (ansible_os_family == 'Debian') | ternary('cloud-guest-utils', 'cloud-utils-growpart') }}"
           - gdisk
-          - xfsprogs
         state: present
 
-    - name: Universal Partition and Filesystem Expansion
+    - name: Expand Partition and Filesystem
       shell: |
-        # 1. Identify the root device and partition
+        # 1. Detect root partition
         ROOT_PART=$(findmnt -n -o SOURCE /)
-        # Handle LVM vs Standard Partition
-        if [[ "$ROOT_PART" == /dev/mapper/* ]]; then
-            # LVM Logic
-            PHYS_DEV=$(pvs --noheadings -o pv_name | awk '{print $1}' | xargs)
-            DISK_DEV=$(echo $PHYS_DEV | sed 's/[0-9]*$//')
-            PART_NUM=$(echo $PHYS_DEV | grep -o '[0-9]*$')
-            
-            growpart $DISK_DEV $PART_NUM || true
-            pvresize $PHYS_DEV
-            lvextend -l +100%FREE --resizefs $(lvs --noheadings -o lv_path | grep "root" | xargs) || \
-            lvextend -l +100%FREE --resizefs $ROOT_PART
+        DISK_DEV=$(lsblk -no PKNAME $ROOT_PART)
+        PART_NUM=$(lsblk -no PARTN $ROOT_PART)
+
+        # 2. Grow partition table
+        growpart /dev/$DISK_DEV $PART_NUM || true
+        
+        # 3. Grow Filesystem (XFS or EXT4)
+        FS_TYPE=$(findmnt -n -o FSTYPE /)
+        if [ "$FS_TYPE" == "xfs" ]; then
+            xfs_growfs /
         else
-            # Standard Partition Logic
-            DISK_DEV=$(lsblk -no PKNAME $ROOT_PART)
-            PART_NUM=$(lsblk -no PARTN $ROOT_PART)
-            
-            growpart /dev/$DISK_DEV $PART_NUM || true
-            
-            FS_TYPE=$(findmnt -n -o FSTYPE /)
-            if [ "$FS_TYPE" == "xfs" ]; then
-                xfs_growfs /
-            else
-                resize2fs $ROOT_PART
-            fi
+            resize2fs $ROOT_PART
         fi
       register: resize_result
 
     - name: Final Disk Summary
       debug:
-        msg: "Disk resized successfully. Current size of /: {{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | human_readable }}"
+        msg: "New size of /: {{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | human_readable }}"
