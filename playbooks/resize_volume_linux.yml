@@ -6,6 +6,7 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
+    # Variables mapped from your AAP Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
     survey_volume_id: "{{ volume_id | default('') }}"
@@ -21,6 +22,7 @@
     - name: Set Volume and Zone Facts
       set_fact:
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
+        # Logic: If Survey ID is blank, automatically target the Root Volume
         final_volume_id: >-
           {{ 
             survey_volume_id if (survey_volume_id | length > 5) else 
@@ -40,10 +42,11 @@
       ansible.builtin.pause:
         seconds: 30
 
-    - name: Add host to dynamic inventory
+    - name: Add host to dynamic inventory for Play 2
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
+        # Defaults to 'ubuntu' based on your instance name, but respects credentials
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
@@ -63,18 +66,21 @@
 
     - name: Expand Partition and Filesystem
       vars:
+        # Clean the ID for matching against 'lsblk' serials
         clean_id: "{{ host_volume_id | replace('vol-', 'vol') }}"
       shell: |
-        # Find device using serial
+        # Find device using serial (using 'cut' instead of 'awk' to avoid Jinja errors)
         DEV_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
         
         if [ -n "$DEV_NAME" ]; then
           DEV_PATH="/dev/$DEV_NAME"
+          # Get partition number (usually 1)
           P_NUM=$(lsblk -no PARTN "$DEV_PATH" | head -n 1)
           
-          # Grow partition and filesystem
+          # 1. Grow partition
           growpart "$DEV_PATH" "$P_NUM" || echo "Already grown"
           
+          # 2. Grow Filesystem (Detects XFS vs EXT4)
           F_TYPE=$(findmnt -n -o FSTYPE /)
           if [ "$F_TYPE" = "xfs" ]; then
             xfs_growfs /
@@ -83,14 +89,14 @@
             resize2fs "$R_DEV"
           fi
         else
-          echo "Volume {{ clean_id }} not found"
+          echo "Volume {{ clean_id }} not found on this OS"
           exit 1
         fi
+      register: resize_result
 
     - name: VERIFICATION - Check Physical Disk Size
-      command: lsblk -dno NAME,SIZE /dev/{{ host_volume_id | replace('vol-', '') | truncate(12, True, '') }}
+      command: lsblk -dno NAME,SIZE
       register: block_check
-      ignore_errors: true
 
     - name: VERIFICATION - Check Filesystem Size
       command: df -h /
@@ -100,5 +106,5 @@
       debug:
         msg: 
           - "AWS Volume ID: {{ host_volume_id }}"
-          - "Physical Disk Size: {{ block_check.stdout | default('Check manually') }}"
-          - "Filesystem Usage: {{ fs_check.stdout_lines[1] }}"
+          - "Physical Disks found: {{ block_check.stdout_lines }}"
+          - "Usable Filesystem: {{ fs_check.stdout_lines[1] }}"
