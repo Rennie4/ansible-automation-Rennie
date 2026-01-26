@@ -9,7 +9,7 @@
     target_new_size: "{{ new_size_gb }}"
 
   tasks:
-    - name: Get Instance ID and Zone from IP Address
+    - name: Get Instance ID and Zone
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
         filters:
@@ -21,33 +21,31 @@
         target_instance_id: "{{ instance_info.instances[0].instance_id }}"
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
 
-    - name: Get current volume info
+    - name: Get Root Volume ID
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
           attachment.instance-id: "{{ target_instance_id }}"
-          attachment.device: ["/dev/sda1", "/dev/xvda", "/dev/nvme0n1", "/dev/nvme0n1p1"]
+          # We look for the volume actually attached as the root device
+          attachment.device: "{{ instance_info.instances[0].root_device_name }}"
       register: vol_info
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
-        zone: "{{ target_zone }}"
         id: "{{ vol_info.volumes[0].id }}"
         volume_size: "{{ target_new_size }}"
       register: volume_modification
-      ignore_errors: yes
 
-    - name: Wait for AWS backend
+    - name: Wait for AWS Optimization
       ansible.builtin.pause:
-        seconds: 30 # Increased wait time to ensure blocks are available
+        seconds: 20
 
-    - name: Add target IP to temporary inventory
+    - name: Add host to dynamic inventory
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        ansible_ssh_private_key_file: "/runner/artifacts/2162/ssh_key_data"
-        ansible_user: ec2-user
+        ansible_user: ec2-user # Adjust if using 'ubuntu' or 'admin'
 
 - name: OS Configuration - Universal Multi-Distro Setup
   hosts: target_nodes
@@ -55,47 +53,45 @@
   gather_facts: true
 
   tasks:
-    - name: Capture size before resize
-      command: df -h / --output=size
-      register: size_before
-      changed_when: false
-
-    - name: Ensure resize tools are present
+    - name: Install resize tools (Distro Agnostic)
       ansible.builtin.package:
-        name: [cloud-utils-growpart, gdisk]
+        name: 
+          - "{{ (ansible_os_family == 'Debian') | ternary('cloud-guest-utils', 'cloud-utils-growpart') }}"
+          - gdisk
+          - xfsprogs
         state: present
 
-    - name: Universal Device Discovery and Force Rescan
+    - name: Universal Partition and Filesystem Expansion
       shell: |
-        # 1. Discover device details
-        SPECIFIC_DEV=$(findmnt / -n -o SOURCE)
-        PARENT_DISK=$(lsblk -no PKNAME $SPECIFIC_DEV)
-        PART_NUM=$(lsblk -no PARTN $SPECIFIC_DEV)
-
-        # 2. Force the Kernel to rescan the disk hardware
-        echo 1 > /sys/class/block/${PARENT_DISK}/device/rescan || true
-        
-        # 3. Expand the partition table
-        growpart /dev/$PARENT_DISK $PART_NUM || echo "Already grown"
-
-        # 4. Expand the Filesystem
-        FS_TYPE=$(findmnt / -n -o FSTYPE)
-        if [ "$FS_TYPE" == "xfs" ]; then
-          xfs_growfs /
+        # 1. Identify the root device and partition
+        ROOT_PART=$(findmnt -n -o SOURCE /)
+        # Handle LVM vs Standard Partition
+        if [[ "$ROOT_PART" == /dev/mapper/* ]]; then
+            # LVM Logic
+            PHYS_DEV=$(pvs --noheadings -o pv_name | awk '{print $1}' | xargs)
+            DISK_DEV=$(echo $PHYS_DEV | sed 's/[0-9]*$//')
+            PART_NUM=$(echo $PHYS_DEV | grep -o '[0-9]*$')
+            
+            growpart $DISK_DEV $PART_NUM || true
+            pvresize $PHYS_DEV
+            lvextend -l +100%FREE --resizefs $(lvs --noheadings -o lv_path | grep "root" | xargs) || \
+            lvextend -l +100%FREE --resizefs $ROOT_PART
         else
-          resize2fs $SPECIFIC_DEV
+            # Standard Partition Logic
+            DISK_DEV=$(lsblk -no PKNAME $ROOT_PART)
+            PART_NUM=$(lsblk -no PARTN $ROOT_PART)
+            
+            growpart /dev/$DISK_DEV $PART_NUM || true
+            
+            FS_TYPE=$(findmnt -n -o FSTYPE /)
+            if [ "$FS_TYPE" == "xfs" ]; then
+                xfs_growfs /
+            else
+                resize2fs $ROOT_PART
+            fi
         fi
-      register: resize_out
-
-    - name: Capture size after resize
-      command: df -h / --output=size
-      register: size_after
-      changed_when: false
+      register: resize_result
 
     - name: Final Disk Summary
       debug:
-        msg: 
-          - "-------------------------------------------"
-          - "OLD DISK SIZE: {{ size_before.stdout_lines[1] | trim }}"
-          - "NEW DISK SIZE: {{ size_after.stdout_lines[1] | trim }}"
-          - "-------------------------------------------"
+        msg: "Disk resized successfully. Current size of /: {{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | human_readable }}"
