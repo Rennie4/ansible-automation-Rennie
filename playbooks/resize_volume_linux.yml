@@ -1,17 +1,18 @@
 ---
+# PLAY 1: AWS Infrastructure Modification
 - name: AWS Infrastructure - Resize Linux EBS Volume
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Survey Mapping
+    # Variables mapped from your AAP Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
     survey_volume_id: "{{ volume_id | default('') }}"
 
   tasks:
-    - name: Get Instance and Zone details
+    - name: Get Instance and Zone details from AWS
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
         filters:
@@ -21,7 +22,7 @@
     - name: Set Volume and Zone Facts
       set_fact:
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        # Reusable logic: Use survey ID if provided, otherwise find Root automatically
+        # Logic: If Survey ID is blank, automatically target the Root Volume
         final_volume_id: >-
           {{ 
             survey_volume_id if (survey_volume_id | length > 5) else 
@@ -30,41 +31,53 @@
             map(attribute='ebs.volume_id') | first) 
           }}
 
-    - name: Modify EBS volume in AWS
+    - name: Modify EBS volume in AWS Console
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ target_zone }}"
         id: "{{ final_volume_id }}"
         volume_size: "{{ target_new_size }}"
+      register: volume_modification
 
-    - name: Wait for AWS propagation
+    - name: Wait for AWS backend optimization
       ansible.builtin.pause:
         seconds: 30
 
-    - name: Add host to dynamic inventory
+    - name: Add host to dynamic inventory for Play 2
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        # Use survey/credential defaults for reusability
-        ansible_user: "{{ ansible_user | default('ubuntu') }}" 
+        # Use the variable provided by the Machine Credential or survey
+        ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
 
+# PLAY 2: OS Level Expansion (Now that SSH is working)
 - name: OS Configuration - Expand Filesystem
   hosts: target_nodes
   become: true
   gather_facts: true
 
   tasks:
+    - name: Install Cloud Utils if missing
+      ansible.builtin.package:
+        name: 
+          - "{{ (ansible_os_family == 'Debian') | ternary('cloud-guest-utils', 'cloud-utils-growpart') }}"
+        state: present
+
     - name: Expand Partition and Filesystem
       shell: |
-        # Use the volume ID to find the correct device among many
+        # 1. Map the EBS Volume ID to a local Linux device name
         CLEAN_VOL_ID="{{ final_volume_id | replace('vol-', 'vol') }}"
-        DEVICE_PATH=$(lsblk -dno NAME,SERIAL | grep "$CLEAN_VOL_ID" | awk '{print "/dev/"$1}')
+        DEVICE_NAME=$(lsblk -dno NAME,SERIAL | grep "$CLEAN_VOL_ID" | awk '{print $1}')
+        DEVICE_PATH="/dev/$DEVICE_NAME"
+        
+        # 2. Find the partition number (usually 1)
         PART_NUM=$(lsblk -no PARTN $DEVICE_PATH | head -n 1)
         
-        # Grow partition and resize FS (XFS or EXT4)
-        growpart $DEVICE_PATH $PART_NUM || true
+        # 3. Grow the partition table
+        growpart $DEVICE_PATH $PART_NUM || echo "Already grown"
         
+        # 4. Grow the Filesystem (Detects XFS vs EXT4)
         FS_TYPE=$(findmnt -n -o FSTYPE /)
         if [ "$FS_TYPE" == "xfs" ]; then
             xfs_growfs /
@@ -73,10 +86,10 @@
         fi
       register: resize_result
 
-    - name: Verify Size
+    - name: Verification - Show final disk size
       command: df -h /
-      register: final_size
+      register: final_disk_output
 
-    - name: Final Result
+    - name: Final Summary
       debug:
-        var: final_size.stdout_lines
+        msg: "Success! New Disk State: {{ final_disk_output.stdout_lines[1] }}"
