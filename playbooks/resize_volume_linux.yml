@@ -6,7 +6,6 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Variables mapped from your AAP Survey
     target_ip: "{{ instance_ip_address }}"
     target_new_size: "{{ new_size_gb }}"
     survey_volume_id: "{{ volume_id | default('') }}"
@@ -37,21 +36,21 @@
         zone: "{{ target_zone }}"
         id: "{{ final_volume_id }}"
         volume_size: "{{ target_new_size }}"
-      register: volume_modification
 
     - name: Wait for AWS backend optimization
       ansible.builtin.pause:
         seconds: 30
 
-    - name: Add host to dynamic inventory for Play 2
+    - name: Add host to dynamic inventory
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        # Use the variable provided by the Machine Credential or survey
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+        # PASSING THE VARIABLE TO THE HOST HERE FIXES THE ERROR
+        host_volume_id: "{{ final_volume_id }}"
 
-# PLAY 2: OS Level Expansion (Now that SSH is working)
+# PLAY 2: OS Level Expansion
 - name: OS Configuration - Expand Filesystem
   hosts: target_nodes
   become: true
@@ -66,18 +65,14 @@
 
     - name: Expand Partition and Filesystem
       shell: |
-        # 1. Map the EBS Volume ID to a local Linux device name
-        CLEAN_VOL_ID="{{ final_volume_id | replace('vol-', 'vol') }}"
+        # Use the variable passed from the first play
+        CLEAN_VOL_ID="{{ host_volume_id | replace('vol-', 'vol') }}"
         DEVICE_NAME=$(lsblk -dno NAME,SERIAL | grep "$CLEAN_VOL_ID" | awk '{print $1}')
         DEVICE_PATH="/dev/$DEVICE_NAME"
-        
-        # 2. Find the partition number (usually 1)
         PART_NUM=$(lsblk -no PARTN $DEVICE_PATH | head -n 1)
         
-        # 3. Grow the partition table
         growpart $DEVICE_PATH $PART_NUM || echo "Already grown"
         
-        # 4. Grow the Filesystem (Detects XFS vs EXT4)
         FS_TYPE=$(findmnt -n -o FSTYPE /)
         if [ "$FS_TYPE" == "xfs" ]; then
             xfs_growfs /
@@ -86,10 +81,10 @@
         fi
       register: resize_result
 
-    - name: Verification - Show final disk size
+    - name: Final Disk Summary
       command: df -h /
       register: final_disk_output
 
-    - name: Final Summary
+    - name: Display Result
       debug:
         msg: "Success! New Disk State: {{ final_disk_output.stdout_lines[1] }}"
