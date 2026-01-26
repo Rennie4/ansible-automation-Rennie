@@ -1,5 +1,4 @@
 ---
-# PLAY 1: AWS Infrastructure Modification
 - name: AWS Infrastructure - Resize Linux EBS Volume
   hosts: localhost
   connection: local
@@ -48,7 +47,6 @@
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
 
-# PLAY 2: OS Level Expansion
 - name: OS Configuration - Expand Filesystem
   hosts: target_nodes
   become: true
@@ -62,36 +60,32 @@
         state: present
 
     - name: Expand Partition and Filesystem
+      # We use 'vars' here to clean the ID before passing it to the shell
+      vars:
+        clean_id: "{{ host_volume_id | replace('vol-', 'vol') }}"
       shell: |
-        # 1. Map Volume ID to local device
-        CLEAN_VOL_ID="{{ host_volume_id | replace('vol-', 'vol') }}"
-        # Use a more robust way to find the device name
-        DEVICE_NAME=$(lsblk -dno NAME,SERIAL | grep "$CLEAN_VOL_ID" | awk '{print $1}')
+        # Use serial to find device (avoiding AWK braces to prevent Jinja errors)
+        DEVICE_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
+        DEVICE_PATH="/dev/$DEVICE_NAME"
         
         if [ -z "$DEVICE_NAME" ]; then
-          echo "Error: Could not find device for volume $CLEAN_VOL_ID"
+          echo "Device not found for {{ clean_id }}"
           exit 1
         fi
 
-        DEVICE_PATH="/dev/$DEVICE_NAME"
-        # 2. Find the partition number (stripping letters to get just the index)
-        PART_NUM=$(lsblk -no PARTN $DEVICE_PATH | head -n 1)
+        # Find partition number
+        PART_NUM=$(lsblk -no PARTN "$DEVICE_PATH" | head -n 1)
 
-        # 3. Grow the partition table (using explicit arguments to avoid 'growpart help' error)
-        growpart "$DEVICE_PATH" "$PART_NUM" || echo "Already grown or no change needed"
+        # Grow partition
+        growpart "$DEVICE_PATH" "$PART_NUM" || echo "Already grown"
         
-        # 4. Refresh the kernel's view of the partition
-        partprobe "$DEVICE_PATH" || true
-
-        # 5. Grow the Filesystem
+        # Grow Filesystem
         FS_TYPE=$(findmnt -n -o FSTYPE /)
-        if [ "$FS_TYPE" == "xfs" ]; then
+        if [ "$FS_TYPE" = "xfs" ]; then
             xfs_growfs /
         else
-            # For ext4 on NVMe, the partition is often ${DEVICE_PATH}p${PART_NUM}
-            # This 'findmnt' logic is the most reliable way to find the actual block dev
-            REAL_PART=$(findmnt -n -o SOURCE /)
-            resize2fs "$REAL_PART"
+            ROOT_DEV=$(findmnt -n -o SOURCE /)
+            resize2fs "$ROOT_DEV"
         fi
       register: resize_result
 
