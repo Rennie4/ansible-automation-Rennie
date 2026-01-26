@@ -60,32 +60,31 @@
         state: present
 
     - name: Expand Partition and Filesystem
-      # We use 'vars' here to clean the ID before passing it to the shell
       vars:
         clean_id: "{{ host_volume_id | replace('vol-', 'vol') }}"
       shell: |
-        # Use serial to find device (avoiding AWK braces to prevent Jinja errors)
-        DEVICE_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
-        DEVICE_PATH="/dev/$DEVICE_NAME"
+        # Find device using serial (using 'cut' instead of 'awk' to avoid { } errors)
+        DEV_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
         
-        if [ -z "$DEVICE_NAME" ]; then
-          echo "Device not found for {{ clean_id }}"
-          exit 1
-        fi
-
-        # Find partition number
-        PART_NUM=$(lsblk -no PARTN "$DEVICE_PATH" | head -n 1)
-
-        # Grow partition
-        growpart "$DEVICE_PATH" "$PART_NUM" || echo "Already grown"
-        
-        # Grow Filesystem
-        FS_TYPE=$(findmnt -n -o FSTYPE /)
-        if [ "$FS_TYPE" = "xfs" ]; then
+        if [ -n "$DEV_NAME" ]; then
+          DEV_PATH="/dev/$DEV_NAME"
+          # Get partition number
+          P_NUM=$(lsblk -no PARTN "$DEV_PATH" | head -n 1)
+          
+          # 1. Grow partition
+          growpart "$DEV_PATH" "$P_NUM" || echo "Already grown"
+          
+          # 2. Grow Filesystem
+          F_TYPE=$(findmnt -n -o FSTYPE /)
+          if [ "$F_TYPE" = "xfs" ]; then
             xfs_growfs /
+          else
+            R_DEV=$(findmnt -n -o SOURCE /)
+            resize2fs "$R_DEV"
+          fi
         else
-            ROOT_DEV=$(findmnt -n -o SOURCE /)
-            resize2fs "$ROOT_DEV"
+          echo "Volume {{ clean_id }} not found on this OS"
+          exit 1
         fi
       register: resize_result
 
