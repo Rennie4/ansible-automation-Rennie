@@ -6,9 +6,9 @@
   gather_facts: false
   vars:
     region: "eu-west-1"
-    # Variables mapped from your AAP Survey
+    # These variables should be provided via AAP Survey or Extra Vars
     target_ip: "{{ instance_ip_address }}"
-    target_new_size: "{{ new_size_gb }}"
+    target_new_size: "{{ new_size_gb | int }}"
     survey_volume_id: "{{ volume_id | default('') }}"
 
   tasks:
@@ -31,25 +31,31 @@
             map(attribute='ebs.volume_id') | first) 
           }}
 
+    - name: DEBUG - Show Size Variable
+      debug:
+        msg: "Attempting to resize volume {{ final_volume_id }} to {{ target_new_size }} GB"
+
     - name: Modify EBS volume in AWS Console
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ target_zone }}"
         id: "{{ final_volume_id }}"
         volume_size: "{{ target_new_size }}"
+      register: aws_resizing
 
     - name: Wait for AWS backend optimization
       ansible.builtin.pause:
         seconds: 30
+      when: aws_resizing.changed
 
     - name: Add host to dynamic inventory for Play 2
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
-        # Defaults to 'ubuntu' based on your instance name, but respects credentials
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
+        requested_size: "{{ target_new_size }}"
 
 # PLAY 2: OS Level Expansion & Verification
 - name: OS Configuration - Expand Filesystem
@@ -66,21 +72,13 @@
 
     - name: Expand Partition and Filesystem
       vars:
-        # Clean the ID for matching against 'lsblk' serials
         clean_id: "{{ host_volume_id | replace('vol-', 'vol') }}"
       shell: |
-        # Find device using serial (using 'cut' instead of 'awk' to avoid Jinja errors)
         DEV_NAME=$(lsblk -dno NAME,SERIAL | grep "{{ clean_id }}" | cut -d' ' -f1)
-        
         if [ -n "$DEV_NAME" ]; then
           DEV_PATH="/dev/$DEV_NAME"
-          # Get partition number (usually 1)
           P_NUM=$(lsblk -no PARTN "$DEV_PATH" | head -n 1)
-          
-          # 1. Grow partition
           growpart "$DEV_PATH" "$P_NUM" || echo "Already grown"
-          
-          # 2. Grow Filesystem (Detects XFS vs EXT4)
           F_TYPE=$(findmnt -n -o FSTYPE /)
           if [ "$F_TYPE" = "xfs" ]; then
             xfs_growfs /
@@ -89,22 +87,30 @@
             resize2fs "$R_DEV"
           fi
         else
-          echo "Volume {{ clean_id }} not found on this OS"
+          echo "Volume {{ clean_id }} not found"
           exit 1
         fi
       register: resize_result
 
     - name: VERIFICATION - Check Physical Disk Size
-      command: lsblk -dno NAME,SIZE
+      command: lsblk -dno SIZE /dev/{{ ansible_parent_device | default('nvme0n1') }}
       register: block_check
 
     - name: VERIFICATION - Check Filesystem Size
-      command: df -h /
+      command: df -hT /
       register: fs_check
+
+    - name: ASSERTION - Validate Final Size
+      assert:
+        that:
+          - requested_size | string in block_check.stdout
+        fail_msg: "ERROR: Disk is only {{ block_check.stdout }}. Expected {{ requested_size }}G."
+        success_msg: "SUCCESS: Disk is now {{ requested_size }}G."
 
     - name: FINAL REPORT
       debug:
         msg: 
           - "AWS Volume ID: {{ host_volume_id }}"
-          - "Physical Disks found: {{ block_check.stdout_lines }}"
-          - "Usable Filesystem: {{ fs_check.stdout_lines[1] }}"
+          - "Requested Size: {{ requested_size }} GB"
+          - "Actual Physical Disk: {{ block_check.stdout | trim }}"
+          - "Filesystem Status: {{ fs_check.stdout_lines[1] }}"
