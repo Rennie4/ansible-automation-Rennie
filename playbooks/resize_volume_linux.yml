@@ -2,7 +2,7 @@
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
 # - Compatible with older amazon.aws collection (ec2_vol_info uses `filters`)
-# - Accepts size from multiple survey variable names, incl. "Enter the New Size (GB)"
+# - Accepts size from multiple survey variables, including "Enter the New Size (GB)"
 # - Validates size (must be integer >= 1), logs AWS and Linux sizes
 # Required survey/extra vars:
 #   - instance_ip_address
@@ -25,7 +25,6 @@
 
   tasks:
     # --- Derive requested size from multiple possible survey variables ---
-    # We also strip any non-digits and convert safely to int.
     - name: Collect raw size from survey variables (first non-empty wins)
       ansible.builtin.set_fact:
         requested_size_raw: >-
@@ -51,7 +50,7 @@
     - name: FAIL - Requested size not provided or invalid
       ansible.builtin.fail:
         msg: >-
-          The disk size is missing or invalid. Please ensure your AAP Survey passes one of:
+          The disk size is missing or invalid. Ensure your AAP Survey passes one of:
           new_size_gb, new_size, size, volume_size, or a variable literally named "Enter the New Size (GB)".
           Provide a positive integer (e.g., 20).
       when: requested_size is not defined or requested_size | int < 1
@@ -221,7 +220,6 @@
         if [ -n "$PKNAME" ]; then
           DEV="/dev/$PKNAME"
         else
-          # fallback: strip trailing digits and optional 'p'
           BASENAME="$(basename "$ROOT_SRC")"
           PKNAME="$(echo "$BASENAME" | sed 's/[0-9]*$//' | sed 's/p$//')"
           DEV="/dev/$PKNAME"
@@ -274,4 +272,3 @@
           - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
           - "Linux Block Device Size: {{ disk_size.stdout | trim }}"
           - "Filesystem: {{ fs_size.stdout_lines[1] | default(fs_size.stdout | trim) }}"
-``
