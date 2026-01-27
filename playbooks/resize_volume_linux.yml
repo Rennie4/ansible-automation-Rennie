@@ -1,17 +1,14 @@
 
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
-# Author:  Rennie (with Copilot assist)
-# Purpose: Show clear logs in AAP of the final AWS and Linux disk sizes
-# Vars required: instance_ip_address, new_size_gb
-# Optional vars: volume_id, ansible_user
 # =============================================================================
 
-# PLAY 1: AWS Infrastructure Modification
+# PLAY 1: AWS Infrastructure - Resize EBS Volume
 - name: AWS Infrastructure - Resize Linux EBS Volume
   hosts: localhost
   connection: local
   gather_facts: false
+
   vars:
     region: "eu-west-1"
     target_ip: "{{ instance_ip_address }}"
@@ -31,55 +28,45 @@
         msg: "No EC2 instance found with IP {{ target_ip }} in {{ region }}"
       when: instance_info.instances | length == 0
 
-    - name: Set volume and zone facts
+    - name: Set zone + volume ID facts
       ansible.builtin.set_fact:
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
         final_volume_id: >-
           {{
-            survey_volume_id if (survey_volume_id | length > 5) else
-            (
+            survey_volume_id if (survey_volume_id | length > 5)
+            else (
               instance_info.instances[0].block_device_mappings
-              | selectattr('device_name', 'equalto', instance_info.instances[0].root_device_name)
+              | selectattr('device_name','equalto',instance_info.instances[0].root_device_name)
               | map(attribute='ebs.volume_id')
               | first
             )
           }}
 
-    - name: DEBUG - Requested resize
-      ansible.builtin.debug:
-        msg: "Attempting to resize volume {{ final_volume_id }} to {{ target_new_size }} GB in {{ target_zone }}"
+    - name: Show requested resize
+      debug:
+        msg: "Resizing volume {{ final_volume_id }} to {{ target_new_size }} GB"
 
-    - name: Modify EBS volume in AWS
+    - name: Modify EBS volume
       amazon.aws.ec2_vol:
         region: "{{ region }}"
         zone: "{{ target_zone }}"
         id: "{{ final_volume_id }}"
         volume_size: "{{ target_new_size }}"
-      register: aws_resizing
+      register: aws_resize
 
-    - name: Small pause before polling AWS
-      ansible.builtin.pause:
-        seconds: 10
-      when: aws_resizing.changed
-
-    - name: AWS VERIFICATION - Poll updated volume size
+    - name: Get updated AWS volume size
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         volume_ids:
           - "{{ final_volume_id }}"
       register: updated_volume_info
-      until: (updated_volume_info.volumes is defined)
-             and (updated_volume_info.volumes | length > 0)
-             and ((updated_volume_info.volumes[0].size | int) >= (target_new_size | int))
-      retries: 20
-      delay: 15
 
-    - name: LOG - Show new AWS volume size
-      ansible.builtin.debug:
-        msg: "AWS confirms volume {{ final_volume_id }} is now {{ updated_volume_info.volumes[0].size }} GB"
+    - name: Log AWS confirmed size
+      debug:
+        msg: "AWS reports volume {{ final_volume_id }} is now {{ updated_volume_info.volumes[0].size }} GB"
 
-    - name: Add host to dynamic inventory for next play
-      ansible.builtin.add_host:
+    - name: Add instance to next play
+      add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
@@ -89,35 +76,24 @@
         aws_confirmed_size: "{{ updated_volume_info.volumes[0].size }}"
 
 
-# PLAY 2: OS Level Expansion & Verification
-- name: OS Configuration - Expand Filesystem
+# PLAY 2: Resize Partition + Filesystem
+- name: OS Expansion - Resize Linux Filesystem
   hosts: target_nodes
   become: true
   gather_facts: true
 
   tasks:
-    - name: Install required cloud-utils (Debian/Ubuntu)
-      ansible.builtin.package:
-        name: cloud-guest-utils
-        state: present
-      when: ansible_os_family == "Debian"
-      ignore_errors: true
-
-    - name: Install required cloud-utils-growpart (RHEL/Amazon/SUSE)
-      ansible.builtin.package:
-        name: cloud-utils-growpart
-        state: present
-      when: ansible_os_family != "Debian"
-      ignore_errors: true
-
-    - name: Install fallback cloud-utils
-      ansible.builtin.package:
-        name: cloud-utils
+    - name: Install growpart packages
+      package:
+        name:
+          - cloud-guest-utils
+          - cloud-utils-growpart
+          - cloud-utils
         state: present
       ignore_errors: true
 
-    - name: Install filesystem tools
-      ansible.builtin.package:
+    - name: Install fs tools
+      package:
         name:
           - xfsprogs
           - e2fsprogs
@@ -125,67 +101,56 @@
       ignore_errors: true
 
     - name: Verify growpart exists
-      ansible.builtin.command: bash -lc "command -v growpart"
-      register: growpart_check
+      command: command -v growpart
+      register: growpart_ok
       changed_when: false
-      failed_when: growpart_check.rc != 0
+      failed_when: growpart_ok.rc != 0
 
-    - name: Expand partition and filesystem on root device
-      ansible.builtin.shell: |
-        set -euo pipefail
+    - name: Expand root partition + filesystem
+      shell: |
+        set -e
 
-        ROOT_SRC="$(findmnt -n -o SOURCE /)"
-        PKNAME="$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)"
-        [ -z "$PKNAME" ] && PKNAME="$(basename "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')"
-        DEV="/dev/${PKNAME}"
+        ROOT_SRC=$(findmnt -n -o SOURCE /)
+        PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
+        DEV="/dev/$PKNAME"
 
-        PARTNUM="$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)"
-        [ -z "$PARTNUM" ] && PARTNUM="$(echo "$ROOT_SRC" | sed -n 's/[^0-9]*\([0-9][0-9]*\)$/\1/p')"
+        PARTNUM=$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)
         [ -z "$PARTNUM" ] && PARTNUM="1"
 
-        growpart "$DEV" "$PARTNUM" || echo "growpart reported no change"
+        growpart "$DEV" "$PARTNUM" || true
 
-        FSTYPE="$(findmnt -n -o FSTYPE /)"
+        FSTYPE=$(findmnt -n -o FSTYPE /)
         if [ "$FSTYPE" = "xfs" ]; then
           xfs_growfs /
         else
           resize2fs "$ROOT_SRC"
         fi
       register: resize_result
-      changed_when: "'NOCHANGE' not in resize_result.stdout | default('')"
+      changed_when: false
 
-    - name: Detect root disk (physical)
-      ansible.builtin.shell: |
-        ROOT_SRC="$(findmnt -n -o SOURCE /)"
-        PKNAME="$(lsblk -no PKNAME "$ROOT_SRC")"
-        echo "/dev/${PKNAME}"
-      register: root_disk_path
+    - name: Detect root device
+      shell: |
+        ROOT_SRC=$(findmnt -n -o SOURCE /)
+        PKNAME=$(lsblk -no PKNAME "$ROOT_SRC")
+        echo "/dev/$PKNAME"
+      register: root_disk
       changed_when: false
 
     - name: Get physical disk size
-      ansible.builtin.command: lsblk -dn -o SIZE {{ root_disk_path.stdout }}
-      register: linux_disk_size
+      command: lsblk -dn -o SIZE {{ root_disk.stdout }}
+      register: disk_size
       changed_when: false
 
     - name: Get filesystem size
-      ansible.builtin.command: df -hT /
-      register: linux_fs_size
+      command: df -hT /
+      register: fs_size
       changed_when: false
 
-    - name: LOG - FINAL DISK REPORT
-      ansible.builtin.debug:
+    - name: FINAL REPORT
+      debug:
         msg:
           - "AWS Volume ID: {{ host_volume_id }}"
           - "Requested Size: {{ requested_size }} GB"
-          - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
-          - "Linux Block Device Size: {{ linux_disk_size.stdout | trim }}"
-          - "Filesystem: {{ linux_fs_size.stdout_lines[1] | default(linux_fs_size.stdout) }}"
-
-    - name: CHECK - size consistency (soft check)
-      ansible.builtin.assert:
-        that:
-          - "'{{ aws_confirmed_size }}G' in linux_disk_size.stdout"
-        success_msg: "Disk size matches AWS"
-        fail_msg: "Linux reports {{ linux_disk_size.stdout }} but AWS says {{ aws_confirmed_size }}G"
-      failed_when: false
-      changed_when: false
+          - "AWS Reported Size: {{ aws_confirmed_size }} GB"
+          - "Linux Block Device Size: {{ disk_size.stdout }}"
+          - "Filesystem: {{ fs_size.stdout_lines[1] }}"
