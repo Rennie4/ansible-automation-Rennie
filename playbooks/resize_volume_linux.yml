@@ -1,7 +1,7 @@
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
-# - Fixed: Multi-source variable lookup for survey names with spaces
-# - Dynamic volume detection (No hardcoded EBS volume values)
+# - Fixed: Aggressive Extra Var discovery for complex survey names
+# - No hardcoded EBS values (dynamic root detection)
 # - Compatible with older amazon.aws collections
 # =============================================================================
 
@@ -20,23 +20,22 @@
     - name: Collect and Normalize requested size
       ansible.builtin.set_fact:
         requested_size: >-
-          {%- set survey_name = 'Enter the New Size (GB)' -%}
-          {%- set raw_val = 
-            new_size_gb | default(
-            new_size | default(
-            size | default(
-            volume_size | default(
-            lookup('vars', survey_name, default='') | default(
-            hostvars['localhost'][survey_name] | default(0)
-          ))))) -%}
-          {{ raw_val | string | regex_replace('[^0-9]', '') | int }}
+          {%- set found_size = 0 -%}
+          {%- set possible_keys = ['new_size_gb', 'new_size', 'size', 'volume_size', 'Enter the New Size (GB)'] -%}
+          {%- for key in possible_keys -%}
+            {%- if vars[key] is defined and vars[key] | string | trim != '' -%}
+              {%- set found_size = vars[key] -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ found_size | string | regex_replace('[^0-9]', '') | int }}
 
     - name: FAIL - Requested size not provided or invalid
       ansible.builtin.fail:
         msg: >-
           Size invalid: Got '{{ requested_size }}'. 
-          Ensure your survey passes a number. 
-          Variables found: {{ vars.keys() | list | select('search', 'Size') | list }}
+          The survey variable is not being captured. 
+          DEBUG: instance_ip is '{{ instance_ip_address | default("MISSING") }}'.
+          Try renaming your survey variable to 'new_size_gb' (no spaces/brackets).
       when: requested_size | int < 1
 
     - name: Get instance details by public IP
@@ -129,21 +128,16 @@
       ansible.builtin.shell: |
         set -e
         ROOT_SRC=$(findmnt -n -o SOURCE /)
-        
-        # Determine parent disk
         PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
         if [ -z "$PKNAME" ]; then
             DEV=$(echo "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')
         else
             DEV="/dev/$PKNAME"
         fi
-
         PARTNUM=$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)
 
-        # 1. Grow Partition
         growpart "$DEV" "$PARTNUM" || true
 
-        # 2. Grow Filesystem
         FSTYPE=$(findmnt -n -o FSTYPE /)
         if [ "$FSTYPE" = "xfs" ]; then
           xfs_growfs /
@@ -158,4 +152,4 @@
           - "AWS Volume ID: {{ host_volume_id }}"
           - "Requested Size: {{ requested_size }} GB"
           - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
-          - "Action: Partition and Filesystem expansion completed."
+          - "Status: Completed Successfully"
