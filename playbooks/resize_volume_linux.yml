@@ -1,14 +1,18 @@
 
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
-# - Works with older amazon.aws collection (uses `filters` for ec2_vol_info)
-# - Accepts multiple survey var names for size (including "Enter the New Size (GB)")
-# - Logs AWS size before/after and Linux disk/filesystem sizes
-# Required: instance_ip_address
-# Optional: volume_id, ansible_user
+# - Compatible with older amazon.aws collection (ec2_vol_info uses `filters`)
+# - Accepts size from multiple survey variable names, incl. "Enter the New Size (GB)"
+# - Validates size (must be integer >= 1), logs AWS and Linux sizes
+# Required survey/extra vars:
+#   - instance_ip_address
+#   - size via any of: new_size_gb | new_size | size | volume_size | "Enter the New Size (GB)"
+# Optional:
+#   - volume_id (if not provided, picks root volume automatically)
+#   - ansible_user (defaults to ubuntu)
 # =============================================================================
 
-# PLAY 1: AWS Infrastructure - Determine, Compare, Modify
+# PLAY 1: AWS Infrastructure - Determine, Validate, Modify
 - name: AWS Infrastructure - Resize Linux EBS Volume
   hosts: localhost
   connection: local
@@ -20,26 +24,41 @@
     survey_volume_id: "{{ volume_id | default('') }}"
 
   tasks:
-    # --- Derive requested size from various possible survey variable names ---
-    - name: Derive requested size from survey variables
+    # --- Derive requested size from multiple possible survey variables ---
+    # We also strip any non-digits and convert safely to int.
+    - name: Collect raw size from survey variables (first non-empty wins)
       ansible.builtin.set_fact:
-        requested_size: >-
+        requested_size_raw: >-
           {{
-            (
-              (new_size_gb | default(None)) |
-              default(new_size | default(None)) |
-              default(size | default(None)) |
-              default(volume_size | default(None)) |
-              default((hostvars['localhost']['Enter the New Size (GB)'] if ('Enter the New Size (GB)') in hostvars['localhost'] else None))
-            ) | int
+            (new_size_gb | default(omit))
+              if (new_size_gb is defined and (new_size_gb | string | trim) != '') else
+            (new_size | default(omit))
+              if (new_size is defined and (new_size | string | trim) != '') else
+            (size | default(omit))
+              if (size is defined and (size | string | trim) != '') else
+            (volume_size | default(omit))
+              if (volume_size is defined and (volume_size | string | trim) != '') else
+            (vars.get('Enter the New Size (GB)'))
+              if ('Enter the New Size (GB)' in vars and (vars.get('Enter the New Size (GB)') | string | trim) != '') else
+            omit
           }}
 
-    - name: Fail early if requested size is missing
+    - name: Normalize requested size to integer (strip non-digits)
+      ansible.builtin.set_fact:
+        requested_size: "{{ (requested_size_raw | string | regex_replace('[^0-9]', '') | int) }}"
+      when: requested_size_raw is defined
+
+    - name: FAIL - Requested size not provided or invalid
       ansible.builtin.fail:
         msg: >-
-          The disk size is not provided. Please ensure your AAP Survey passes one of:
+          The disk size is missing or invalid. Please ensure your AAP Survey passes one of:
           new_size_gb, new_size, size, volume_size, or a variable literally named "Enter the New Size (GB)".
-      when: requested_size is not defined
+          Provide a positive integer (e.g., 20).
+      when: requested_size is not defined or requested_size | int < 1
+
+    - name: LOG - Requested new size from survey
+      ansible.builtin.debug:
+        msg: "Requested new size from survey: {{ requested_size }} GB"
 
     - name: Get instance details by public IP
       amazon.aws.ec2_instance_info:
@@ -199,14 +218,18 @@
         fi
 
         PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
-        if [ -z "$PKNAME" ]; then
-          PKNAME=$(basename "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')
+        if [ -n "$PKNAME" ]; then
+          DEV="/dev/$PKNAME"
+        else
+          # fallback: strip trailing digits and optional 'p'
+          BASENAME="$(basename "$ROOT_SRC")"
+          PKNAME="$(echo "$BASENAME" | sed 's/[0-9]*$//' | sed 's/p$//')"
+          DEV="/dev/$PKNAME"
         fi
-        DEV="/dev/$PKNAME"
 
         PARTNUM=$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)
-        if [ -z "$PARTNUM" ] then
-          PARTNUM=$(echo "$ROOT_SRC" | sed -n 's/[^0-9]*\([0-9][0-9]*\)$/\1/p')
+        if [ -z "$PARTNUM" ]; then
+          PARTNUM="$(echo "$ROOT_SRC" | sed -n 's/[^0-9]*\([0-9][0-9]*\)$/\1/p')"
           [ -z "$PARTNUM" ] && PARTNUM="1"
         fi
 
@@ -251,3 +274,4 @@
           - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
           - "Linux Block Device Size: {{ disk_size.stdout | trim }}"
           - "Filesystem: {{ fs_size.stdout_lines[1] | default(fs_size.stdout | trim) }}"
+``
