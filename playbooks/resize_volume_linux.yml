@@ -3,7 +3,8 @@
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
 # Author:  Rennie (with Copilot assist)
 # Purpose: Show clear logs in AAP of the final AWS and Linux disk sizes
-# Vars expected: instance_ip_address, new_size_gb, (optional) volume_id, (optional) ansible_user
+# Vars required: instance_ip_address, new_size_gb
+# Optional vars: volume_id, ansible_user
 # =============================================================================
 
 # PLAY 1: AWS Infrastructure Modification
@@ -56,12 +57,12 @@
         volume_size: "{{ target_new_size }}"
       register: aws_resizing
 
-    - name: Small pause before polling AWS for new size
+    - name: Small pause before polling AWS
       ansible.builtin.pause:
         seconds: 10
       when: aws_resizing.changed
 
-    - name: AWS VERIFICATION - Poll updated EBS volume size until it matches
+    - name: AWS VERIFICATION - Poll updated volume size
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         volume_ids:
@@ -77,7 +78,7 @@
       ansible.builtin.debug:
         msg: "AWS confirms volume {{ final_volume_id }} is now {{ updated_volume_info.volumes[0].size }} GB"
 
-    - name: Add host to dynamic inventory for Play 2
+    - name: Add host to dynamic inventory for next play
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
@@ -86,7 +87,7 @@
         host_volume_id: "{{ final_volume_id }}"
         requested_size: "{{ target_new_size }}"
         aws_confirmed_size: "{{ updated_volume_info.volumes[0].size }}"
-        region: "{{ region }}"
+
 
 # PLAY 2: OS Level Expansion & Verification
 - name: OS Configuration - Expand Filesystem
@@ -95,28 +96,27 @@
   gather_facts: true
 
   tasks:
-    # --- Ensure growpart is available on all distros ---
-    - name: Try install growpart (Debian/Ubuntu - cloud-guest-utils)
+    - name: Install required cloud-utils (Debian/Ubuntu)
       ansible.builtin.package:
         name: cloud-guest-utils
         state: present
       when: ansible_os_family == "Debian"
       ignore_errors: true
 
-    - name: Try install growpart (RHEL/Alma/Rocky/Amazon/SUSE - cloud-utils-growpart)
+    - name: Install required cloud-utils-growpart (RHEL/Amazon/SUSE)
       ansible.builtin.package:
         name: cloud-utils-growpart
         state: present
       when: ansible_os_family != "Debian"
       ignore_errors: true
 
-    - name: Fallback - Try install generic cloud-utils (provides growpart on some distros)
+    - name: Install fallback cloud-utils
       ansible.builtin.package:
         name: cloud-utils
         state: present
       ignore_errors: true
 
-    - name: Ensure filesystem tools are present (best-effort)
+    - name: Install filesystem tools
       ansible.builtin.package:
         name:
           - xfsprogs
@@ -124,94 +124,68 @@
         state: present
       ignore_errors: true
 
-    - name: Verify growpart is available
+    - name: Verify growpart exists
       ansible.builtin.command: bash -lc "command -v growpart"
       register: growpart_check
       changed_when: false
       failed_when: growpart_check.rc != 0
 
-    # --- Expand partition and filesystem (root) ---
     - name: Expand partition and filesystem on root device
       ansible.builtin.shell: |
         set -euo pipefail
 
         ROOT_SRC="$(findmnt -n -o SOURCE /)"
-        if [ -z "$ROOT_SRC" ]; then
-          echo "Could not detect root source device"; exit 1
-        fi
-
-        # Get underlying disk name for the root partition
         PKNAME="$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)"
-        if [ -z "$PKNAME" ]; then
-          # Fallback: strip partition numbers/suffix from device path
-          PKNAME="$(basename "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')"
-        fi
+        [ -z "$PKNAME" ] && PKNAME="$(basename "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')"
         DEV="/dev/${PKNAME}"
 
-        # Detect partition number for the root partition
         PARTNUM="$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)"
-        if [ -z "$PARTNUM" ]; then
-          # Extract trailing digits; default to 1 if still empty
-          PARTNUM="$(echo "$ROOT_SRC" | sed -n 's/[^0-9]*\([0-9][0-9]*\)$/\1/p')"
-          [ -z "$PARTNUM" ] && PARTNUM="1"
-        fi
+        [ -z "$PARTNUM" ] && PARTNUM="$(echo "$ROOT_SRC" | sed -n 's/[^0-9]*\([0-9][0-9]*\)$/\1/p')"
+        [ -z "$PARTNUM" ] && PARTNUM="1"
 
-        echo "Root source: $ROOT_SRC"
-        echo "Disk device: $DEV"
-        echo "Partition #: $PARTNUM"
-
-        # Grow the partition (idempotent; prints 'NOCHANGE' when already grown)
         growpart "$DEV" "$PARTNUM" || echo "growpart reported no change"
 
-        # Now grow the filesystem
         FSTYPE="$(findmnt -n -o FSTYPE /)"
         if [ "$FSTYPE" = "xfs" ]; then
           xfs_growfs /
         else
-          # ext2/3/4 or others supported by resize2fs
           resize2fs "$ROOT_SRC"
         fi
       register: resize_result
-      changed_when: >
-        ('NOCHANGE' not in resize_result.stdout | default('')) or
-        ('NOCHANGE' not in resize_result.stderr | default(''))
+      changed_when: "'NOCHANGE' not in resize_result.stdout | default('')"
 
-    # --- Verification & Logging ---
-    - name: VERIFICATION - Detect root disk device (path)
+    - name: Detect root disk (physical)
       ansible.builtin.shell: |
-        set -e
         ROOT_SRC="$(findmnt -n -o SOURCE /)"
-        PKNAME="$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)"
+        PKNAME="$(lsblk -no PKNAME "$ROOT_SRC")"
         echo "/dev/${PKNAME}"
       register: root_disk_path
       changed_when: false
 
-    - name: VERIFICATION - Get actual expanded physical disk size
+    - name: Get physical disk size
       ansible.builtin.command: lsblk -dn -o SIZE {{ root_disk_path.stdout }}
       register: linux_disk_size
       changed_when: false
 
-    - name: VERIFICATION - Get filesystem size information
+    - name: Get filesystem size
       ansible.builtin.command: df -hT /
       register: linux_fs_size
       changed_when: false
 
-    - name: LOG - Linux Disk & Filesystem Size
+    - name: LOG - FINAL DISK REPORT
       ansible.builtin.debug:
         msg:
           - "AWS Volume ID: {{ host_volume_id }}"
           - "Requested Size: {{ requested_size }} GB"
           - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
-          - "Linux block device now reports: {{ linux_disk_size.stdout | trim }}"
-          - "Filesystem info: {{ linux_fs_size.stdout_lines[1] | default(linux_fs_size.stdout | trim) }}"
+          - "Linux Block Device Size: {{ linux_disk_size.stdout | trim }}"
+          - "Filesystem: {{ linux_fs_size.stdout_lines[1] | default(linux_fs_size.stdout) }}"
 
-    # Optional soft assertion (does not fail the job) to highlight mismatch
-    - name: CHECK - Does Linux disk size match AWS confirmed size? (soft check)
+    - name: CHECK - size consistency (soft check)
       ansible.builtin.assert:
         that:
-          - "'{{ (aws_confirmed_size | string) }}G' in (linux_disk_size.stdout | trim)"
-        fail_msg: "Disk reports {{ linux_disk_size.stdout | trim }} but AWS says {{ aws_confirmed_size }}G"
-        success_msg: "Disk size matches AWS: {{ aws_confirmed_size }}G"
+          - "'{{ aws_confirmed_size }}G' in linux_disk_size.stdout"
+        success_msg: "Disk size matches AWS"
+        fail_msg: "Linux reports {{ linux_disk_size.stdout }} but AWS says {{ aws_confirmed_size }}G"
       failed_when: false
       changed_when: false
-``
