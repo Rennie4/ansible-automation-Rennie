@@ -1,8 +1,8 @@
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
-# - Compatible with older amazon.aws collection
+# - Fixed: Multi-source variable lookup for survey names with spaces
 # - Dynamic volume detection (No hardcoded EBS volume values)
-# - Fixed: Survey variable lookup for keys with spaces
+# - Compatible with older amazon.aws collections
 # =============================================================================
 
 # PLAY 1: AWS Infrastructure - Determine, Validate, Modify
@@ -20,17 +20,23 @@
     - name: Collect and Normalize requested size
       ansible.builtin.set_fact:
         requested_size: >-
+          {%- set survey_name = 'Enter the New Size (GB)' -%}
           {%- set raw_val = 
             new_size_gb | default(
             new_size | default(
             size | default(
             volume_size | default(
-            vars['Enter the New Size (GB)'] | default(0))))) -%}
+            lookup('vars', survey_name, default='') | default(
+            hostvars['localhost'][survey_name] | default(0)
+          ))))) -%}
           {{ raw_val | string | regex_replace('[^0-9]', '') | int }}
 
     - name: FAIL - Requested size not provided or invalid
       ansible.builtin.fail:
-        msg: "Size invalid: Got '{{ requested_size }}'. Ensure survey passes a positive integer."
+        msg: >-
+          Size invalid: Got '{{ requested_size }}'. 
+          Ensure your survey passes a number. 
+          Variables found: {{ vars.keys() | list | select('search', 'Size') | list }}
       when: requested_size | int < 1
 
     - name: Get instance details by public IP
@@ -88,7 +94,7 @@
             - "{{ final_volume_id }}"
       register: updated_vol
       until: (updated_vol.volumes | first).size | int == requested_size | int
-      retries: 12
+      retries: 15
       delay: 10
       when: requested_size | int > current_size | int
 
@@ -124,10 +130,9 @@
         set -e
         ROOT_SRC=$(findmnt -n -o SOURCE /)
         
-        # Get parent disk (handles /dev/sda1 and /dev/nvme0n1p1)
+        # Determine parent disk
         PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
         if [ -z "$PKNAME" ]; then
-            # Fallback for older systems
             DEV=$(echo "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')
         else
             DEV="/dev/$PKNAME"
@@ -153,4 +158,4 @@
           - "AWS Volume ID: {{ host_volume_id }}"
           - "Requested Size: {{ requested_size }} GB"
           - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
-          - "Filesystem expansion completed successfully."
+          - "Action: Partition and Filesystem expansion completed."
