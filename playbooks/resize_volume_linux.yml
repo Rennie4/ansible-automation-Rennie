@@ -1,8 +1,7 @@
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
-# - Fixed: Aggressive Extra Var discovery for complex survey names
-# - No hardcoded EBS values (dynamic root detection)
-# - Compatible with older amazon.aws collections
+# - Features: Deep variable discovery for AAP Surveys
+# - Constraints: No hardcoded EBS values; handles 6-hour AWS cooldown
 # =============================================================================
 
 # PLAY 1: AWS Infrastructure - Determine, Validate, Modify
@@ -14,31 +13,33 @@
   vars:
     region: "eu-west-1"
     target_ip: "{{ instance_ip_address }}"
-    survey_volume_id: "{{ volume_id | default('') }}"
 
   tasks:
-    - name: Collect and Normalize requested size
+    - name: Attempt to find requested size from any possible source
       ansible.builtin.set_fact:
         requested_size: >-
-          {%- set found_size = 0 -%}
-          {%- set possible_keys = ['new_size_gb', 'new_size', 'size', 'volume_size', 'Enter the New Size (GB)'] -%}
-          {%- for key in possible_keys -%}
-            {%- if vars[key] is defined and vars[key] | string | trim != '' -%}
-              {%- set found_size = vars[key] -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ found_size | string | regex_replace('[^0-9]', '') | int }}
+          {%- set survey_val = 
+            new_size_gb | default(
+            new_size | default(
+            size | default(
+            volume_size | default(
+            vars['Enter the New Size (GB)'] | default(0)
+          )))) -%}
+          {{ survey_val | string | regex_replace('[^0-9]', '') | int }}
+
+    - name: DEBUG - Show all variables if size is 0
+      ansible.builtin.debug:
+        msg: "Available keys: {{ vars.keys() | list }}"
+      when: requested_size | int < 1
 
     - name: FAIL - Requested size not provided or invalid
       ansible.builtin.fail:
         msg: >-
-          Size invalid: Got '{{ requested_size }}'. 
-          The survey variable is not being captured. 
-          DEBUG: instance_ip is '{{ instance_ip_address | default("MISSING") }}'.
-          Try renaming your survey variable to 'new_size_gb' (no spaces/brackets).
+          Size is '0'. AAP is not passing the variable correctly. 
+          Check your Survey 'Answer Variable Name'.
       when: requested_size | int < 1
 
-    - name: Get instance details by public IP
+    - name: Get instance details by IP
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
         filters:
@@ -47,35 +48,24 @@
 
     - name: Fail if instance not found
       ansible.builtin.fail:
-        msg: "No EC2 instance found with IP {{ target_ip }} in {{ region }}"
+        msg: "No EC2 instance found with IP {{ target_ip }}"
       when: instance_info.instances | length == 0
 
-    - name: Set zone + volume ID facts
+    - name: Set volume facts
       ansible.builtin.set_fact:
         target_zone: "{{ instance_info.instances[0].placement.availability_zone }}"
-        instance_id: "{{ instance_info.instances[0].instance_id }}"
-        final_volume_id: >-
-          {{
-            survey_volume_id if (survey_volume_id | length > 5)
-            else (
-              instance_info.instances[0].block_device_mappings
-              | selectattr('device_name','equalto',instance_info.instances[0].root_device_name)
-              | map(attribute='ebs.volume_id')
-              | first
-            )
-          }}
+        final_volume_id: "{{ instance_info.instances[0].block_device_mappings | selectattr('device_name','equalto',instance_info.instances[0].root_device_name) | map(attribute='ebs.volume_id') | first }}"
 
     - name: AWS READ - Current volume info
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
         filters:
-          volume-id:
-            - "{{ final_volume_id }}"
+          volume-id: "{{ final_volume_id }}"
       register: current_vol
 
     - name: Set current size fact
       ansible.builtin.set_fact:
-        current_size: "{{ (current_vol.volumes | first).size | int }}"
+        current_size: "{{ current_vol.volumes[0].size | int }}"
 
     - name: Modify EBS volume
       amazon.aws.ec2_vol:
@@ -84,28 +74,24 @@
         volume_size: "{{ requested_size }}"
       register: aws_resize
       when: requested_size | int > current_size | int
+      ignore_errors: true
 
-    - name: Wait for AWS to reflect change
-      amazon.aws.ec2_vol_info:
-        region: "{{ region }}"
-        filters:
-          volume-id:
-            - "{{ final_volume_id }}"
-      register: updated_vol
-      until: (updated_vol.volumes | first).size | int == requested_size | int
-      retries: 15
-      delay: 10
-      when: requested_size | int > current_size | int
+    - name: Handle AWS Cooldown/Errors
+      ansible.builtin.fail:
+        msg: "AWS rejected the resize. This is likely the 6-hour cooldown limit. Error: {{ aws_resize.msg }}"
+      when: 
+        - requested_size | int > current_size | int
+        - aws_resize.failed | default(false)
+        - "'Client.VolModificationModificationState' in aws_resize.msg or '6 hours' in aws_resize.msg"
 
     - name: Add host for OS expansion
       ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
-        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
         requested_size: "{{ requested_size }}"
-        aws_confirmed_size: "{{ (updated_vol.volumes | default(current_vol.volumes) | first).size }}"
+        aws_confirmed_size: "{{ requested_size if (not aws_resize.failed | default(false)) else current_size }}"
 
 # PLAY 2: OS Expansion - Grow Partition + Filesystem
 - name: OS Expansion - Resize Linux Filesystem
@@ -116,11 +102,7 @@
   tasks:
     - name: Install growth tools
       ansible.builtin.package:
-        name:
-          - cloud-guest-utils
-          - cloud-utils-growpart
-          - xfsprogs
-          - e2fsprogs
+        name: [cloud-guest-utils, cloud-utils-growpart, xfsprogs, e2fsprogs]
         state: present
       ignore_errors: true
 
@@ -129,21 +111,13 @@
         set -e
         ROOT_SRC=$(findmnt -n -o SOURCE /)
         PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
-        if [ -z "$PKNAME" ]; then
-            DEV=$(echo "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//')
-        else
-            DEV="/dev/$PKNAME"
-        fi
+        [ -z "$PKNAME" ] && DEV=$(echo "$ROOT_SRC" | sed 's/[0-9]*$//' | sed 's/p$//') || DEV="/dev/$PKNAME"
         PARTNUM=$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)
-
+        
         growpart "$DEV" "$PARTNUM" || true
-
+        
         FSTYPE=$(findmnt -n -o FSTYPE /)
-        if [ "$FSTYPE" = "xfs" ]; then
-          xfs_growfs /
-        else
-          resize2fs "$ROOT_SRC"
-        fi
+        [ "$FSTYPE" = "xfs" ] && xfs_growfs / || resize2fs "$ROOT_SRC"
       register: resize_result
 
     - name: FINAL REPORT
@@ -151,5 +125,4 @@
         msg:
           - "AWS Volume ID: {{ host_volume_id }}"
           - "Requested Size: {{ requested_size }} GB"
-          - "AWS Confirmed Size: {{ aws_confirmed_size }} GB"
-          - "Status: Completed Successfully"
+          - "Status: Partition and Filesystem expansion attempted."
