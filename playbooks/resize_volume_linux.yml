@@ -1,6 +1,7 @@
 
 # =============================================================================
 # Playbook: Resize EBS Volume and Expand Linux Filesystem (All Distros)
+# Compatible with older amazon.aws collection where ec2_vol_info uses `filters`
 # =============================================================================
 
 # PLAY 1: AWS Infrastructure - Resize EBS Volume
@@ -43,7 +44,7 @@
           }}
 
     - name: Show requested resize
-      debug:
+      ansible.builtin.debug:
         msg: "Resizing volume {{ final_volume_id }} to {{ target_new_size }} GB"
 
     - name: Modify EBS volume
@@ -54,26 +55,30 @@
         volume_size: "{{ target_new_size }}"
       register: aws_resize
 
-    - name: Get updated AWS volume size
+    # Use `filters` (older collection compatibility) to read back the size
+    - name: Get updated AWS volume size (filters for backward compatibility)
       amazon.aws.ec2_vol_info:
         region: "{{ region }}"
-        volume_ids:
-          - "{{ final_volume_id }}"
+        filters:
+          volume-id:
+            - "{{ final_volume_id }}"
       register: updated_volume_info
 
     - name: Log AWS confirmed size
-      debug:
-        msg: "AWS reports volume {{ final_volume_id }} is now {{ updated_volume_info.volumes[0].size }} GB"
+      ansible.builtin.debug:
+        msg: >-
+          AWS reports volume {{ final_volume_id }} is now
+          {{ (updated_volume_info.volumes | first).size }} GB
 
     - name: Add instance to next play
-      add_host:
+      ansible.builtin.add_host:
         name: "{{ target_ip }}"
         groups: target_nodes
         ansible_user: "{{ ansible_user | default('ubuntu') }}"
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
         host_volume_id: "{{ final_volume_id }}"
         requested_size: "{{ target_new_size }}"
-        aws_confirmed_size: "{{ updated_volume_info.volumes[0].size }}"
+        aws_confirmed_size: "{{ (updated_volume_info.volumes | first).size }}"
 
 
 # PLAY 2: Resize Partition + Filesystem
@@ -83,74 +88,16 @@
   gather_facts: true
 
   tasks:
-    - name: Install growpart packages
-      package:
+    - name: Install growpart packages (best-effort across distros)
+      ansible.builtin.package:
         name:
-          - cloud-guest-utils
-          - cloud-utils-growpart
-          - cloud-utils
+          - cloud-guest-utils          # Debian/Ubuntu
+          - cloud-utils-growpart       # RHEL/Amazon/SUSE
+          - cloud-utils                # Fallback provider of growpart
         state: present
       ignore_errors: true
 
-    - name: Install fs tools
-      package:
+    - name: Install filesystem tools
+      ansible.builtin.package:
         name:
           - xfsprogs
-          - e2fsprogs
-        state: present
-      ignore_errors: true
-
-    - name: Verify growpart exists
-      command: command -v growpart
-      register: growpart_ok
-      changed_when: false
-      failed_when: growpart_ok.rc != 0
-
-    - name: Expand root partition + filesystem
-      shell: |
-        set -e
-
-        ROOT_SRC=$(findmnt -n -o SOURCE /)
-        PKNAME=$(lsblk -no PKNAME "$ROOT_SRC" | head -n1)
-        DEV="/dev/$PKNAME"
-
-        PARTNUM=$(lsblk -no PARTNUM "$ROOT_SRC" | head -n1)
-        [ -z "$PARTNUM" ] && PARTNUM="1"
-
-        growpart "$DEV" "$PARTNUM" || true
-
-        FSTYPE=$(findmnt -n -o FSTYPE /)
-        if [ "$FSTYPE" = "xfs" ]; then
-          xfs_growfs /
-        else
-          resize2fs "$ROOT_SRC"
-        fi
-      register: resize_result
-      changed_when: false
-
-    - name: Detect root device
-      shell: |
-        ROOT_SRC=$(findmnt -n -o SOURCE /)
-        PKNAME=$(lsblk -no PKNAME "$ROOT_SRC")
-        echo "/dev/$PKNAME"
-      register: root_disk
-      changed_when: false
-
-    - name: Get physical disk size
-      command: lsblk -dn -o SIZE {{ root_disk.stdout }}
-      register: disk_size
-      changed_when: false
-
-    - name: Get filesystem size
-      command: df -hT /
-      register: fs_size
-      changed_when: false
-
-    - name: FINAL REPORT
-      debug:
-        msg:
-          - "AWS Volume ID: {{ host_volume_id }}"
-          - "Requested Size: {{ requested_size }} GB"
-          - "AWS Reported Size: {{ aws_confirmed_size }} GB"
-          - "Linux Block Device Size: {{ disk_size.stdout }}"
-          - "Filesystem: {{ fs_size.stdout_lines[1] }}"
