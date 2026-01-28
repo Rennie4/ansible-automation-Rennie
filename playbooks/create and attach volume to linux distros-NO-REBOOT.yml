@@ -1,11 +1,10 @@
 ---
-# PLAY 1: AWS Side - Automated Slot Discovery
+# PLAY 1: AWS Side - Create/Attach and Identify Target
 - name: Create and Attach EBS Volume via Survey
   hosts: localhost
   connection: local
   gather_facts: no
   vars:
-    # Logic to find the next open slot to avoid device conflicts
     possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
@@ -30,10 +29,17 @@
       register: ec2_vol_result
       when: next_device is defined
 
-# PLAY 2: Linux Side - Live Formatting and Mounting
+    - name: Capture Target Private IP
+      set_fact:
+        target_ip: "{{ instance_details.instances[0].private_ip_address }}"
+
+# PLAY 2: Linux Side - Targeted Provisioning Only
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
+  # This line ensures only the specific server in the survey is touched
+  when: ansible_host == hostvars['localhost']['target_ip'] or inventory_hostname == hostvars['localhost']['target_ip']
+  
   tasks:
     - name: Step 0.1 - Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
@@ -46,7 +52,6 @@
 
     - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
-        # Protects OS drives like xvda or nvme0n1 [cite: 88-114, 2025-12-24]
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -74,8 +79,6 @@
           changed_when: false
 
         - name: Persist Mounts in fstab
-          # state: mounted ensures it is active immediately without reboot
-          # nofail is critical for future reboot safety [cite: 2025-12-24]
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
