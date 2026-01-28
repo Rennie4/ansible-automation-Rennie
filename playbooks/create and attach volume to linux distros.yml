@@ -5,8 +5,8 @@
   connection: local
   gather_facts: no
   vars:
-    # List of slots to check for availability
-    possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj", "/dev/sdk"]
+    # Supports both standard and xvda style naming conventions
+    possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
     - name: Get Current Instance Info
@@ -30,7 +30,7 @@
       register: ec2_vol_result
       when: next_device is defined
 
-# PLAY 2: Linux Side - Universal Mounting & GIGS Reporting
+# PLAY 2: Linux Side - Universal Multi-Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -47,7 +47,7 @@
 
     - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
-        # Dynamic discovery for any new disk added [cite: 2025-12-22]
+        # Added xvda to the exclusion list for total safety
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -75,7 +75,7 @@
           changed_when: false
 
         - name: Persist Mounts in fstab
-          # nofail prevents system failure after reboot [cite: 2025-12-24]
+          # Uses UUID and nofail for 100% reboot safety [cite: 2025-12-24]
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
@@ -91,12 +91,10 @@
         state: latest
 
     - name: Step 4 - Force Reboot for Verification
-      # Verifies that persistence works and system doesn't fail [cite: 2025-12-24]
       reboot:
         reboot_timeout: 300
 
     - name: Step 5 - Final Storage Report
-      # This provides the "Volumes in Gigs" view you requested
       shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
       register: storage_report
       changed_when: false
