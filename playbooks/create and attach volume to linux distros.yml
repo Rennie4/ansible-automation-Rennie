@@ -5,7 +5,7 @@
   connection: local
   gather_facts: no
   vars:
-    # Supports both standard and xvda style naming conventions
+    # Logic to find the next open slot
     possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
@@ -30,11 +30,10 @@
       register: ec2_vol_result
       when: next_device is defined
 
-# PLAY 2: Linux Side - Universal Multi-Mounting
+# PLAY 2: Linux Side - Formatting and Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
-
   tasks:
     - name: Step 0.1 - Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
@@ -47,7 +46,7 @@
 
     - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
-        # Added xvda to the exclusion list for total safety
+        # Excludes OS drives like xvda or nvme0n1
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -85,20 +84,17 @@
           loop: "{{ disk_uuids.results }}"
       when: new_disks | length > 0
 
-    - name: Step 1 - Universal Patching
-      package:
-        name: "*"
-        state: latest
+    - name: Step 1 - Patching and Reboot
+      package: name="*" state=latest
 
-    - name: Step 4 - Force Reboot for Verification
-      reboot:
-        reboot_timeout: 300
+    - name: Step 4 - Reboot Verification
+      reboot: reboot_timeout=300
 
-    - name: Step 5 - Final Storage Report
+    - name: Step 5 - SHOW ALL VOLUMES IN GIGS
       shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
       register: storage_report
       changed_when: false
 
-    - name: SHOW ALL VOLUMES IN GIGS
+    - name: Final Output
       debug:
         msg: "{{ storage_report.stdout_lines }}"
