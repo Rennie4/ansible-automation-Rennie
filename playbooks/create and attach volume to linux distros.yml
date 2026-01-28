@@ -5,33 +5,36 @@
   connection: local
   gather_facts: no
   vars:
-    possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
+    # List of slots to check for availability
+    possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj", "/dev/sdk"]
 
   tasks:
-    - name: Get Instance Info
+    - name: Get Current Instance Info
       amazon.aws.ec2_instance_info:
         instance_ids: ["{{ target_instance_id }}"]
         region: "eu-west-1"
       register: instance_details
 
-    - name: Find Next Slot
+    - name: Find Next Open AWS Slot
       set_fact:
         next_device: "{{ (possible_devices | difference(instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list)) | first }}"
 
     - name: Create and Attach Volume
       amazon.aws.ec2_vol:
         instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" # Uses your survey value
-        zone: "{{ target_zone }}" # Uses your survey value
+        volume_size: "{{ target_vol_size }}" 
+        zone: "{{ target_zone }}" 
         region: "eu-west-1"
         device_name: "{{ next_device }}"
         state: present
       register: ec2_vol_result
+      when: next_device is defined
 
-# PLAY 2: Linux Side - Universal Mounting & Reporting
+# PLAY 2: Linux Side - Universal Mounting & GIGS Reporting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
+
   tasks:
     - name: Step 0.1 - Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
@@ -42,7 +45,7 @@
       setup:
         filter: ansible_devices
 
-    - name: Step 0.3 - Identify New Disks
+    - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
         # Dynamic discovery for any new disk added [cite: 2025-12-22]
         new_disks: "{{ ansible_facts.devices | dict2items | 
@@ -52,12 +55,17 @@
 
     - name: Step 0.4 - Provision Disks
       block:
-        - name: Create Mount Folders
-          file: path="/data/{{ item }}" state=directory mode='0755'
+        - name: Create Unique Mount Folders
+          file:
+            path: "/data/{{ item }}"
+            state: directory
+            mode: '0755'
           loop: "{{ new_disks }}"
 
         - name: Create XFS Filesystem
-          filesystem: fstype=xfs dev="/dev/{{ item }}"
+          filesystem:
+            fstype: xfs
+            dev: "/dev/{{ item }}"
           loop: "{{ new_disks }}"
 
         - name: Get UUIDs
@@ -66,7 +74,7 @@
           loop: "{{ new_disks }}"
           changed_when: false
 
-        - name: Persist Mounts
+        - name: Persist Mounts in fstab
           # nofail prevents system failure after reboot [cite: 2025-12-24]
           mount:
             path: "/data/{{ item.item }}"
@@ -78,13 +86,17 @@
       when: new_disks | length > 0
 
     - name: Step 1 - Universal Patching
-      package: name="*" state=latest
+      package:
+        name: "*"
+        state: latest
 
-    - name: Step 4 - Force Reboot
-      reboot: reboot_timeout=300
+    - name: Step 4 - Force Reboot for Verification
+      # Verifies that persistence works and system doesn't fail [cite: 2025-12-24]
+      reboot:
+        reboot_timeout: 300
 
     - name: Step 5 - Final Storage Report
-      # This is where you see the "12G", "11G", etc.
+      # This provides the "Volumes in Gigs" view you requested
       shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
       register: storage_report
       changed_when: false
