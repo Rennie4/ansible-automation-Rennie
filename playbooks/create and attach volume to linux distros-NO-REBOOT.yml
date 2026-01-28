@@ -1,96 +1,82 @@
 ---
-# PLAY 1: AWS Side - Create/Attach and Identify Target
-- name: Create and Attach EBS Volume via Survey
-  hosts: localhost
-  connection: local
-  gather_facts: no
-  vars:
-    # Expanded to support 20+ drives (f through z)
-    possible_devices: [
-      "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
-      "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
-      "/dev/sdp", "/dev/sdq", "/dev/sdr", "/dev/sds", "/dev/sdt",
-      "/dev/sdu", "/dev/sdv", "/dev/sdw", "/dev/sdx", "/dev/sdy", "/dev/sdz"
-    ]
-
-  tasks:
-    - name: Get Current Instance Info
-      amazon.aws.ec2_instance_info:
-        instance_ids: ["{{ target_instance_id }}"]
-        region: "eu-west-1"
-      register: instance_details
-
-    - name: Find Next Open AWS Slot
-      set_fact:
-        # Prevents "sequence empty" error by providing a default 'NONE'
-        next_device: "{{ (possible_devices | difference(instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list)) | first | default('NONE') }}"
-
-    - name: Stop if No Slots Available
-      fail:
-        msg: "ERROR: All 21 available EBS slots are currently full for this instance!"
-      when: next_device == 'NONE'
-
-    - name: Create and Attach Volume
-      amazon.aws.ec2_vol:
-        instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" 
-        zone: "{{ target_zone }}" 
-        region: "eu-west-1"
-        device_name: "{{ next_device }}"
-        state: present
-      register: ec2_vol_result
-      when: next_device != 'NONE'
-
-    - name: Add Target to Temporary Group
-      add_host:
-        name: "{{ instance_details.instances[0].private_ip_address }}"
-        groups: targeted_server
-
-# PLAY 2: Linux Side - Targeted Provisioning (No Reboot)
-- name: Universal Linux Storage Extension
-  hosts: targeted_server
+# ONE PLAY: Targeted directly at the server from your survey
+- name: Universal Storage Provisioning
+  hosts: "{{ target_instance_ip }}"  # Enter the IP in your survey or pass it via extra_vars
   become: yes
   gather_facts: yes
 
   tasks:
-    - name: Step 0.1 - Hardware Scan
+    # --- AWS SECTION (Delegated to localhost) ---
+    - name: AWS | Get Current Instance Info
+      amazon.aws.ec2_instance_info:
+        instance_ids: ["{{ target_instance_id }}"]
+        region: "eu-west-1"
+      register: instance_details
+      delegate_to: localhost
+      run_once: true
+
+    - name: AWS | Find Next Open Slot
+      set_fact:
+        possible_devices: [
+          "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
+          "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
+          "/dev/sdp", "/dev/sdq", "/dev/sdr", "/dev/sds", "/dev/sdt",
+          "/dev/sdu", "/dev/sdv", "/dev/sdw", "/dev/sdx", "/dev/sdy", "/dev/sdz"
+        ]
+      delegate_to: localhost
+
+    - name: AWS | Calculate Device Name
+      set_fact:
+        next_device: "{{ (possible_devices | difference(instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list)) | first | default('NONE') }}"
+      delegate_to: localhost
+
+    - name: AWS | Create and Attach Volume
+      amazon.aws.ec2_vol:
+        instance: "{{ target_instance_id }}"
+        volume_size: "{{ target_vol_size }}"
+        zone: "{{ target_zone }}"
+        region: "eu-west-1"
+        device_name: "{{ next_device }}"
+        state: present
+      register: ec2_vol_result
+      delegate_to: localhost
+      when: next_device != 'NONE'
+
+    # --- LINUX SECTION (Runs on the target server) ---
+    - name: Linux | Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.2 - Refresh Facts
-      setup:
-        filter: ansible_devices
-
-    - name: Step 0.3 - Identify New Unformatted Disks
+    - name: Linux | Identify New Unformatted Disks
       set_fact:
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
                        map(attribute='key') | list }}"
 
-    - name: Step 0.4 - Provision Disks
+    - name: Linux | Provision Disks
       block:
-        - name: Create Unique Mount Folders
+        - name: Linux | Create Mount Folders
           file:
             path: "/data/{{ item }}"
             state: directory
             mode: '0755'
           loop: "{{ new_disks }}"
 
-        - name: Create XFS Filesystem
+        - name: Linux | Create XFS Filesystem
           filesystem:
             fstype: xfs
             dev: "/dev/{{ item }}"
           loop: "{{ new_disks }}"
 
-        - name: Get UUIDs
+        - name: Linux | Get UUIDs
           command: "blkid -s UUID -o value /dev/{{ item }}"
           register: disk_uuids
           loop: "{{ new_disks }}"
           changed_when: false
 
-        - name: Persist Mounts in fstab
+        - name: Linux | Persist and Mount
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
@@ -100,20 +86,14 @@
           loop: "{{ disk_uuids.results }}"
       when: new_disks | length > 0
 
-    - name: Step 5 - Final Storage Report
+    - name: Final Output | Get Report
       shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
       register: storage_report
       changed_when: false
 
-    - name: Count Total Data Drives
-      shell: "lsblk | grep /data/ | wc -l"
-      register: drive_count
-      changed_when: false
-
-    - name: Final Output
+    - name: Final Output | Report Summary
       debug:
         msg: 
-          - "REPORT FOR INSTANCE: {{ inventory_hostname }}"
-          - "TOTAL DATA DRIVES MOUNTED: {{ drive_count.stdout }}"
+          - "REPORT FOR: {{ inventory_hostname }}"
           - "STORAGE DETAILS:"
           - "{{ storage_report.stdout_lines }}"
