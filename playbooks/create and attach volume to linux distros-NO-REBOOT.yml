@@ -1,48 +1,53 @@
 ---
-# ONE PLAY: Targeted directly at the server from your survey
-- name: Universal Storage Provisioning
-  hosts: "{{ target_instance_ip }}"  # Enter the IP in your survey or pass it via extra_vars
-  become: yes
-  gather_facts: yes
+# PLAY 1: AWS Side - Create/Attach and Identify Target
+- name: Create and Attach EBS Volume via Survey
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    # Supports up to 21 drives (f through z)
+    possible_devices: [
+      "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
+      "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
+      "/dev/sdp", "/dev/sdq", "/dev/sdr", "/dev/sds", "/dev/sdt",
+      "/dev/sdu", "/dev/sdv", "/dev/sdw", "/dev/sdx", "/dev/sdy", "/dev/sdz"
+    ]
 
   tasks:
-    # --- AWS SECTION (Delegated to localhost) ---
-    - name: AWS | Get Current Instance Info
+    - name: Get Current Instance Info
       amazon.aws.ec2_instance_info:
         instance_ids: ["{{ target_instance_id }}"]
         region: "eu-west-1"
       register: instance_details
-      delegate_to: localhost
-      run_once: true
 
-    - name: AWS | Find Next Open Slot
-      set_fact:
-        possible_devices: [
-          "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
-          "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
-          "/dev/sdp", "/dev/sdq", "/dev/sdr", "/dev/sds", "/dev/sdt",
-          "/dev/sdu", "/dev/sdv", "/dev/sdw", "/dev/sdx", "/dev/sdy", "/dev/sdz"
-        ]
-      delegate_to: localhost
-
-    - name: AWS | Calculate Device Name
+    - name: Find Next Open AWS Slot
       set_fact:
         next_device: "{{ (possible_devices | difference(instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list)) | first | default('NONE') }}"
-      delegate_to: localhost
 
-    - name: AWS | Create and Attach Volume
+    - name: Create and Attach Volume
       amazon.aws.ec2_vol:
-        instance: "{{ target_instance_id }}"
-        volume_size: "{{ target_vol_size }}"
-        zone: "{{ target_zone }}"
+        instance: "{{ target_instance_id }}" 
+        volume_size: "{{ target_vol_size }}" 
+        zone: "{{ target_zone }}" 
         region: "eu-west-1"
         device_name: "{{ next_device }}"
         state: present
       register: ec2_vol_result
-      delegate_to: localhost
       when: next_device != 'NONE'
 
-    # --- LINUX SECTION (Runs on the target server) ---
+    - name: Add Target to Temporary Group
+      # This pulls the IP from AWS and creates a single-host group
+      add_host:
+        name: "{{ instance_details.instances[0].private_ip_address }}"
+        groups: targeted_server
+
+# PLAY 2: Linux Side - Targeted Provisioning (No Reboot)
+- name: Universal Linux Storage Extension
+  hosts: targeted_server
+  become: yes
+  gather_facts: yes
+
+  tasks:
     - name: Linux | Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
       ignore_errors: yes
