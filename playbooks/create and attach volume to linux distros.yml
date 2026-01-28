@@ -1,5 +1,5 @@
 ---
-# PLAY 1: AWS Side
+# PLAY 1: AWS Side - Create and Attach
 - name: Create and Attach EBS Volume via Survey
   hosts: localhost
   connection: local
@@ -15,7 +15,7 @@
         state: present
       register: ec2_vol_result
 
-# PLAY 2: Linux Side
+# PLAY 2: Linux Side - Universal Multi-Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -28,41 +28,61 @@
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.2 - Identify New Disks
+    - name: Step 0.2 - Refresh Hardware Facts
       setup:
         filter: ansible_devices
 
-    - name: Step 0.3 - Create List of New Disks
+    - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
                        map(attribute='key') | list }}"
 
-    - name: Step 0.4 - Provision Disks
-      block:
-        - name: Mount and Format Loop
-          include_tasks:
-            content: |
-              - name: Create Dir
-                file: path="{{ base_mount_path }}/{{ item }}" state=directory
-              - name: FS
-                filesystem: fstype=xfs dev="/dev/{{ item }}"
-              - name: Get UUID
-                command: "blkid -s UUID -o value /dev/{{ item }}"
-                register: d_uuid
-              - name: Persist
-                mount:
-                  path: "{{ base_mount_path }}/{{ item }}"
-                  src: "UUID={{ d_uuid.stdout }}"
-                  fstype: xfs
-                  opts: defaults,nofail
-                  state: mounted
-          loop: "{{ new_disks }}"
-      when: new_disks | length > 0
+    - name: Step 0.4 - Create Mount Directories
+      file:
+        path: "{{ base_mount_path }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ new_disks }}"
 
-    - name: Step 1 - Patching
-      package: name="*" state=latest
+    - name: Step 0.5 - Create XFS Filesystem
+      filesystem:
+        fstype: xfs
+        dev: "/dev/{{ item }}"
+      loop: "{{ new_disks }}"
 
-    - name: Step 4 - Reboot Verification
-      reboot: reboot_timeout=300
+    - name: Step 0.6 - Get UUIDs
+      command: "blkid -s UUID -o value /dev/{{ item }}"
+      register: disk_uuids
+      loop: "{{ new_disks }}"
+      changed_when: false
+
+    - name: Step 0.7 - Persist Mounts in fstab
+      mount:
+        path: "{{ base_mount_path }}/{{ item.item }}"
+        src: "UUID={{ item.stdout }}"
+        fstype: xfs
+        opts: defaults,nofail # Prevents boot failure [cite: 2025-12-24]
+        state: mounted
+      loop: "{{ disk_uuids.results }}"
+      when: item.stdout != ""
+
+    - name: Step 1 - Universal Patching
+      package:
+        name: "*"
+        state: latest
+
+    - name: Step 4 - Force Reboot for Verification
+      reboot:
+        reboot_timeout: 300
+
+    - name: Step 5 - Final Verification
+      shell: "df -h | grep {{ base_mount_path }}"
+      register: final_check
+      changed_when: false
+      failed_when: false
+
+    - name: Show Final Storage Status
+      debug:
+        var: final_check.stdout_lines
