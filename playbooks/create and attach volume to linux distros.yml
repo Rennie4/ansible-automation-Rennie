@@ -5,53 +5,46 @@
   connection: local
   gather_facts: no
   vars:
-    # A list of standard device names to try in order
     possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
-    - name: Get Current Instance Information
+    - name: Get Instance Info
       amazon.aws.ec2_instance_info:
         instance_ids: ["{{ target_instance_id }}"]
         region: "eu-west-1"
       register: instance_details
 
-    - name: Identify Already Used Devices
+    - name: Find Next Slot
       set_fact:
-        used_devices: "{{ instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list }}"
+        next_device: "{{ (possible_devices | difference(instance_details.instances[0].block_device_mappings | map(attribute='device_name') | list)) | first }}"
 
-    - name: Select Next Available Device Name
-      set_fact:
-        next_device: "{{ (possible_devices | difference(used_devices)) | first }}"
-
-    - name: Create and Attach Volume to Next Slot
+    - name: Create and Attach Volume
       amazon.aws.ec2_vol:
         instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" 
-        zone: "{{ target_zone }}" 
+        volume_size: "{{ target_vol_size }}" # Uses your survey value
+        zone: "{{ target_zone }}" # Uses your survey value
         region: "eu-west-1"
         device_name: "{{ next_device }}"
         state: present
       register: ec2_vol_result
-      when: next_device is defined
 
-# PLAY 2: Linux Side - Universal Multi-Mounting
+# PLAY 2: Linux Side - Universal Mounting & Reporting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
-
   tasks:
     - name: Step 0.1 - Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.2 - Refresh Hardware Facts
+    - name: Step 0.2 - Refresh Facts
       setup:
         filter: ansible_devices
 
-    - name: Step 0.3 - Identify New Unformatted Disks
+    - name: Step 0.3 - Identify New Disks
       set_fact:
-        # Excludes OS and previously formatted loop/ebs disks
+        # Dynamic discovery for any new disk added [cite: 2025-12-22]
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -59,17 +52,12 @@
 
     - name: Step 0.4 - Provision Disks
       block:
-        - name: Create Unique Mount Folders
-          file:
-            path: "/data/{{ item }}"
-            state: directory
-            mode: '0755'
+        - name: Create Mount Folders
+          file: path="/data/{{ item }}" state=directory mode='0755'
           loop: "{{ new_disks }}"
 
         - name: Create XFS Filesystem
-          filesystem:
-            fstype: xfs
-            dev: "/dev/{{ item }}"
+          filesystem: fstype=xfs dev="/dev/{{ item }}"
           loop: "{{ new_disks }}"
 
         - name: Get UUIDs
@@ -78,8 +66,8 @@
           loop: "{{ new_disks }}"
           changed_when: false
 
-        - name: Persist Mounts in fstab
-          # Uses UUID and nofail for 100% reboot safety [cite: 2025-12-24]
+        - name: Persist Mounts
+          # nofail prevents system failure after reboot [cite: 2025-12-24]
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
@@ -90,10 +78,17 @@
       when: new_disks | length > 0
 
     - name: Step 1 - Universal Patching
-      package:
-        name: "*"
-        state: latest
+      package: name="*" state=latest
 
-    - name: Step 4 - Force Reboot for Verification
-      reboot:
-        reboot_timeout: 300
+    - name: Step 4 - Force Reboot
+      reboot: reboot_timeout=300
+
+    - name: Step 5 - Final Storage Report
+      # This is where you see the "12G", "11G", etc.
+      shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
+      register: storage_report
+      changed_when: false
+
+    - name: SHOW ALL VOLUMES IN GIGS
+      debug:
+        msg: "{{ storage_report.stdout_lines }}"
