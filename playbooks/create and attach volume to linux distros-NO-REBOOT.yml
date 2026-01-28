@@ -5,7 +5,6 @@
   connection: local
   gather_facts: no
   vars:
-    # Supports up to 21 drives (f through z)
     possible_devices: [
       "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
       "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
@@ -19,6 +18,18 @@
         instance_ids: ["{{ target_instance_id }}"]
         region: "eu-west-1"
       register: instance_details
+
+    - name: Set Target Public IP
+      set_fact:
+        # Changed from private_ip_address to public_ip_address
+        target_ip: "{{ instance_details.instances[0].public_ip_address }}"
+
+    - name: PRE-FLIGHT CHECK | Verify SSH Reachability
+      wait_for:
+        host: "{{ target_ip }}"
+        port: 22
+        timeout: 15
+        msg: "ERROR: Cannot reach Public IP {{ target_ip }} on port 22!"
 
     - name: Find Next Open AWS Slot
       set_fact:
@@ -36,10 +47,11 @@
       when: next_device != 'NONE'
 
     - name: Add Target to Temporary Group
-      # This pulls the IP from AWS and creates a single-host group
       add_host:
-        name: "{{ instance_details.instances[0].private_ip_address }}"
+        name: "{{ target_ip }}"
         groups: targeted_server
+        # Ensures Ansible uses the correct user for the public connection
+        ansible_user: "ubuntu" 
 
 # PLAY 2: Linux Side - Targeted Provisioning (No Reboot)
 - name: Universal Linux Storage Extension
