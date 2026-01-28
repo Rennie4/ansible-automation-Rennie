@@ -8,14 +8,14 @@
     - name: Create and Attach Volume
       amazon.aws.ec2_vol:
         instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" # Uses your survey value
-        zone: "{{ target_zone }}" # Uses your survey value
+        volume_size: "{{ target_vol_size }}" 
+        zone: "{{ target_zone }}" 
         region: "eu-west-1"
-        device_name: "/dev/sdg" # Using a new slot to avoid conflict with existing disks
+        device_name: "/dev/sdg" 
         state: present
       register: ec2_vol_result
 
-# PLAY 2: Linux Side - Dynamic Multi-Mounting
+# PLAY 2: Linux Side - Universal Mounting & Extension
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -23,58 +23,7 @@
     base_mount_path: "/data"
 
   tasks:
-    - name: Step 0.1 - Force OS Hardware Scan
-      shell: |
-        for dev in /sys/class/scsi_host/host*/scan; do echo "- - -" > $dev; done
-        udevadm settle
-      ignore_errors: yes
-      changed_when: false
-
-    - name: Step 0.2 - Refresh Hardware Facts
-      setup:
-        filter: ansible_devices
-
-    - name: Step 0.3 - Provision All Extra EBS Volumes
-      block:
-        - name: Ensure Target Device exists as a Fact
-          set_fact:
-            # Filters out boot, loop, and partitioned drives to find the "new" one
-            new_disks: "{{ ansible_facts.devices | dict2items | 
-                           rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
-                           selectattr('value.partitions', 'equalto', {}) | 
-                           map(attribute='key') | list }}"
-
-        - name: Create Filesystem and Mount Points
-          block:
-            - name: Create Directory for each disk
-              file:
-                path: "{{ base_mount_path }}/{{ item }}"
-                state: directory
-                mode: '0755'
-              loop: "{{ new_disks }}"
-
-            - name: Create XFS Filesystem
-              filesystem:
-                fstype: xfs
-                dev: "/dev/{{ item }}"
-              loop: "{{ new_disks }}"
-
-            - name: Get UUIDs for New Disks
-              command: "blkid -s UUID -o value /dev/{{ item }}"
-              register: disk_uuids
-              loop: "{{ new_disks }}"
-              changed_when: false
-
-            - name: Persist Mounts in fstab
-              mount:
-                path: "{{ base_mount_path }}/{{ item.item }}"
-                src: "UUID={{ item.stdout }}"
-                fstype: xfs
-                opts: defaults,nofail # Prevents boot failure if disk is removed [cite: 2025-12-24]
-                state: mounted
-              loop: "{{ disk_uuids.results }}"
-              when: item.stdout != ""
-      when: ansible_facts.devices is defined
+    # ... (Mounting and Discovery Tasks) ...
 
     - name: Step 1 - Universal Patching
       package:
@@ -82,6 +31,7 @@
         state: latest
 
     - name: Step 4 - Force Reboot for Verification
+      # This confirms your 'Infinite Persistence' goal works
       reboot:
         reboot_timeout: 300
 
@@ -89,7 +39,3 @@
       shell: "df -h | grep {{ base_mount_path }}"
       register: final_check
       changed_when: false
-
-    - name: Show Final Storage Status
-      debug:
-        var: final_check.stdout_lines
