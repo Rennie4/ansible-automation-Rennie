@@ -7,94 +7,37 @@
   tasks:
     - name: Create and Attach Volume
       amazon.aws.ec2_vol:
-        # Survey Variable Mappings
         instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" 
-        zone: "{{ target_zone }}"
+        volume_size: "{{ target_vol_size }}" # Uses your survey value
+        zone: "{{ target_zone }}" # Uses your survey value
         region: "eu-west-1"
-        device_name: "/dev/sdf"
+        device_name: "/dev/sdg" # Changed to avoid conflict with existing /dev/sdf
         state: present
-        tags:
-          Name: "Dynamic_Storage_Volume"
       register: ec2_vol_result
 
-# PLAY 2: Linux Side - Formatting and Mounting
+# PLAY 2: Linux Side - Universal Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
-  vars:
-    mount_path: "/data"
 
   tasks:
-    - name: Step 0.1 - Ensure Mount Directory Exists
-      file:
-        path: "{{ mount_path }}"
-        state: directory
-        mode: '0755'
-
-    - name: Step 0.2 - Force OS Hardware Scan
+    - name: Step 0.1 - Force OS Hardware Scan
       shell: |
         for dev in /sys/class/scsi_host/host*/scan; do echo "- - -" > $dev; done
         udevadm settle
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.3 - Refresh Hardware Facts
+    - name: Step 0.2 - Refresh Hardware Facts
       setup:
         filter: ansible_devices
 
-    - name: Step 0.4 - Discover Target EBS Device
-      # Finds any non-boot, non-loop disk dynamically
-      set_fact:
-        target_device: "/dev/{{ item.key }}"
+    - name: Step 0.3 - Process All Unmounted EBS Volumes
+      # This block will now loop through ALL disks that aren't the OS drive
+      include_tasks:
+        file: inner_mount_logic.yml
       loop: "{{ ansible_facts.devices | dict2items }}"
       when: 
         - item.key not in ['sda', 'vda', 'xvda', 'nvme0n1']
         - "'loop' not in item.key"
-      register: device_discovery
-
-    - name: Step 0.5 - Storage Provisioning and Extension
-      block:
-        - name: Create or Resize Filesystem
-          # Handles brand new volumes or growing existing ones
-          filesystem:
-            fstype: xfs
-            dev: "{{ target_device }}"
-            resizefs: yes
-          when: target_device is defined
-
-        - name: Get Device UUID
-          command: blkid -s UUID -o value {{ target_device }}
-          register: disk_uuid
-          changed_when: false
-
-        - name: Persist Mount in fstab
-          # nofail prevents system failure if volume is missing [cite: 2025-12-24]
-          mount:
-            path: "{{ mount_path }}"
-            src: "UUID={{ disk_uuid.stdout }}"
-            fstype: xfs
-            opts: defaults,nofail
-            state: mounted
-      when: target_device is defined
-
-    - name: Step 1 - Universal Patching
-      # Distro-agnostic update for Ubuntu, RHEL, etc.
-      package:
-        name: "*"
-        state: latest
-
-    - name: Step 4 - Force Reboot for Verification
-      reboot:
-        reboot_timeout: 300
-
-    - name: Step 5 - Final Verification
-      command: "df -h {{ mount_path }}"
-      register: final_check
-      when: target_device is defined
-      changed_when: false
-
-    - name: Show Final Storage Status
-      debug:
-        var: final_check.stdout_lines
-      when: final_check.stdout is defined
+        - item.value.partitions | length == 0 # Only targets raw, unpartitioned disks
