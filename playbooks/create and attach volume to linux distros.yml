@@ -12,29 +12,31 @@
         state: directory
         mode: '0755'
 
-    - name: Step 0.2 - Discover Target Device
+    - name: Step 0.2 - Discover Target EBS Device
       set_fact:
-        # Targets the first non-root device found
+        # We target devices that are 'Amazon' or 'Standard' disks and NOT the boot drive
         target_device: "/dev/{{ item.key }}"
       loop: "{{ ansible_facts.devices | dict2items }}"
       when: 
         - item.key not in ['sda', 'vda', 'xvda', 'nvme0n1']
+        - "'loop' not in item.key" # Ignore snap/virtual loop devices
+        - item.value.model is search("Amazon") or item.value.vendor is search("Amazon") or item.value.size == "11.00 GB"
       register: device_discovery
 
-    - name: Step 0.3 - Handle Filesystem and Extension
+    - name: Step 0.3 - Storage Provisioning and Extension
       block:
-        - name: Install Cloud-Guest-Utils (Required for growpart)
+        - name: Install Cloud-Guest-Utils (Required for resizing)
           package:
             name: cloud-guest-utils
             state: present
 
-        - name: Grow Partition (If partitions exist)
-          # This safely grows the partition to fill the new EBS size
+        - name: Grow Partition
+          # Safely expands the partition table to match the EBS size
           shell: "growpart {{ target_device }} 1 || true"
           changed_when: false
 
-        - name: Create or Extend XFS Filesystem
-          # 'force: no' ensures we don't overwrite data if it already exists
+        - name: Create or Resize Filesystem
+          # This handles both brand new volumes and extended ones
           filesystem:
             fstype: xfs
             dev: "{{ target_device }}"
@@ -55,7 +57,7 @@
             state: mounted
       when: target_device is defined
 
-    - name: Step 1 - Universal Patching (All Distros)
+    - name: Step 1 - Universal Patching
       package:
         name: "*"
         state: latest
