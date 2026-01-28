@@ -5,7 +5,7 @@
   connection: local
   gather_facts: no
   vars:
-    # Logic to find the next open slot
+    # Logic to find the next open slot to avoid conflicts
     possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
@@ -30,7 +30,7 @@
       register: ec2_vol_result
       when: next_device is defined
 
-# PLAY 2: Linux Side - Formatting and Mounting
+# PLAY 2: Linux Side - Formatting and Mounting (No Reboot)
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -46,7 +46,7 @@
 
     - name: Step 0.3 - Identify New Unformatted Disks
       set_fact:
-        # Excludes OS drives like xvda or nvme0n1
+        # Excludes OS drives like xvda or nvme0n1 for total safety [cite: 82-113, 2025-12-24]
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -74,7 +74,8 @@
           changed_when: false
 
         - name: Persist Mounts in fstab
-          # Uses UUID and nofail for 100% reboot safety [cite: 2025-12-24]
+          # state: mounted ensures it is active immediately without reboot
+          # nofail is critical for future reboot safety [cite: 2025-12-24]
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
