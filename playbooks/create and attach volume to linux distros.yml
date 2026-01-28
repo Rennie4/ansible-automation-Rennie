@@ -7,15 +7,18 @@
   tasks:
     - name: Create and Attach Volume
       amazon.aws.ec2_vol:
+        # Survey Variable Mappings
         instance: "{{ target_instance_id }}" 
         volume_size: "{{ target_vol_size }}" 
         zone: "{{ target_zone }}"
         region: "eu-west-1"
         device_name: "/dev/sdf"
         state: present
+        tags:
+          Name: "Dynamic_Storage_Volume"
       register: ec2_vol_result
 
-# PLAY 2: Linux Side - Universal Mounting & Extension
+# PLAY 2: Linux Side - Formatting and Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -29,18 +32,19 @@
         state: directory
         mode: '0755'
 
-    - name: Step 0.2 - Force OS to Scan for New Hardware
+    - name: Step 0.2 - Force OS Hardware Scan
       shell: |
         for dev in /sys/class/scsi_host/host*/scan; do echo "- - -" > $dev; done
         udevadm settle
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.3 - Broad Discovery of Extra EBS Device
+    - name: Step 0.3 - Refresh Hardware Facts
       setup:
         filter: ansible_devices
 
-    - name: Step 0.4 - Identify Target Device
+    - name: Step 0.4 - Discover Target EBS Device
+      # Finds any non-boot, non-loop disk dynamically
       set_fact:
         target_device: "/dev/{{ item.key }}"
       loop: "{{ ansible_facts.devices | dict2items }}"
@@ -52,6 +56,7 @@
     - name: Step 0.5 - Storage Provisioning and Extension
       block:
         - name: Create or Resize Filesystem
+          # Handles brand new volumes or growing existing ones
           filesystem:
             fstype: xfs
             dev: "{{ target_device }}"
@@ -64,6 +69,7 @@
           changed_when: false
 
         - name: Persist Mount in fstab
+          # nofail prevents system failure if volume is missing [cite: 2025-12-24]
           mount:
             path: "{{ mount_path }}"
             src: "UUID={{ disk_uuid.stdout }}"
@@ -73,6 +79,7 @@
       when: target_device is defined
 
     - name: Step 1 - Universal Patching
+      # Distro-agnostic update for Ubuntu, RHEL, etc.
       package:
         name: "*"
         state: latest
@@ -82,7 +89,6 @@
         reboot_timeout: 300
 
     - name: Step 5 - Final Verification
-      # Only runs if the device was actually discovered and mounted
       command: "df -h {{ mount_path }}"
       register: final_check
       when: target_device is defined
