@@ -1,0 +1,74 @@
+---
+- name: Universal Linux Patching and Storage Extension
+  hosts: all
+  become: yes
+  vars:
+    mount_path: "/data"
+
+  tasks:
+    - name: Step 0.1 - Ensure Mount Directory Exists
+      file:
+        path: "{{ mount_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Step 0.2 - Discover Target Device
+      set_fact:
+        # Targets the first non-root device found
+        target_device: "/dev/{{ item.key }}"
+      loop: "{{ ansible_facts.devices | dict2items }}"
+      when: 
+        - item.key not in ['sda', 'vda', 'xvda', 'nvme0n1']
+      register: device_discovery
+
+    - name: Step 0.3 - Handle Filesystem and Extension
+      block:
+        - name: Install Cloud-Guest-Utils (Required for growpart)
+          package:
+            name: cloud-guest-utils
+            state: present
+
+        - name: Grow Partition (If partitions exist)
+          # This safely grows the partition to fill the new EBS size
+          shell: "growpart {{ target_device }} 1 || true"
+          changed_when: false
+
+        - name: Create or Extend XFS Filesystem
+          # 'force: no' ensures we don't overwrite data if it already exists
+          filesystem:
+            fstype: xfs
+            dev: "{{ target_device }}"
+            resizefs: yes
+          when: target_device is defined
+
+        - name: Get Device UUID
+          command: blkid -s UUID -o value {{ target_device }}
+          register: disk_uuid
+          changed_when: false
+
+        - name: Persist Mount in fstab
+          mount:
+            path: "{{ mount_path }}"
+            src: "UUID={{ disk_uuid.stdout }}"
+            fstype: xfs
+            opts: defaults,nofail
+            state: mounted
+      when: target_device is defined
+
+    - name: Step 1 - Universal Patching (All Distros)
+      package:
+        name: "*"
+        state: latest
+
+    - name: Step 4 - Force Reboot for Verification
+      reboot:
+        reboot_timeout: 300
+
+    - name: Step 5 - Final Verification
+      command: "df -h {{ mount_path }}"
+      register: final_check
+      changed_when: false
+
+    - name: Show Final Storage Status
+      debug:
+        var: final_check.stdout_lines
