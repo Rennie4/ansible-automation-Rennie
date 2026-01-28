@@ -23,7 +23,56 @@
     base_mount_path: "/data"
 
   tasks:
-    # ... (Mounting and Discovery Tasks) ...
+    - name: Step 0.1 - Force OS Hardware Scan
+      shell: |
+        for dev in /sys/class/scsi_host/host*/scan; do echo "- - -" > $dev; done
+        udevadm settle
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Step 0.2 - Refresh Hardware Facts
+      setup:
+        filter: ansible_devices
+
+    - name: Step 0.3 - Identify New Unformatted Disks
+      set_fact:
+        new_disks: "{{ ansible_facts.devices | dict2items | 
+                       rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
+                       selectattr('value.partitions', 'equalto', {}) | 
+                       map(attribute='key') | list }}"
+
+    - name: Step 0.4 - Provision Disks
+      block:
+        - name: Create Directory for each new disk
+          file:
+            path: "{{ base_mount_path }}/{{ item }}"
+            state: directory
+            mode: '0755'
+          loop: "{{ new_disks }}"
+
+        - name: Create XFS Filesystem
+          filesystem:
+            fstype: xfs
+            dev: "/dev/{{ item }}"
+          loop: "{{ new_disks }}"
+
+        - name: Get UUIDs for Persistent Mounting
+          command: "blkid -s UUID -o value /dev/{{ item }}"
+          register: disk_uuids
+          loop: "{{ new_disks }}"
+          changed_when: false
+
+        - name: Persist Mounts in fstab (Reboot Safe)
+          mount:
+            path: "{{ base_mount_path }}/{{ item.item }}"
+            src: "UUID={{ item.stdout }}"
+            fstype: xfs
+            # nofail ensures reboot persistence even if disk is detached
+            opts: defaults,nofail 
+            state: mounted
+          loop: "{{ disk_uuids.results }}"
+          when: item.stdout != ""
+      when: new_disks | length > 0
 
     - name: Step 1 - Universal Patching
       package:
@@ -31,7 +80,7 @@
         state: latest
 
     - name: Step 4 - Force Reboot for Verification
-      # This confirms your 'Infinite Persistence' goal works
+      # This confirms your 'Persistence' goal works
       reboot:
         reboot_timeout: 300
 
@@ -39,3 +88,8 @@
       shell: "df -h | grep {{ base_mount_path }}"
       register: final_check
       changed_when: false
+      failed_when: false
+
+    - name: Show Final Storage Status
+      debug:
+        var: final_check.stdout_lines
