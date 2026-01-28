@@ -1,5 +1,22 @@
 ---
-- name: Universal Linux Patching and Storage Extension
+# PLAY 1: AWS Side - Create and Attach
+- name: Create and Attach EBS Volume via Survey
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Create and Attach Volume
+      amazon.aws.ec2_vol:
+        instance: "{{ instance_id_survey }}" # Map to your survey question
+        volume_size: "{{ volume_gb_survey }}" # Map to your survey question
+        device_name: /dev/xvdf
+        region: us-east-1 # Adjust to your region
+        zone: "{{ az_survey }}" # Map to your survey question
+        state: present
+      register: ec2_vol_result
+
+# PLAY 2: Linux Side - Universal Mounting & Extension
+- name: Universal Linux Storage Extension
   hosts: all
   become: yes
   vars:
@@ -12,31 +29,18 @@
         state: directory
         mode: '0755'
 
-    - name: Step 0.2 - Discover Target EBS Device
+    - name: Step 0.2 - Broad Discovery of Extra EBS Device
       set_fact:
-        # We target devices that are 'Amazon' or 'Standard' disks and NOT the boot drive
         target_device: "/dev/{{ item.key }}"
       loop: "{{ ansible_facts.devices | dict2items }}"
       when: 
         - item.key not in ['sda', 'vda', 'xvda', 'nvme0n1']
-        - "'loop' not in item.key" # Ignore snap/virtual loop devices
-        - item.value.model is search("Amazon") or item.value.vendor is search("Amazon") or item.value.size == "11.00 GB"
+        - "'loop' not in item.key"
       register: device_discovery
 
-    - name: Step 0.3 - Storage Provisioning and Extension
+    - name: Step 0.3 - Storage Provisioning
       block:
-        - name: Install Cloud-Guest-Utils (Required for resizing)
-          package:
-            name: cloud-guest-utils
-            state: present
-
-        - name: Grow Partition
-          # Safely expands the partition table to match the EBS size
-          shell: "growpart {{ target_device }} 1 || true"
-          changed_when: false
-
         - name: Create or Resize Filesystem
-          # This handles both brand new volumes and extended ones
           filesystem:
             fstype: xfs
             dev: "{{ target_device }}"
@@ -48,7 +52,7 @@
           register: disk_uuid
           changed_when: false
 
-        - name: Persist Mount in fstab
+        - name: Persist Mount in fstab (Safe Reboot)
           mount:
             path: "{{ mount_path }}"
             src: "UUID={{ disk_uuid.stdout }}"
@@ -62,15 +66,6 @@
         name: "*"
         state: latest
 
-    - name: Step 4 - Force Reboot for Verification
+    - name: Step 4 - Force Reboot
       reboot:
         reboot_timeout: 300
-
-    - name: Step 5 - Final Verification
-      command: "df -h {{ mount_path }}"
-      register: final_check
-      changed_when: false
-
-    - name: Show Final Storage Status
-      debug:
-        var: final_check.stdout_lines
