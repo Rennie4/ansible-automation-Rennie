@@ -1,5 +1,5 @@
 ---
-# PLAY 1: AWS Side - Create and Attach
+# PLAY 1: AWS Side - Create and Attach (Focus on AWS Console Visibility)
 - name: Create and Attach EBS Volume via Survey
   hosts: localhost
   connection: local
@@ -8,65 +8,69 @@
     - name: Create and Attach Volume
       amazon.aws.ec2_vol:
         instance: "{{ target_instance_id }}" 
-        volume_size: "{{ target_vol_size }}" 
-        zone: "{{ target_zone }}" 
+        volume_size: "{{ target_vol_size }}" # From Survey
+        zone: "{{ target_zone }}"           # From Survey
         region: "eu-west-1"
-        device_name: "/dev/sdg" 
+        device_name: "/dev/sdf"              # Reverted to your known working path
         state: present
+        tags:
+          Name: "Survey_Created_Volume"
+          Size: "{{ target_vol_size }}GB"
       register: ec2_vol_result
 
-# PLAY 2: Linux Side - Universal Multi-Mounting
+# PLAY 2: Linux Side - Formatting and Mounting
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
   vars:
-    base_mount_path: "/data"
+    mount_path: "/data"
 
   tasks:
-    - name: Step 0.1 - Hardware Scan
+    - name: Step 0.1 - Ensure Mount Directory Exists
+      file:
+        path: "{{ mount_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Step 0.2 - Force OS Hardware Scan
       shell: "for dev in /sys/class/scsi_host/host*/scan; do echo '- - -' > $dev; done; udevadm settle"
       ignore_errors: yes
       changed_when: false
 
-    - name: Step 0.2 - Refresh Hardware Facts
-      setup:
-        filter: ansible_devices
-
-    - name: Step 0.3 - Identify New Unformatted Disks
+    - name: Step 0.3 - Identify Target EBS Device
+      # This dynamically finds the new disk regardless of its NVMe name
       set_fact:
-        new_disks: "{{ ansible_facts.devices | dict2items | 
-                       rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
-                       selectattr('value.partitions', 'equalto', {}) | 
-                       map(attribute='key') | list }}"
+        target_device: "/dev/{{ item.key }}"
+      loop: "{{ ansible_facts.devices | dict2items }}"
+      when: 
+        - item.key not in ['sda', 'vda', 'xvda', 'nvme0n1']
+        - "'loop' not in item.key"
+      register: device_discovery
 
-    - name: Step 0.4 - Create Mount Directories
-      file:
-        path: "{{ base_mount_path }}/{{ item }}"
-        state: directory
-        mode: '0755'
-      loop: "{{ new_disks }}"
+    - name: Step 0.4 - Storage Provisioning
+      block:
+        - name: Create or Resize Filesystem
+          # This handles whatever size you entered in the survey
+          filesystem:
+            fstype: xfs
+            dev: "{{ target_device }}"
+            resizefs: yes
+          when: target_device is defined
 
-    - name: Step 0.5 - Create XFS Filesystem
-      filesystem:
-        fstype: xfs
-        dev: "/dev/{{ item }}"
-      loop: "{{ new_disks }}"
+        - name: Get Device UUID
+          command: blkid -s UUID -o value {{ target_device }}
+          register: disk_uuid
+          changed_when: false
 
-    - name: Step 0.6 - Get UUIDs
-      command: "blkid -s UUID -o value /dev/{{ item }}"
-      register: disk_uuids
-      loop: "{{ new_disks }}"
-      changed_when: false
-
-    - name: Step 0.7 - Persist Mounts in fstab
-      mount:
-        path: "{{ base_mount_path }}/{{ item.item }}"
-        src: "UUID={{ item.stdout }}"
-        fstype: xfs
-        opts: defaults,nofail # Prevents boot failure [cite: 2025-12-24]
-        state: mounted
-      loop: "{{ disk_uuids.results }}"
-      when: item.stdout != ""
+        - name: Persist Mount in fstab
+          # Persistence without hardcoded values [cite: 2025-12-24]
+          mount:
+            path: "{{ mount_path }}"
+            src: "UUID={{ disk_uuid.stdout }}"
+            fstype: xfs
+            opts: defaults,nofail # Crucial for reboot safety
+            state: mounted
+      when: target_device is defined
 
     - name: Step 1 - Universal Patching
       package:
@@ -76,13 +80,3 @@
     - name: Step 4 - Force Reboot for Verification
       reboot:
         reboot_timeout: 300
-
-    - name: Step 5 - Final Verification
-      shell: "df -h | grep {{ base_mount_path }}"
-      register: final_check
-      changed_when: false
-      failed_when: false
-
-    - name: Show Final Storage Status
-      debug:
-        var: final_check.stdout_lines
