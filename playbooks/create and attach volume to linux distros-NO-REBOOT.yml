@@ -5,6 +5,7 @@
   connection: local
   gather_facts: no
   vars:
+    # Logic to find the next open slot
     possible_devices: ["/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj"]
 
   tasks:
@@ -30,14 +31,14 @@
       when: next_device is defined
 
     - name: Add Target to Temporary Group
-      # This creates a "group" of 1 server so the next play only talks to that server
+      # This is the key for 200+ servers [cite: 2025-12-24]
       add_host:
         name: "{{ instance_details.instances[0].private_ip_address }}"
         groups: targeted_server
 
-# PLAY 2: Linux Side - Targeted Provisioning Only
+# PLAY 2: Linux Side - Targeted Provisioning Only (No Reboot)
 - name: Universal Linux Storage Extension
-  hosts: targeted_server  # Only runs on the IP we just added
+  hosts: targeted_server
   become: yes
   gather_facts: yes
 
@@ -49,7 +50,7 @@
 
     - name: Step 0.2 - Identify New Unformatted Disks
       set_fact:
-        # Safety filter for OS drives [cite: 2025-12-24]
+        # Protects OS drives like xvda or nvme0n1 [cite: 2025-12-24]
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
