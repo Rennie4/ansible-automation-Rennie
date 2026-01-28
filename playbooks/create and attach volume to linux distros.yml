@@ -30,7 +30,7 @@
       register: ec2_vol_result
       when: next_device is defined
 
-# PLAY 2: Linux Side - Formatting and Mounting
+# PLAY 2: Linux Side - Formatting and Mounting (No Patching)
 - name: Universal Linux Storage Extension
   hosts: all
   become: yes
@@ -74,7 +74,7 @@
           changed_when: false
 
         - name: Persist Mounts in fstab
-          # Uses UUID and nofail for 100% reboot safety [cite: 2025-12-24]
+          # Uses UUID and nofail for 100% reboot safety [cite: 2025-12-24, 86-117]
           mount:
             path: "/data/{{ item.item }}"
             src: "UUID={{ item.stdout }}"
@@ -84,11 +84,10 @@
           loop: "{{ disk_uuids.results }}"
       when: new_disks | length > 0
 
-    - name: Step 1 - Patching and Reboot
-      package: name="*" state=latest
-
-    - name: Step 4 - Reboot Verification
-      reboot: reboot_timeout=300
+    - name: Step 4 - Force Reboot for Verification
+      # Verifies persistence logic immediately [cite: 2025-12-24, 86-117]
+      reboot:
+        reboot_timeout: 300
 
     - name: Step 5 - SHOW ALL VOLUMES IN GIGS
       shell: "lsblk -o NAME,SIZE,MOUNTPOINT | grep -v loop"
