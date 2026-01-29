@@ -1,0 +1,47 @@
+---
+# CIS Windows Server 2025 - Section 2: Local Policies
+- name: Hardening Section 2
+  hosts: windows_server_2025
+  vars:
+    # 2.2 User Rights Assignment (Use lists to avoid hard-coding)
+    cis_allow_local_logon: ["Administrators", "Users"]
+    cis_deny_network_access: ["Guests", "Local account"]
+    cis_deny_rdp_logon: ["Guests", "Local account"]
+
+    # 2.3 Security Options
+    cis_rename_admin_account: "SrvAdmin_2025"
+    cis_rename_guest_account: "SrvGuest_2025"
+    [cite_start]cis_uac_secure_desktop: 1  # 1 = Enabled (Recommended) [cite: 3]
+    [cite_start]cis_force_logoff_hours: 1  # 1 = Enabled [cite: 41]
+
+  tasks:
+    # --- 2.2 USER RIGHTS ASSIGNMENT ---
+    - name: "2.2.x (L1) Configure User Rights Assignment"
+      ansible.windows.win_user_right:
+        name: "{{ item.name }}"
+        users: "{{ item.users }}"
+        action: set
+      loop:
+        - { name: "SeInteractiveLogonRight", users: "{{ cis_allow_local_logon }}" }
+        - { name: "SeDenyNetworkLogonRight", users: "{{ cis_deny_network_access }}" }
+        - { name: "SeDenyRemoteInteractiveLogonRight", users: "{{ cis_deny_rdp_logon }}" }
+
+    # --- 2.3 SECURITY OPTIONS ---
+    - name: "2.3.1.1 (L1) Ensure 'Accounts: Rename administrator account' is configured"
+      community.windows.win_security_policy:
+        section: Security Options
+        key: NewAdministratorName
+        value: "{{ cis_rename_admin_account }}"
+
+    - name: "2.3.1.2 (L1) Ensure 'Accounts: Rename guest account' is configured"
+      community.windows.win_security_policy:
+        section: Security Options
+        key: NewGuestName
+        value: "{{ cis_rename_guest_account }}"
+
+    - name: "2.3.17.8 (L1) Ensure 'User Account Control: Switch to the secure desktop'"
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+        name: PromptOnSecureDesktop
+        data: "{{ cis_uac_secure_desktop }}"
+        type: dword
