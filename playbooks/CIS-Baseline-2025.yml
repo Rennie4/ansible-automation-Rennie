@@ -1,0 +1,37 @@
+---
+# CIS Windows Server 2025 - Section 1: Account Policies Template
+- name: Hardening Section 1
+  hosts: windows_server_2025
+  vars:
+    # Defining variables to avoid hard-coding values
+    cis_pass_history: 24
+    cis_max_pass_age: 60
+    cis_min_pass_age: 1
+    cis_min_pass_len: 14
+    cis_lockout_duration: 15
+    cis_lockout_threshold: 5
+    cis_reset_counter: 15
+
+  tasks:
+    - name: "1.1 (L1) Apply Password Policies"
+      community.windows.win_security_policy:
+        section: Password Policy
+        key: "{{ item.key }}"
+        value: "{{ item.value }}"
+      loop:
+        - { key: "PasswordHistorySize", value: "{{ cis_pass_history }}" }
+        - { key: "MaximumPasswordAge", value: "{{ cis_max_pass_age }}" }
+        - { key: "MinimumPasswordAge", value: "{{ cis_min_pass_age }}" }
+        - { key: "MinimumPasswordLength", value: "{{ cis_min_pass_len }}" }
+        - { key: "PasswordComplexity", value: 1 }
+        - { key: "ClearTextPassword", value: 0 }
+
+    - name: "1.2 (L1) Apply Account Lockout Policies"
+      community.windows.win_security_policy:
+        section: Account Lockout
+        key: "{{ item.key }}"
+        value: "{{ item.value }}"
+      loop:
+        - { key: "LockoutDuration", value: "{{ cis_lockout_duration }}" }
+        - { key: "LockoutBadCount", value: "{{ cis_lockout_threshold }}" }
+        - { key: "ResetLockoutCount", value: "{{ cis_reset_counter }}" }
