@@ -5,6 +5,7 @@
   connection: local
   gather_facts: no
   vars:
+    # Supports up to 21 additional drives (f through z)
     possible_devices: [
       "/dev/sdf", "/dev/sdg", "/dev/sdh", "/dev/sdi", "/dev/sdj",
       "/dev/sdk", "/dev/sdl", "/dev/sdm", "/dev/sdn", "/dev/sdo",
@@ -19,17 +20,17 @@
         region: "eu-west-1"
       register: instance_details
 
-    - name: Set Target Public IP
+    - name: Smart IP Selection
       set_fact:
-        # Changed from private_ip_address to public_ip_address
-        target_ip: "{{ instance_details.instances[0].public_ip_address }}"
+        # Uses Public IP if it exists; otherwise falls back to Private IP
+        target_ip: "{{ instance_details.instances[0].public_ip_address | default(instance_details.instances[0].private_ip_address) }}"
 
     - name: PRE-FLIGHT CHECK | Verify SSH Reachability
       wait_for:
         host: "{{ target_ip }}"
         port: 22
-        timeout: 15
-        msg: "ERROR: Cannot reach Public IP {{ target_ip }} on port 22!"
+        timeout: 10
+        msg: "ERROR: Cannot reach {{ target_ip }} on port 22. Check Security Groups/VPN!"
 
     - name: Find Next Open AWS Slot
       set_fact:
@@ -50,10 +51,9 @@
       add_host:
         name: "{{ target_ip }}"
         groups: targeted_server
-        # Ensures Ansible uses the correct user for the public connection
-        ansible_user: "ubuntu" 
+        ansible_user: "ubuntu"  # Adjust if using ec2-user or root
 
-# PLAY 2: Linux Side - Targeted Provisioning (No Reboot)
+# PLAY 2: Linux Side - Targeted Provisioning (No Reboot / No Patching)
 - name: Universal Linux Storage Extension
   hosts: targeted_server
   become: yes
@@ -67,6 +67,7 @@
 
     - name: Linux | Identify New Unformatted Disks
       set_fact:
+        # Excludes OS drive variants [cite: 2025-12-24]
         new_disks: "{{ ansible_facts.devices | dict2items | 
                        rejectattr('key', 'match', '^(loop|sda|vda|xvda|nvme0n1)') | 
                        selectattr('value.partitions', 'equalto', {}) | 
@@ -112,5 +113,6 @@
       debug:
         msg: 
           - "REPORT FOR: {{ inventory_hostname }}"
+          - "TARGETED IP TYPE: {{ 'Public' if (inventory_hostname == hostvars['localhost']['instance_details']['instances'][0]['public_ip_address'] | default('')) else 'Private' }}"
           - "STORAGE DETAILS:"
           - "{{ storage_report.stdout_lines }}"
