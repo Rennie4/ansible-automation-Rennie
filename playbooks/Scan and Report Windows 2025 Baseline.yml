@@ -1,6 +1,6 @@
 ---
 - name: Windows Server 2025 Baseline Scan
-  hosts: windows
+  hosts: windows_hosts
   gather_facts: yes
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
