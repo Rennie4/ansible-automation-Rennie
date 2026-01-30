@@ -1,32 +1,37 @@
 ---
 - name: Windows Server 2025 Baseline Scan
-  hosts: windows_hosts
+  hosts: windows_hosts  # Matches your group name in windows_inventory.ini
   gather_facts: yes
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       ansible.windows.win_powershell:
         script: |
-          # Dynamic role detection to prevent hardcoded failures
+          # Dynamic role detection avoids system failures after role changes [cite: 2025-12-24]
           $role = (Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole
           $scenario = if ($role -in 4, 5) { "SecurityBaseline/WS2025/DomainController" } else { "SecurityBaseline/WS2025/MemberServer" }
           
-          # Pull the live baseline data
+          # Pull the live baseline data directly from the OSConfig engine
           Get-OSConfigDesiredConfiguration -Scenario $scenario
       register: baseline_output
 
-    - name: Ensure Report Directory Exists
+    - name: Ensure Report Directory Exists on Control Node
       delegate_to: localhost
       ansible.builtin.file:
-        path: "../reports"
+        path: "{{ playbook_dir }}/../reports"
         state: directory
       become: no
 
     - name: Generate the HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        # Note the relative path to the templates folder
         src: "../templates/baseline_report.j2"
-        dest: "../reports/{{ inventory_hostname }}_baseline_report.html"
+        dest: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
       vars:
         audit_results: "{{ baseline_output.output }}"
       become: no
+
+    - name: Summary for AAP Artifacts
+      ansible.builtin.set_stats:
+        data:
+          report_location: "Reports generated on RHEL Control Node in /reports folder"
+          target_server: "{{ inventory_hostname }}"
