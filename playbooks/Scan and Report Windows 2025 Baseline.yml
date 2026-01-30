@@ -1,0 +1,32 @@
+---
+- name: Windows Server 2025 Baseline Scan
+  hosts: windows
+  gather_facts: yes
+  tasks:
+    - name: Run Windows Server 2025 Security Baseline Audit
+      ansible.windows.win_powershell:
+        script: |
+          # Dynamic role detection to prevent hardcoded failures
+          $role = (Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole
+          $scenario = if ($role -in 4, 5) { "SecurityBaseline/WS2025/DomainController" } else { "SecurityBaseline/WS2025/MemberServer" }
+          
+          # Pull the live baseline data
+          Get-OSConfigDesiredConfiguration -Scenario $scenario
+      register: baseline_output
+
+    - name: Ensure Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "../reports"
+        state: directory
+      become: no
+
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        # Note the relative path to the templates folder
+        src: "../templates/baseline_report.j2"
+        dest: "../reports/{{ inventory_hostname }}_baseline_report.html"
+      vars:
+        audit_results: "{{ baseline_output.output }}"
+      become: no
