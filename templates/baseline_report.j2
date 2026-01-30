@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f0f2f5; }
+        .report-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { color: #1a73e8; border-bottom: 2px solid #e8eaed; padding-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #1a73e8; color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+        .pass { color: #1e8e3e; font-weight: 700; background: #e6f4ea; padding: 4px 8px; border-radius: 4px; }
+        .fail { color: #d93025; font-weight: 700; background: #fce8e6; padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="report-card">
+        <h1>Baseline Scan: {{ inventory_hostname }}</h1>
+        <p><strong>Run Date:</strong> {{ ansible_date_time.date }} | <strong>OS:</strong> Windows Server 2025</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Security Setting</th>
+                    <th>Current Configuration</th>
+                    <th>Compliance Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in audit_results %}
+                <tr>
+                    <td>{{ item.Name }}</td>
+                    <td>{{ item.CurrentValue }}</td>
+                    <td>
+                        <span class="{{ 'pass' if item.IsCompliant else 'fail' }}">
+                            {{ 'COMPLIANT' if item.IsCompliant else 'NON-COMPLIANT' }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
