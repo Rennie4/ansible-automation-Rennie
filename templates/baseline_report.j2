@@ -1,26 +1,35 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <title>Baseline Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f0f2f5; }
-        .report-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h1 { color: #1a73e8; border-bottom: 2px solid #e8eaed; padding-bottom: 15px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 15px; margin-top: 0; }
+        .info-header { margin-bottom: 25px; color: #576574; font-size: 1.1em; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #1a73e8; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #eee; }
-        .pass { color: #1e8e3e; font-weight: 700; background: #e6f4ea; padding: 4px 8px; border-radius: 4px; }
-        .fail { color: #d93025; font-weight: 700; background: #fce8e6; padding: 4px 8px; border-radius: 4px; }
+        th { background-color: #3498db; color: white; padding: 15px; text-align: left; text-transform: uppercase; letter-spacing: 1px; }
+        td { padding: 12px 15px; border-bottom: 1px solid #dfe6e9; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .status-pass { color: #10ac84; font-weight: bold; background: #e6fff9; padding: 5px 10px; border-radius: 4px; border: 1px solid #10ac84; }
+        .status-fail { color: #ee5253; font-weight: bold; background: #fff0f0; padding: 5px 10px; border-radius: 4px; border: 1px solid #ee5253; }
     </style>
 </head>
 <body>
-    <div class="report-card">
-        <h1>Baseline Scan: {{ inventory_hostname }}</h1>
-        <p><strong>Run Date:</strong> {{ ansible_date_time.date }} | <strong>OS:</strong> Windows Server 2025</p>
+    <div class="container">
+        <h1>Windows Server 2025 Baseline Audit</h1>
+        <div class="info-header">
+            <strong>Target Host:</strong> {{ inventory_hostname }}<br>
+            <strong>Scan Performed:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}<br>
+            <strong>Operating System:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}
+        </div>
+
         <table>
             <thead>
                 <tr>
                     <th>Security Setting</th>
-                    <th>Current Configuration</th>
+                    <th>Current Value</th>
                     <th>Compliance Status</th>
                 </tr>
             </thead>
@@ -30,7 +39,7 @@
                     <td>{{ item.Name }}</td>
                     <td>{{ item.CurrentValue }}</td>
                     <td>
-                        <span class="{{ 'pass' if item.IsCompliant else 'fail' }}">
+                        <span class="{{ 'status-pass' if item.IsCompliant else 'status-fail' }}">
                             {{ 'COMPLIANT' if item.IsCompliant else 'NON-COMPLIANT' }}
                         </span>
                     </td>
