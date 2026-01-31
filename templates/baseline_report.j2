@@ -1,45 +1,53 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Windows Server 2025 Baseline Audit</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f8f9fa; }
-        .container { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-        .meta-info { margin-bottom: 20px; color: #555; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #3498db; color: white; text-align: left; padding: 12px; text-transform: uppercase; font-size: 0.9em; }
-        td { padding: 12px; border-bottom: 1px solid #eee; color: #333; }
-        tr:hover { background-color: #f1f1f1; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Windows Server 2025 Baseline Audit</h1>
-        
-        <div class="meta-info">
-            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-            <p><strong>Scan Performed:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
-            <p><strong>Operating System:</strong> {{ report_data.OsName }} {{ report_data.OsVersion }}</p>
-        </div>
+---
+- name: Windows Server 2025 Baseline Scan
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    # This remains static for your Sandbox
+    s3_bucket_name: "CISbasline-Files"
+    s3_region: "eu-west-1"
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Security Setting</th>
-                    <th>Current Value</th>
-                    <th>Compliance Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Computer Name (CsName)</td>
-                    <td>{{ report_data.CsName }}</td>
-                    <td>COMPLIANT</td>
-                </tr>
-                </tbody>
-        </table>
-    </div>
-</body>
-</html>
+  tasks:
+    - name: Run Windows Server 2025 Security Baseline Audit
+      win_shell: |
+        Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
+      register: audit_results
+
+    - name: Ensure Report Directory Exists on Control Node
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      template:
+        # Uses the path from your screenshot
+        src: "{{ playbook_dir }}/../templates/baseline_report.j2"
+        dest: "{{ playbook_dir }}/reports/baseline_report.html"
+      vars:
+        report_data: "{{ audit_results.stdout | from_json }}"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        # This part ensures a NEW file is created in S3 every time
+        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/baseline_report.html"
+        mode: put
+        region: "{{ s3_region }}"
+
+    - name: Generate Temporary Viewing Link
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        mode: geturl
+        expiration: 3600
+        region: "{{ s3_region }}"
+      register: s3_link
+
+    - name: Display Report Link
+      debug:
+        msg: "The temporary report link is: {{ s3_link.url }}"
