@@ -6,27 +6,28 @@
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       win_shell: |
-        # Your audit script logic here
+        # Audit logic remains here
       register: audit_results
 
     - name: Ensure Report Directory Exists on Control Node
       delegate_to: localhost
       file:
-        path: "./reports"
+        path: "{{ playbook_dir }}/reports"
         state: directory
 
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        src: report_template.j2
-        dest: "./reports/baseline_report.html"
+        # Ansible looks in a 'templates' folder relative to the playbook by default
+        src: report_template.j2 
+        dest: "{{ playbook_dir }}/reports/baseline_report.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
         object: "reports/{{ inventory_hostname }}_baseline.html"
-        src: "./reports/baseline_report.html"
+        src: "{{ playbook_dir }}/reports/baseline_report.html"
         mode: put
 
     - name: Generate Temporary Viewing Link
@@ -34,7 +35,6 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
         object: "reports/{{ inventory_hostname }}_baseline.html"
-        # Changed from getsignurl to geturl
         mode: geturl
         expiration: 3600
       register: s3_link
