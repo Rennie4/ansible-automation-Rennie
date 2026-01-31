@@ -1,0 +1,73 @@
+---
+- name: Windows Server 2025 Account Policy Baseline
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+
+  tasks:
+    - name: Audit All Standard Account Policy Defaults
+      win_shell: |
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        function Get-PolicyValue($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "Not Configured"
+        }
+
+        $results = @{
+            # Password Policies
+            PasswordHistoryCount     = Get-PolicyValue "PasswordHistorySize"
+            MaximumPasswordAge       = Get-PolicyValue "MaximumPasswordAge"
+            MinimumPasswordAge       = Get-PolicyValue "MinimumPasswordAge"
+            MinimumPasswordLength    = Get-PolicyValue "MinimumPasswordLength"
+            PasswordComplexity       = Get-PolicyValue "PasswordComplexity"
+            RelaxMinPasswordLimit    = Get-PolicyValue "RelaxMinimumPasswordLengthLimits"
+            ReversibleEncryption     = Get-PolicyValue "ClearTextPassword"
+            
+            # Lockout Policies
+            LockoutDuration          = Get-PolicyValue "LockoutDuration"
+            LockoutThreshold         = Get-PolicyValue "LockoutBadCount"
+            ResetLockoutCounter      = Get-PolicyValue "ResetLockoutCount"
+            # Registry check for Admin Lockout
+            AllowAdminLockout        = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -ErrorAction SilentlyContinue).AllowAdminLockout
+
+            # System Info
+            OsName                   = (Get-ComputerInfo).OsName
+            OsVersion                = (Get-ComputerInfo).OsVersion
+        }
+        $results | ConvertTo-Json
+      register: default_audit
+
+    - name: Ensure Report Directory Exists
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline_report.j2"
+        dest: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+      vars:
+        report_data: "{{ default_audit.stdout | from_json }}"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/Account_Defaults_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+        mode: put
+        region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The baseline report link is: {{ s3_upload.url }}"
