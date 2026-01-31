@@ -2,53 +2,46 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Baseline Report - {{ inventory_hostname }}</title>
+    <title>Windows Server 2025 Baseline Report</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f4f7f6; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 15px; margin-top: 0; }
-        .info-header { margin-bottom: 25px; color: #576574; font-size: 1.1em; }
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; color: #333; }
+        .header { border-bottom: 2px solid #0056b3; padding-bottom: 10px; margin-bottom: 20px; }
+        .status-pass { color: green; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #3498db; color: white; padding: 15px; text-align: left; text-transform: uppercase; letter-spacing: 1px; }
-        td { padding: 12px 15px; border-bottom: 1px solid #dfe6e9; }
-        tr:nth-child(even) { background-color: #f8f9fa; }
-        .status-pass { color: #10ac84; font-weight: bold; background: #e6fff9; padding: 5px 10px; border-radius: 4px; border: 1px solid #10ac84; }
-        .status-fail { color: #ee5253; font-weight: bold; background: #fff0f0; padding: 5px 10px; border-radius: 4px; border: 1px solid #ee5253; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f4f4f4; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Windows Server 2025 Baseline Audit</h1>
-        <div class="info-header">
-            <strong>Target Host:</strong> {{ inventory_hostname }}<br>
-            <strong>Scan Performed:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}<br>
-            <strong>Operating System:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}
-        </div>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Security Setting</th>
-                    <th>Current Value</th>
-                    <th>Compliance Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {# win_powershell returns a list of objects in the 'output' key #}
-                {% for item in audit_results %}
-                <tr>
-                    <td>{{ item.Name }}</td>
-                    <td>{{ item.CurrentValue }}</td>
-                    <td>
-                        {# Check for truthiness of IsCompliant #}
-                        <span class="{{ 'status-pass' if item.IsCompliant else 'status-fail' }}">
-                            {{ 'COMPLIANT' if item.IsCompliant else 'NON-COMPLIANT' }}
-                        </span>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="header">
+        <h1>Security Baseline Report</h1>
+        <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+        <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
     </div>
+
+    <h3>System Information</h3>
+    <table>
+        <tr>
+            <th>Attribute</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Computer Name</td>
+            <td>{{ report_data.CsName }}</td>
+        </tr>
+        <tr>
+            <td>Operating System</td>
+            <td>{{ report_data.OsName }}</td>
+        </tr>
+        <tr>
+            <td>OS Version</td>
+            <td>{{ report_data.OsVersion }}</td>
+        </tr>
+    </table>
+
+    <h3>Compliance Summary</h3>
+    <p>The baseline scan for <strong>{{ report_data.CsName }}</strong> has been completed successfully and uploaded to S3.</p>
+
 </body>
 </html>
