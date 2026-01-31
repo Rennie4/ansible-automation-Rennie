@@ -1,49 +1,54 @@
----
-- name: Windows Server 2025 Baseline Scan & S3 Upload
-  hosts: windows_hosts
-  gather_facts: yes
-  vars:
-    s3_bucket: "oml-s3-automation-sandbox"
-    s3_folder: "CISbasline-Files"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Baseline Report - {{ inventory_hostname }}</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 15px; margin-top: 0; }
+        .info-header { margin-bottom: 25px; color: #576574; font-size: 1.1em; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #3498db; color: white; padding: 15px; text-align: left; text-transform: uppercase; letter-spacing: 1px; }
+        td { padding: 12px 15px; border-bottom: 1px solid #dfe6e9; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .status-pass { color: #10ac84; font-weight: bold; background: #e6fff9; padding: 5px 10px; border-radius: 4px; border: 1px solid #10ac84; }
+        .status-fail { color: #ee5253; font-weight: bold; background: #fff0f0; padding: 5px 10px; border-radius: 4px; border: 1px solid #ee5253; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Windows Server 2025 Baseline Audit</h1>
+        <div class="info-header">
+            <strong>Target Host:</strong> {{ inventory_hostname }}<br>
+            <strong>Scan Performed:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}<br>
+            <strong>Operating System:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}
+        </div>
 
-  tasks:
-    - name: Run Windows Server 2025 Security Baseline Audit
-      ansible.windows.win_powershell:
-        script: |
-          $role = (Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole
-          $scenario = if ($role -in 4, 5) { "SecurityBaseline/WS2025/DomainController" } else { "SecurityBaseline/WS2025/MemberServer" }
-          Get-OSConfigDesiredConfiguration -Scenario $scenario
-      register: baseline_output
-
-    - name: Ensure Report Directory Exists on Control Node
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/../reports"
-        state: directory
-      become: no
-
-    - name: Generate the HTML Report
-      delegate_to: localhost
-      ansible.builtin.template:
-        src: "../templates/baseline_report.j2"
-        dest: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
-      vars:
-        audit_results: "{{ baseline_output.output }}"
-      become: no
-
-    - name: Upload Report to S3 Bucket
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        object: "{{ s3_folder }}/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}_report.html"
-        src: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
-        mode: put
-        content_type: "text/html"
-      become: no
-
-    - name: Summary for AAP Artifacts
-      ansible.builtin.set_stats:
-        data:
-          s3_path: "s3://{{ s3_bucket }}/{{ s3_folder }}/"
-          report_name: "{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}_report.html"
-          target_server: "{{ inventory_hostname }}"
+        <table>
+            <thead>
+                <tr>
+                    <th>Security Setting</th>
+                    <th>Current Value</th>
+                    <th>Compliance Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {# win_powershell returns a list of objects in the 'output' key #}
+                {% for item in audit_results %}
+                <tr>
+                    <td>{{ item.Name }}</td>
+                    <td>{{ item.CurrentValue }}</td>
+                    <td>
+                        {# Check for truthiness of IsCompliant #}
+                        <span class="{{ 'status-pass' if item.IsCompliant else 'status-fail' }}">
+                            {{ 'COMPLIANT' if item.IsCompliant else 'NON-COMPLIANT' }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
