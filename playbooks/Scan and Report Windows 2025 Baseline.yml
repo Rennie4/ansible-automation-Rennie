@@ -6,7 +6,7 @@
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       win_shell: |
-        # Ensure we output something the template can read
+        # We ensure the output is JSON so Ansible can parse it into an object
         Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
       register: audit_results
 
@@ -19,10 +19,11 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
+        # Matches your Git structure: root/templates/baseline_report.j2
         src: "{{ playbook_dir }}/../templates/baseline_report.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
       vars:
-        # We convert the shell output from JSON back into an Ansible object
+        # This converts the raw text into an object with attributes like .OsName
         report_data: "{{ audit_results.stdout | from_json }}"
 
     - name: Upload Report to S3
