@@ -5,7 +5,7 @@
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_folder: "CISbasline-Files"
-    aws_region: "eu-west-1" # Your specific region
+    aws_region: "eu-west-1"
 
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
@@ -36,10 +36,12 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        region: "{{ aws_region }}"
         object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
         src: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
         mode: put
+        region: "{{ aws_region }}"
+        # Forcing the regional endpoint fixes the HeadBucket 400 error
+        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
         headers:
           Content-Type: "text/html"
       become: no
@@ -48,10 +50,11 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        region: "{{ aws_region }}"
         object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
         mode: getsignurl
-        expiry: 3600 # Link valid for 1 hour
+        region: "{{ aws_region }}"
+        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
+        expiry: 3600
       register: s3_link
       become: no
 
