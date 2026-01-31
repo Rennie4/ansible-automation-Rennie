@@ -3,7 +3,8 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    s3_bucket_name: "CISbasline-Files"
+    # Updated to match your screenshot
+    s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
 
   tasks:
@@ -11,14 +12,6 @@
       win_shell: |
         Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
       register: audit_results
-
-    - name: Ensure S3 Bucket Exists
-      delegate_to: localhost
-      amazon.aws.s3_bucket:
-        name: "{{ s3_bucket_name }}"
-        region: "{{ s3_region }}"
-        state: present
-      ignore_errors: yes
 
     - name: Ensure Report Directory Exists on Control Node
       delegate_to: localhost
@@ -32,15 +25,14 @@
         src: "{{ playbook_dir }}/../templates/baseline_report.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
       vars:
-        # Define the object the template expects
         report_data: "{{ audit_results.stdout | from_json }}"
 
-    - name: Upload Report to S3 with Timestamp
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        # Unique filename ensures the 'Last Modified' time updates in S3
-        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        # Places the file inside your new lowercase folder with a timestamp
+        object: "cis-baseline-files/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/baseline_report.html"
         mode: put
         region: "{{ s3_region }}"
@@ -49,7 +41,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         mode: geturl
         expiration: 3600
         region: "{{ s3_region }}"
