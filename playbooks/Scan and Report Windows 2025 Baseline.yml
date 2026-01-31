@@ -38,5 +38,6 @@
         object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
         src: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
         mode: put
-        content_type: "text/html"
+        headers:
+          Content-Type: "text/html"
       become: no
