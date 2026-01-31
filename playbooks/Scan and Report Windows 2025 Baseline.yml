@@ -6,8 +6,8 @@
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       win_shell: |
-        # Placeholder for your specific baseline audit logic
-        # Example: Get-ComputerInfo or specialized security scripts
+        # Ensure we output something the template can read
+        Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
       register: audit_results
 
     - name: Ensure Report Directory Exists on Control Node
@@ -19,9 +19,11 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        # Navigates up from 'playbooks/' to find 'templates/baseline_report.j2' at the root
         src: "{{ playbook_dir }}/../templates/baseline_report.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
+      vars:
+        # We convert the shell output from JSON back into an Ansible object
+        report_data: "{{ audit_results.stdout | from_json }}"
 
     - name: Upload Report to S3
       delegate_to: localhost
@@ -36,7 +38,6 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
         object: "reports/{{ inventory_hostname }}_baseline.html"
-        # Corrected mode for generating pre-signed URLs
         mode: geturl
         expiration: 3600
       register: s3_link
