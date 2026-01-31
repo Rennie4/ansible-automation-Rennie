@@ -1,53 +1,50 @@
----
-- name: Windows Server 2025 Baseline Scan
-  hosts: windows_server_2025
-  gather_facts: yes
-  vars:
-    # This remains static for your Sandbox
-    s3_bucket_name: "CISbasline-Files"
-    s3_region: "eu-west-1"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Windows Server 2025 Baseline Audit</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; line-height: 1.6; color: #333; }
+        .header { border-bottom: 3px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f4f4f4; text-transform: uppercase; font-size: 0.85em; }
+        .meta { color: #555; font-size: 0.9em; }
+    </style>
+</head>
+<body>
 
-  tasks:
-    - name: Run Windows Server 2025 Security Baseline Audit
-      win_shell: |
-        Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
-      register: audit_results
+    <div class="header">
+        <h1>Windows Server 2025 Baseline Audit</h1>
+        <div class="meta">
+            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+            <p><strong>Scan Performed:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+            <p><strong>Operating System:</strong> {{ report_data.OsName }}</p>
+        </div>
+    </div>
 
-    - name: Ensure Report Directory Exists on Control Node
-      delegate_to: localhost
-      file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
+    <h3>System Configuration Summary</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Security Setting</th>
+                <th>Current Value</th>
+                <th>Compliance Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Computer Name</td>
+                <td>{{ report_data.CsName }}</td>
+                <td>COMPLIANT</td>
+            </tr>
+            <tr>
+                <td>OS Version</td>
+                <td>{{ report_data.OsVersion }}</td>
+                <td>VERIFIED</td>
+            </tr>
+        </tbody>
+    </table>
 
-    - name: Generate the HTML Report
-      delegate_to: localhost
-      template:
-        # Uses the path from your screenshot
-        src: "{{ playbook_dir }}/../templates/baseline_report.j2"
-        dest: "{{ playbook_dir }}/reports/baseline_report.html"
-      vars:
-        report_data: "{{ audit_results.stdout | from_json }}"
-
-    - name: Upload Report to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        # This part ensures a NEW file is created in S3 every time
-        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/baseline_report.html"
-        mode: put
-        region: "{{ s3_region }}"
-
-    - name: Generate Temporary Viewing Link
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "reports/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
-        mode: geturl
-        expiration: 3600
-        region: "{{ s3_region }}"
-      register: s3_link
-
-    - name: Display Report Link
-      debug:
-        msg: "The temporary report link is: {{ s3_link.url }}"
+</body>
+</html>
