@@ -8,7 +8,7 @@
 
   tasks:
     - name: Audit All Standard Account Policy Defaults
-      win_shell: |
+      win_shell: !unsafe |
         # 1. Capture Lockout Policies from 'net accounts'
         $netAccounts = net accounts
         $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
@@ -32,7 +32,6 @@
         $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
         
         # Logic: If threshold > 0 and registry is 1, it's Enabled. 
-        # Most importantly, if the threshold is active, we report status based on that effective config.
         $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
 
         $results = @{
