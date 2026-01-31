@@ -7,9 +7,9 @@
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #333; }
         .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
         .header { border-bottom: 4px solid #2c3e50; margin-bottom: 30px; padding-bottom: 10px; }
-        h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.2em; }
+        h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 65%; font-size: 0.9em; text-transform: uppercase; }
+        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 65%; font-size: 0.85em; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
         .val-highlight { font-weight: bold; color: #2980b9; }
     </style>
@@ -19,13 +19,13 @@
         <div class="header">
             <h1>Standard Microsoft Defaults Baseline</h1>
             <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-            <p><strong>OS:</strong> {{ report_data.OsName }} (Build: {{ report_data.OsVersion }})</p>
+            <p><strong>OS:</strong> {{ report_data.OsName }}</p>
             <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
         </div>
 
         <h2>1. Password Policy Settings</h2>
         <table>
-            <thead><tr><th>CIS Control / Setting Name</th><th>Default Value</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Default Value</th></tr></thead>
             <tbody>
                 <tr><td>Enforce password history</td><td class="val-highlight">{{ report_data.PasswordHistoryCount }} passwords remembered</td></tr>
                 <tr><td>Maximum password age</td><td class="val-highlight">{{ report_data.MaximumPasswordAge }} days</td></tr>
@@ -39,7 +39,7 @@
 
         <h2>2. Account Lockout Policy Settings</h2>
         <table>
-            <thead><tr><th>CIS Control / Setting Name</th><th>Default Value</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Default Value</th></tr></thead>
             <tbody>
                 <tr><td>Account lockout duration</td><td class="val-highlight">{{ report_data.LockoutDuration }} minutes</td></tr>
                 <tr><td>Account lockout threshold</td><td class="val-highlight">{{ report_data.LockoutThreshold }} invalid attempts</td></tr>
