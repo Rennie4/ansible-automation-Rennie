@@ -1,63 +1,44 @@
 ---
 - name: Windows Server 2025 Baseline Scan
-  hosts: windows_hosts
+  hosts: windows_server_2025
   gather_facts: yes
-  vars:
-    s3_bucket: "oml-s3-automation-sandbox"
-    s3_folder: "CISbasline-Files"
-    aws_region: "eu-west-1"
 
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
-      ansible.windows.win_powershell:
-        script: |
-          $role = (Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole
-          $scenario = if ($role -in 4, 5) { "SecurityBaseline/WS2025/DomainController" } else { "SecurityBaseline/WS2025/MemberServer" }
-          Get-OSConfigDesiredConfiguration -Scenario $scenario
-      register: baseline_output
+      win_shell: |
+        # Your audit script logic here
+      register: audit_results
 
     - name: Ensure Report Directory Exists on Control Node
       delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/../reports"
+      file:
+        path: "./reports"
         state: directory
-      become: no
 
     - name: Generate the HTML Report
       delegate_to: localhost
-      ansible.builtin.template:
-        src: "../templates/baseline_report.j2"
-        dest: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
-      vars:
-        audit_results: "{{ baseline_output.output }}"
-      become: no
+      template:
+        src: report_template.j2
+        dest: "./reports/baseline_report.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
-        src: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
+        bucket: "{{ s3_bucket_name }}"
+        object: "reports/{{ inventory_hostname }}_baseline.html"
+        src: "./reports/baseline_report.html"
         mode: put
-        region: "{{ aws_region }}"
-        # Forcing the regional endpoint fixes the HeadBucket 400 error
-        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
-        headers:
-          Content-Type: "text/html"
-      become: no
 
     - name: Generate Temporary Viewing Link
       delegate_to: localhost
       amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
-        mode: getsignurl
-        region: "{{ aws_region }}"
-        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
-        expiry: 3600
+        bucket: "{{ s3_bucket_name }}"
+        object: "reports/{{ inventory_hostname }}_baseline.html"
+        # Changed from getsignurl to geturl
+        mode: geturl
+        expiration: 3600
       register: s3_link
-      become: no
 
     - name: Display Report Link
       debug:
-        msg: "SUCCESS! View your report here: {{ s3_link.url }}"
+        msg: "The temporary report link is: {{ s3_link.url }}"
