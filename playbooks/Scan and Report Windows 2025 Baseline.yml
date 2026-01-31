@@ -1,50 +1,56 @@
-SSH password:
-1
-[WARNING]: Collection amazon.aws does not support Ansible version 2.16.15
-2
+---
+- name: Windows Server 2025 Baseline Scan
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    # Update this value to your actual S3 bucket name
+    s3_bucket_name: "your-actual-s3-bucket-name"
+    s3_region: "eu-west-1"
 
-3
-PLAY [Windows Server 2025 Baseline Scan] ***************************************  
-15:34:06
-4
+  tasks:
+    - name: Run Windows Server 2025 Security Baseline Audit
+      win_shell: |
+        Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
+      register: audit_results
 
-5
-TASK [Gathering Facts] *********************************************************  
-15:34:06
-6
-ok: [windows_server_2025]
-7
+    - name: Ensure S3 Bucket Exists
+      delegate_to: localhost
+      amazon.aws.s3_bucket:
+        name: "{{ s3_bucket_name }}"
+        region: "{{ s3_region }}"
+        state: present
 
-8
-TASK [Run Windows Server 2025 Security Baseline Audit] *************************  
-15:34:10
-9
-changed: [windows_server_2025]
-10
+    - name: Ensure Report Directory Exists on Control Node
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
 
-11
-TASK [Ensure Report Directory Exists on Control Node] **************************  
-15:34:15
-12
-changed: [windows_server_2025 -> localhost]
-13
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline_report.j2"
+        dest: "{{ playbook_dir }}/reports/baseline_report.html"
+      vars:
+        report_data: "{{ audit_results.stdout | from_json }}"
 
-14
-TASK [Generate the HTML Report] ************************************************  
-15:34:16
-15
-changed: [windows_server_2025 -> localhost]
-16
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "reports/{{ inventory_hostname }}_baseline.html"
+        src: "{{ playbook_dir }}/reports/baseline_report.html"
+        mode: put
 
-17
-TASK [Upload Report to S3] *****************************************************  
-15:34:16
-18
-An exception occurred during task execution. To see the full traceback, use -vvv. The error was: ansible_collections.amazon.aws.plugins.module_utils._s3.common.AnsibleS3Error: Bucket 'your-sandbox-bucket-name-here' not found. Support for automatically creating buckets was removed in release 6.0.0. The amazon.aws.s3_bucket module can be used to create buckets.
-19
-fatal: [windows_server_2025 -> localhost]: FAILED! => {"changed": false, "module_stderr": "Traceback (most recent call last):\n File \"/home/runner/.ansible/tmp/ansible-tmp-1769866456.772203-55-238342358631483/AnsiballZ_s3_object.py\", line 107, in <module>\n _ansiballz_main()\n File \"/home/runner/.ansible/tmp/ansible-tmp-1769866456.772203-55-238342358631483/AnsiballZ_s3_object.py\", line 99, in _ansiballz_main\n invoke_module(zipped_mod, temp_path, ANSIBALLZ_PARAMS)\n File \"/home/runner/.ansible/tmp/ansible-tmp-1769866456.772203-55-238342358631483/AnsiballZ_s3_object.py\", line 47, in invoke_module\n runpy.run_module(mod_name='ansible_collections.amazon.aws.plugins.modules.s3_object', init_globals=dict(_module_fqn='ansible_collections.amazon.aws.plugins.modules.s3_object', _modlib_path=modlib_path),\n File \"<frozen runpy>\", line 226, in run_module\n File \"<frozen runpy>\", line 98, in _run_module_code\n File \"<frozen runpy>\", line 88, in _run_code\n File \"/tmp/ansible_amazon.aws.s3_object_payload_i0gshcxu/ansible_amazon.aws.s3_object_payload.zip/ansible_collections/amazon/aws/plugins/modules/s3_object.py\", line 1435, in <module>\n File \"/tmp/ansible_amazon.aws.s3_object_payload_i0gshcxu/ansible_amazon.aws.s3_object_payload.zip/ansible_collections/amazon/aws/plugins/modules/s3_object.py\", line 1403, in main\n File \"/tmp/ansible_amazon.aws.s3_object_payload_i0gshcxu/ansible_amazon.aws.s3_object_payload.zip/ansible_collections/amazon/aws/plugins/modules/s3_object.py\", line 1268, in validate_bucket\n File \"/tmp/ansible_amazon.aws.s3_object_payload_i0gshcxu/ansible_amazon.aws.s3_object_payload.zip/ansible_collections/amazon/aws/plugins/modules/s3_object.py\", line 553, in bucket_check\nansible_collections.amazon.aws.plugins.module_utils._s3.common.AnsibleS3Error: Bucket 'your-sandbox-bucket-name-here' not found. Support for automatically creating buckets was removed in release 6.0.0. The amazon.aws.s3_bucket module can be used to create buckets.\n", "module_stdout": "", "msg": "MODULE FAILURE\nSee stdout/stderr for the exact error", "rc": 1}
-20
-21
-PLAY RECAP *********************************************************************
-22
-windows_server_2025 : ok=4 changed=3 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0
+    - name: Generate Temporary Viewing Link
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "reports/{{ inventory_hostname }}_baseline.html"
+        mode: geturl
+        expiration: 3600
+      register: s3_link
+
+    - name: Display Report Link
+      debug:
+        msg: "The temporary report link is: {{ s3_link.url }}"
