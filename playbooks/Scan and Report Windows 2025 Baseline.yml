@@ -3,9 +3,9 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    # Use a bucket you have verified in your S3 console
+    # IMPORTANT: Replace this with a real bucket name from your S3 console
+    # Example: "sandbox-reports-615299754808"
     s3_bucket_name: "your-actual-sandbox-bucket-name"
-    # Ensure this matches your console (likely eu-west-1)
     s3_region: "eu-west-1"
 
   tasks:
@@ -13,6 +13,14 @@
       win_shell: |
         Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
       register: audit_results
+
+    - name: Ensure S3 Bucket Exists
+      delegate_to: localhost
+      amazon.aws.s3_bucket:
+        name: "{{ s3_bucket_name }}"
+        region: "{{ s3_region }}"
+        state: present
+      ignore_errors: yes  # Some sandboxes block 'CreateBucket' but allow 'PutObject'
 
     - name: Ensure Report Directory Exists on Control Node
       delegate_to: localhost
