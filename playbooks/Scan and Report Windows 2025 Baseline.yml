@@ -3,7 +3,6 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    # Updated to match your screenshot
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
 
@@ -31,7 +30,6 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        # Places the file inside your new lowercase folder with a timestamp
         object: "cis-baseline-files/{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/baseline_report.html"
         mode: put
