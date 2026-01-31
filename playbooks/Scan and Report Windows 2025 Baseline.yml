@@ -2,11 +2,13 @@
 - name: Windows Server 2025 Baseline Scan
   hosts: windows_server_2025
   gather_facts: yes
+  vars:
+    # UPDATE THIS VALUE ONLY
+    s3_bucket_name: "your-sandbox-bucket-name-here"
 
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       win_shell: |
-        # We output JSON so the template can actually read the attributes
         Get-ComputerInfo | Select-Object CsName, OsName, OsVersion | ConvertTo-Json
       register: audit_results
 
@@ -19,11 +21,9 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        # Navigates from playbooks/ to root templates/ folder
         src: "{{ playbook_dir }}/../templates/baseline_report.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
       vars:
-        # This turns the raw string into a readable object
         report_data: "{{ audit_results.stdout | from_json }}"
 
     - name: Upload Report to S3
