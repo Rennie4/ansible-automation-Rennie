@@ -1,16 +1,17 @@
 ---
 - name: Windows Server 2025 Baseline Scan
-  hosts: windows_hosts  # Matches your group name in windows_inventory.ini
+  hosts: windows_hosts
   gather_facts: yes
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_folder: "CISbasline-Files"
+
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       ansible.windows.win_powershell:
         script: |
-          # Dynamic role detection avoids system failures after role changes [cite: 2025-12-24]
           $role = (Get-CimInstance -ClassName Win32_ComputerSystem).DomainRole
           $scenario = if ($role -in 4, 5) { "SecurityBaseline/WS2025/DomainController" } else { "SecurityBaseline/WS2025/MemberServer" }
-          
-          # Pull the live baseline data directly from the OSConfig engine
           Get-OSConfigDesiredConfiguration -Scenario $scenario
       register: baseline_output
 
@@ -30,8 +31,12 @@
         audit_results: "{{ baseline_output.output }}"
       become: no
 
-    - name: Summary for AAP Artifacts
-      ansible.builtin.set_stats:
-        data:
-          report_location: "Reports generated on RHEL Control Node in /reports folder"
-          target_server: "{{ inventory_hostname }}"
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_folder }}/{{ inventory_hostname }}_baseline_report.html"
+        src: "{{ playbook_dir }}/../reports/{{ inventory_hostname }}_baseline_report.html"
+        mode: put
+        content_type: "text/html"
+      become: no
