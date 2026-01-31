@@ -9,6 +9,7 @@
   tasks:
     - name: Audit All Standard Account Policy Defaults
       win_shell: |
+        # Export general security policy
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -20,9 +21,11 @@
             return "Not Configured"
         }
 
-        # Accurate detection for Administrator Lockout Status
-        $adminLockoutRegistry = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -Name "AllowAdminLockout" -ErrorAction SilentlyContinue
-        $adminLockoutStatus = if ($adminLockoutRegistry.AllowAdminLockout -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+        # FIX: Direct Registry Query for Administrator Lockout
+        # This bypasses secedit limitations to match secpol.msc exactly
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $adminLockValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        $adminLockoutStatus = if ($adminLockValue -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
 
         $results = @{
             # Password Policies
@@ -73,4 +76,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The baseline report link is: {{ s3_upload.url }}"
+        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
