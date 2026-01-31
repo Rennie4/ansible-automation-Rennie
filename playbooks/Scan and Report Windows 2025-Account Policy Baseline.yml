@@ -1,52 +1,82 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Windows Server 2025: Standard Account Defaults</title>
-    <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #333; }
-        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
-        .header { border-bottom: 4px solid #2c3e50; margin-bottom: 30px; padding-bottom: 10px; }
-        h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 65%; font-size: 0.85em; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
-        .val-highlight { font-weight: bold; color: #2980b9; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Standard Microsoft Defaults Baseline</h1>
-            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-            <p><strong>OS:</strong> {{ report_data.OsName }}</p>
-            <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
-        </div>
+---
+- name: Windows Server 2025 Account Policy Baseline
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
 
-        <h2>1. Password Policy Settings</h2>
-        <table>
-            <thead><tr><th>Policy Setting Name</th><th>Current Value</th></tr></thead>
-            <tbody>
-                <tr><td>Enforce password history</td><td class="val-highlight">{{ report_data.PasswordHistoryCount }} passwords remembered</td></tr>
-                <tr><td>Maximum password age</td><td class="val-highlight">{{ report_data.MaximumPasswordAge }} days</td></tr>
-                <tr><td>Minimum password age</td><td class="val-highlight">{{ report_data.MinimumPasswordAge }} days</td></tr>
-                <tr><td>Minimum password length</td><td class="val-highlight">{{ report_data.MinimumPasswordLength }} characters</td></tr>
-                <tr><td>Password must meet complexity requirements</td><td class="val-highlight">{{ 'Enabled (1)' if report_data.PasswordComplexity == '1' else 'Disabled (0)' }}</td></tr>
-                <tr><td>Relax minimum password length limits</td><td class="val-highlight">{{ 'Enabled (1)' if report_data.RelaxMinPasswordLimit == '1' else 'Disabled (0)' }}</td></tr>
-                <tr><td>Store passwords using reversible encryption</td><td class="val-highlight">{{ 'Enabled (1)' if report_data.ReversibleEncryption == '1' else 'Disabled (0)' }}</td></tr>
-            </tbody>
-        </table>
+  tasks:
+    - name: Audit All Standard Account Policy Defaults
+      win_shell: |
+        # 1. Capture Lockout Policies from 'net accounts'
+        $netAccounts = net accounts
+        $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
+        $duration = ($netAccounts | Select-String "Lockout duration").ToString().Split(':')[1].Trim()
+        $window = ($netAccounts | Select-String "Lockout observation window").ToString().Split(':')[1].Trim()
 
-        <h2>2. Account Lockout Policy Settings</h2>
-        <table>
-            <thead><tr><th>Policy Setting Name</th><th>Current Value</th></tr></thead>
-            <tbody>
-                <tr><td>Account lockout duration</td><td class="val-highlight">{{ report_data.LockoutDuration }}</td></tr>
-                <tr><td>Account lockout threshold</td><td class="val-highlight">{{ report_data.LockoutThreshold }}</td></tr>
-                <tr><td>Reset account lockout counter after</td><td class="val-highlight">{{ report_data.ResetLockoutCounter }}</td></tr>
-                <tr><td>Allow Administrator account lockout</td><td class="val-highlight">{{ report_data.AllowAdminLockout }}</td></tr>
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+        # 2. Capture Password Policies from secedit
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "Not Configured"
+        }
+
+        # 3. FORCE Check for Administrator Lockout
+        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        
+        # Logic: If threshold > 0 and registry is 1, it's Enabled. 
+        # Most importantly, if the threshold is active, we report status based on that effective config.
+        $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
+
+        $results = @{
+            PasswordHistoryCount     = Get-Val "PasswordHistorySize"
+            MaximumPasswordAge       = Get-Val "MaximumPasswordAge"
+            MinimumPasswordAge       = Get-Val "MinimumPasswordAge"
+            MinimumPasswordLength    = Get-Val "MinimumPasswordLength"
+            PasswordComplexity       = Get-Val "PasswordComplexity"
+            RelaxMinPasswordLimit    = Get-Val "RelaxMinimumPasswordLengthLimits"
+            ReversibleEncryption     = Get-Val "ClearTextPassword"
+            LockoutDuration          = $duration
+            LockoutThreshold         = $threshold
+            ResetLockoutCounter      = $window
+            AllowAdminLockout        = $adminStatus
+            OsName                   = (Get-ComputerInfo).OsName
+            OsVersion                = (Get-ComputerInfo).OsVersion
+        }
+        $results | ConvertTo-Json
+      register: default_audit
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline-Account Policy_report.j2"
+        dest: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+      vars:
+        report_data: "{{ default_audit.stdout | from_json }}"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/Account_Defaults_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+        mode: put
+        region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
