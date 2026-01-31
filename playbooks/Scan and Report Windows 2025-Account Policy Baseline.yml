@@ -31,7 +31,7 @@
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
         $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
         
-        # Logic: If threshold > 0 or registry is 1, it matches the 'Enabled' UI status
+        # Logic: Matches UI 'Enabled' status if threshold is active or registry is set
         $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
 
         $results = @{
