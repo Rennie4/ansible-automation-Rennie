@@ -19,11 +19,11 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        # Matches your root/templates/baseline_report.j2 structure
+        # Navigates from playbooks/ to root templates/ folder
         src: "{{ playbook_dir }}/../templates/baseline_report.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
       vars:
-        # FIX: Convert the raw string into a readable object
+        # This turns the raw string into a readable object
         report_data: "{{ audit_results.stdout | from_json }}"
 
     - name: Upload Report to S3
