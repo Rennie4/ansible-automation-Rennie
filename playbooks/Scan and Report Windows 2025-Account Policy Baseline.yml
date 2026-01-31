@@ -3,7 +3,6 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    # Using your sandbox bucket name
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
 
@@ -21,6 +20,10 @@
             return "Not Configured"
         }
 
+        # Accurate detection for Administrator Lockout Status
+        $adminLockoutRegistry = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -Name "AllowAdminLockout" -ErrorAction SilentlyContinue
+        $adminLockoutStatus = if ($adminLockoutRegistry.AllowAdminLockout -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+
         $results = @{
             # Password Policies
             PasswordHistoryCount     = Get-PolicyValue "PasswordHistorySize"
@@ -35,7 +38,7 @@
             LockoutDuration          = Get-PolicyValue "LockoutDuration"
             LockoutThreshold         = Get-PolicyValue "LockoutBadCount"
             ResetLockoutCounter      = Get-PolicyValue "ResetLockoutCount"
-            AllowAdminLockout        = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" -ErrorAction SilentlyContinue).AllowAdminLockout
+            AllowAdminLockout        = $adminLockoutStatus
 
             # System Info
             OsName                   = (Get-ComputerInfo).OsName
@@ -53,7 +56,6 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        # Pointing to your renamed .j2 file
         src: "{{ playbook_dir }}/../templates/baseline-Account Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/account_policy_defaults.html"
       vars:
@@ -63,7 +65,6 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        # Unique timestamp prevents overwriting files in your new folder
         object: "cis-baseline-files/Account_Defaults_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/account_policy_defaults.html"
         mode: put
