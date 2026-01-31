@@ -6,7 +6,7 @@
   tasks:
     - name: Run Windows Server 2025 Security Baseline Audit
       win_shell: |
-        # Audit logic remains here
+        # Audit logic here
       register: audit_results
 
     - name: Ensure Report Directory Exists on Control Node
@@ -18,8 +18,8 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        # Ansible looks in a 'templates' folder relative to the playbook by default
-        src: report_template.j2 
+        # Using playbook_dir ensures we find the file relative to this script
+        src: "{{ playbook_dir }}/templates/report_template.j2"
         dest: "{{ playbook_dir }}/reports/baseline_report.html"
 
     - name: Upload Report to S3
@@ -29,6 +29,7 @@
         object: "reports/{{ inventory_hostname }}_baseline.html"
         src: "{{ playbook_dir }}/reports/baseline_report.html"
         mode: put
+        # No hardcoded EBS values or credentials here
 
     - name: Generate Temporary Viewing Link
       delegate_to: localhost
