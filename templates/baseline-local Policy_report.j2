@@ -9,7 +9,7 @@
         .header { border-bottom: 4px solid #2c3e50; margin-bottom: 30px; padding-bottom: 10px; }
         h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 55%; font-size: 0.85em; }
+        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 65%; font-size: 0.85em; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
         .val-highlight { font-weight: bold; color: #2980b9; }
     </style>
@@ -22,15 +22,20 @@
             <p><strong>OS:</strong> {{ report_data.OsName }}</p>
             <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
         </div>
-        <h2>1. User Rights Assignment (CIS Section 2.2)</h2>
+
+        <h2>1. User Rights Assignment (Section 2.2)</h2>
         <table>
-            <thead><tr><th>Policy Setting Name</th><th>Value (Live)</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Value</th></tr></thead>
             <tbody>
                 <tr><td>Access this computer from the network</td><td class="val-highlight">{{ report_data.AccessNetwork }}</td></tr>
-                <tr><td>Adjust memory quotas</td><td class="val-highlight">{{ report_data.AdjustMemoryQuotas }}</td></tr>
+                <tr><td>Adjust memory quotas for a process</td><td class="val-highlight">{{ report_data.AdjustMemoryQuotas }}</td></tr>
                 <tr><td>Allow log on locally</td><td class="val-highlight">{{ report_data.AllowLocalLogon }}</td></tr>
+                <tr><td>Allow log on through Remote Desktop Services</td><td class="val-highlight">{{ report_data.AllowRemoteLogon }}</td></tr>
+                <tr><td>Backup files and directories</td><td class="val-highlight">{{ report_data.BackupFiles }}</td></tr>
+                <tr><td>Debug programs</td><td class="val-highlight">{{ report_data.DebugPrograms }}</td></tr>
                 <tr><td>Restore files and directories</td><td class="val-highlight">{{ report_data.RestoreFiles }}</td></tr>
-                <tr><td>Take ownership of files</td><td class="val-highlight">{{ report_data.TakeOwnership }}</td></tr>
+                <tr><td>Take ownership of files or other objects</td><td class="val-highlight">{{ report_data.TakeOwnership }}</td></tr>
+                <tr><td>Access Credential Manager as a trusted caller</td><td class="val-highlight">{{ report_data.CredManagerTrusted }}</td></tr>
             </tbody>
         </table>
     </div>
