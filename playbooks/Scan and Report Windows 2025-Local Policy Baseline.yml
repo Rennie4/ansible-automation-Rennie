@@ -1,6 +1,6 @@
 ---
 - name: Windows Server 2025 Local Policy Baseline - User Rights
-  hosts: all
+  hosts: "{{ target_hosts | default('windows_server_2025') }}"
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
@@ -41,12 +41,10 @@
             AccessNetwork           = Get-UserRight "SeNetworkLogonRight"
             AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"
             AllowLocalLogon         = Get-UserRight "SeInteractiveLogonRight"
-            AllowRemoteLogon        = Get-UserRight "SeRemoteInteractiveLogonRight"
             BackupFiles             = Get-UserRight "SeBackupPrivilege"
             DebugPrograms           = Get-UserRight "SeDebugPrivilege"
             RestoreFiles            = Get-UserRight "SeRestorePrivilege"
             TakeOwnership           = Get-UserRight "SeTakeOwnershipPrivilege"
-            CredManagerTrusted      = Get-UserRight "SeTrustedCredManAccessPrivilege"
             OsName                  = (Get-ComputerInfo).OsName
             OsVersion               = (Get-ComputerInfo).OsVersion
         }
@@ -63,7 +61,8 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       template:
-        src: "{{ playbook_dir }}/../templates/baseline-LocalPolicy_report.j2"
+        # Adjusted path to look for templates in the same directory as playbooks first
+        src: "baseline-LocalPolicy_report.j2"
         dest: "{{ playbook_dir }}/reports/local_policy_defaults.html"
       vars:
         report_data: "{{ user_rights_audit.stdout | from_json }}"
