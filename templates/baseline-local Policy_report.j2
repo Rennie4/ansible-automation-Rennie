@@ -22,29 +22,15 @@
             <p><strong>OS:</strong> {{ report_data.OsName }}</p>
             <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
         </div>
-
         <h2>1. User Rights Assignment (CIS Section 2.2)</h2>
         <table>
-            <thead><tr><th>Policy Setting Name</th><th>Assigned Groups (Live)</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Value (Live)</th></tr></thead>
             <tbody>
                 <tr><td>Access this computer from the network</td><td class="val-highlight">{{ report_data.AccessNetwork }}</td></tr>
+                <tr><td>Adjust memory quotas</td><td class="val-highlight">{{ report_data.AdjustMemoryQuotas }}</td></tr>
                 <tr><td>Allow log on locally</td><td class="val-highlight">{{ report_data.AllowLocalLogon }}</td></tr>
-                <tr><td>Allow log on through Remote Desktop Services</td><td class="val-highlight">{{ report_data.AllowRemoteLogon }}</td></tr>
-                <tr><td>Adjust memory quotas for a process</td><td class="val-highlight">{{ report_data.AdjustMemoryQuotas }}</td></tr>
-                <tr><td>Backup files and directories</td><td class="val-highlight">{{ report_data.BackupFiles }}</td></tr>
-                <tr><td>Debug programs</td><td class="val-highlight">{{ report_data.DebugPrograms }}</td></tr>
                 <tr><td>Restore files and directories</td><td class="val-highlight">{{ report_data.RestoreFiles }}</td></tr>
-                <tr><td>Take ownership of files or other objects</td><td class="val-highlight">{{ report_data.TakeOwnership }}</td></tr>
-                <tr><td>Access Credential Manager as a trusted caller</td><td class="val-highlight">{{ report_data.CredManagerTrusted }}</td></tr>
-            </tbody>
-        </table>
-
-        <h2>2. OS Information</h2>
-        <table>
-            <thead><tr><th>Attribute</th><th>Value</th></tr></thead>
-            <tbody>
-                <tr><td>Operating System</td><td class="val-highlight">{{ report_data.OsName }}</td></tr>
-                <tr><td>Version</td><td class="val-highlight">{{ report_data.OsVersion }}</td></tr>
+                <tr><td>Take ownership of files</td><td class="val-highlight">{{ report_data.TakeOwnership }}</td></tr>
             </tbody>
         </table>
     </div>
