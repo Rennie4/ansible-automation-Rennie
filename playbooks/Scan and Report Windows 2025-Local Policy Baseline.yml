@@ -1,6 +1,6 @@
 ---
 - name: Windows Server 2025 Local Policy Baseline - User Rights
-  hosts: "{{ target_hosts | default('windows_server_2025') }}"
+  hosts: windows_hosts
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
@@ -36,54 +36,12 @@
             return "Not Defined (Default)"
         }
 
-        # Mapping to the exact headings from your CIS PDF
         $results = @{
-            AccessNetwork           = Get-UserRight "SeNetworkLogonRight"        # 2.2.1
-            ActAsPartofOS           = Get-UserRight "SeTcbPrivilege"            # 2.2.2
-            AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"   # 2.2.3
-            AllowLocalLogon         = Get-UserRight "SeInteractiveLogonRight"    # 2.2.4
-            AllowRemoteLogon        = Get-UserRight "SeRemoteInteractiveLogonRight" # 2.2.5
-            BackupFiles             = Get-UserRight "SeBackupPrivilege"          # 2.2.6
-            ChangeSystemTime        = Get-UserRight "SeSystemtimePrivilege"      # 2.2.7
-            CreatePageFile          = Get-UserRight "SeCreatePagefilePrivilege"   # 2.2.9
-            DebugPrograms           = Get-UserRight "SeDebugPrivilege"           # 2.2.13
-            ImpersonateClient       = Get-UserRight "SeImpersonatePrivilege"      # 2.2.21
-            LogonAsBatch            = Get-UserRight "SeBatchLogonRight"          # 2.2.23
-            LogonAsService          = Get-UserRight "SeServiceLogonRight"        # 2.2.24
-            RestoreFiles            = Get-UserRight "SeRestorePrivilege"         # 2.2.33
-            TakeOwnership           = Get-UserRight "SeTakeOwnershipPrivilege"    # 2.2.36
-            CredManagerTrusted      = Get-UserRight "SeTrustedCredManAccessPrivilege" # 2.2.37
-            
-            OsName                  = (Get-ComputerInfo).OsName
-            OsVersion               = (Get-ComputerInfo).OsVersion
-        }
-        $results | ConvertTo-Json
-      register: user_rights_audit
-
-    - name: Ensure Local Report Directory Exists
-      delegate_to: localhost
-      file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
-
-    - name: Generate the HTML Report
-      delegate_to: localhost
-      template:
-        src: "{{ playbook_dir }}/../templates/baseline-LocalPolicy_report.j2"
-        dest: "{{ playbook_dir }}/reports/local_policy_baseline.html"
-      vars:
-        report_data: "{{ user_rights_audit.stdout | from_json }}"
-
-    - name: Upload Report to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_Default_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/local_policy_baseline.html"
-        mode: put
-        region: "{{ s3_region }}"
-      register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The user rights report link is: {{ s3_upload.url }}"
+            AccessNetwork           = Get-UserRight "SeNetworkLogonRight"
+            AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"
+            AllowLocalLogon         = Get-UserRight "SeInteractiveLogonRight"
+            AllowRemoteLogon        = Get-UserRight "SeRemoteInteractiveLogonRight"
+            BackupFiles             = Get-UserRight "SeBackupPrivilege"
+            DebugPrograms           = Get-UserRight "SeDebugPrivilege"
+            RestoreFiles            = Get-UserRight "SeRestorePrivilege"
+            TakeOwnership           = Get-UserRight "SeTake
