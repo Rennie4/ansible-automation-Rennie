@@ -22,7 +22,6 @@
             <p><strong>OS:</strong> {{ report_data.OsName }}</p>
             <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
         </div>
-
         <h2>1. User Rights Assignment (Section 2.2)</h2>
         <table>
             <thead><tr><th>Policy Setting Name</th><th>Value (Groups Assigned)</th></tr></thead>
@@ -30,12 +29,10 @@
                 <tr><td>Access this computer from the network</td><td class="val-highlight">{{ report_data.AccessNetwork }}</td></tr>
                 <tr><td>Adjust memory quotas for a process</td><td class="val-highlight">{{ report_data.AdjustMemoryQuotas }}</td></tr>
                 <tr><td>Allow log on locally</td><td class="val-highlight">{{ report_data.AllowLocalLogon }}</td></tr>
-                <tr><td>Allow log on through Remote Desktop Services</td><td class="val-highlight">{{ report_data.AllowRemoteLogon }}</td></tr>
                 <tr><td>Backup files and directories</td><td class="val-highlight">{{ report_data.BackupFiles }}</td></tr>
                 <tr><td>Debug programs</td><td class="val-highlight">{{ report_data.DebugPrograms }}</td></tr>
                 <tr><td>Restore files and directories</td><td class="val-highlight">{{ report_data.RestoreFiles }}</td></tr>
                 <tr><td>Take ownership of files or other objects</td><td class="val-highlight">{{ report_data.TakeOwnership }}</td></tr>
-                <tr><td>Access Credential Manager as a trusted caller</td><td class="val-highlight">{{ report_data.CredManagerTrusted }}</td></tr>
             </tbody>
         </table>
     </div>
