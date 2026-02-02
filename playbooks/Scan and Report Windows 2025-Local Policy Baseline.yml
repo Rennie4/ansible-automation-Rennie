@@ -1,6 +1,6 @@
 ---
 - name: Windows Server 2025 Local Policy Baseline - User Rights
-  hosts: windows_server_2025
+  hosts: "{{ target_hosts | default('windows_server_2025') }}"
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
@@ -36,7 +36,7 @@
             return "Not Defined (Default)"
         }
 
-        # Mapping to the exact headings in your CIS PDF
+        # Mapping to the exact headings from your CIS PDF
         $results = @{
             AccessNetwork           = Get-UserRight "SeNetworkLogonRight"        # 2.2.1
             ActAsPartofOS           = Get-UserRight "SeTcbPrivilege"            # 2.2.2
@@ -50,7 +50,6 @@
             ImpersonateClient       = Get-UserRight "SeImpersonatePrivilege"      # 2.2.21
             LogonAsBatch            = Get-UserRight "SeBatchLogonRight"          # 2.2.23
             LogonAsService          = Get-UserRight "SeServiceLogonRight"        # 2.2.24
-            ManageAuditLog          = Get-UserRight "SeAuditPrivilege"           # 2.2.25
             RestoreFiles            = Get-UserRight "SeRestorePrivilege"         # 2.2.33
             TakeOwnership           = Get-UserRight "SeTakeOwnershipPrivilege"    # 2.2.36
             CredManagerTrusted      = Get-UserRight "SeTrustedCredManAccessPrivilege" # 2.2.37
