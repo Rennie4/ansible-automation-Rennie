@@ -1,6 +1,6 @@
 ---
 - name: Windows Server 2025 Local Policy Baseline - User Rights
-  hosts: windows_hosts
+  hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
