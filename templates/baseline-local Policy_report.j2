@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Windows 2025 User Rights Baseline</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
+        .header { border-bottom: 3px solid #2980b9; margin-bottom: 20px; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #2980b9; color: white; padding: 12px; text-align: left; font-size: 0.85em; text-transform: uppercase; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.9em; }
+        .current-val { font-weight: bold; color: #2c3e50; }
+        .recommendation { color: #7f8c8d; font-style: italic; font-size: 0.85em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>User Rights Assignment Baseline (Section 2.2)</h1>
+            <p><strong>Server:</strong> {{ inventory_hostname }} | <strong>OS:</strong> {{ report_data.OsName }}</p>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>CIS Control</th>
+                    <th>Current Assigned Groups</th>
+                    <th>Benchmark Recommendation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>2.2.1 Access from Network</td><td class="current-val">{{ report_data.AccessNetwork }}</td><td class="recommendation">Administrators, Authenticated Users</td></tr>
+                <tr><td>2.2.4 Adjust Memory Quotas</td><td class="current-val">{{ report_data.AdjustMemoryQuotas }}</td><td class="recommendation">Administrators, LOCAL SERVICE, NETWORK SERVICE</td></tr>
+                <tr><td>2.2.8 Backup files</td><td class="current-val">{{ report_data.BackupFiles }}</td><td class="recommendation">Administrators</td></tr>
+                <tr><td>2.2.15 Debug Programs</td><td class="current-val">{{ report_data.DebugPrograms }}</td><td class="recommendation">Right Not Assigned (Empty)</td></tr>
+                <tr><td>2.2.22 Force Remote Shutdown</td><td class="current-val">{{ report_data.ForceRemoteShutdown }}</td><td class="recommendation">Administrators</td></tr>
+                <tr><td>2.2.24 Impersonate Client</td><td class="current-val">{{ report_data.ImpersonateClient }}</td><td class="recommendation">Administrators, LOCAL SERVICE, NETWORK SERVICE, SERVICE</td></tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
