@@ -9,6 +9,7 @@
   tasks:
     - name: Audit All CIS Section 2.2 User Rights
       win_shell: |
+        {% raw %}
         $tempFile = "C:\Windows\Temp\secedit_local_policy.inf"
         secedit /export /cfg $tempFile /areas USER_RIGHTS | Out-Null
         $policy = Get-Content $tempFile
@@ -36,7 +37,6 @@
             return "Not Defined (Default)"
         }
 
-        # The @{ } block must be handled carefully to avoid Jinja2 errors
         $results = @{
             AccessNetwork           = Get-UserRight "SeNetworkLogonRight"
             AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"
@@ -51,6 +51,7 @@
             OsVersion               = (Get-ComputerInfo).OsVersion
         }
         $results | ConvertTo-Json
+        {% endraw %}
       register: user_rights_audit
 
     - name: Ensure Local Report Directory Exists
