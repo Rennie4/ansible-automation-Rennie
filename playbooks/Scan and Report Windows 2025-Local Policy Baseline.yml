@@ -1,0 +1,81 @@
+---
+- name: Windows Server 2025 User Rights Assignment Baseline Scan
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+
+  tasks:
+    - name: Audit CIS Section 2.2 User Rights
+      win_shell: !unsafe |
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas USER_RIGHTS | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        # Dynamic SID-to-Name Translator (No Hardcoded Values)
+        function Convert-Sids($sidString) {
+            if (!$sidString) { return "Right Not Assigned" }
+            $sids = $sidString.Split(',')
+            $translated = foreach ($sid in $sids) {
+                $cleanSid = $sid.Trim().Replace("*", "")
+                try {
+                    $objSid = New-Object System.Security.Principal.SecurityIdentifier($cleanSid)
+                    $objSid.Translate([System.Security.Principal.NTAccount]).Value
+                } catch { $cleanSid }
+            }
+            return $translated -join ", "
+        }
+
+        function Get-UserRight($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { 
+                $rawVal = $line.ToString().Split('=')[1].Trim()
+                return Convert-Sids($rawVal)
+            }
+            return "Not Defined (Factory Default)"
+        }
+
+        # Mapping keys to CIS Section 2.2 requirements
+        $results = @{
+            AccessNetwork       = Get-UserRight "SeNetworkLogonRight"        # 2.2.1
+            ActAsPartofOS       = Get-UserRight "SeTcbPrivilege"            # 2.3
+            AdjustMemoryQuotas  = Get-UserRight "SeIncreaseQuotaPrivilege"   # 2.4
+            BackupFiles         = Get-UserRight "SeBackupPrivilege"          # 2.8
+            ChangeSystemTime    = Get-UserRight "SeSystemtimePrivilege"     # 2.15
+            CreateSymbolicLinks = Get-UserRight "SeCreateSymbolicLinkPrivilege" # 2.15
+            DebugPrograms       = Get-UserRight "SeDebugPrivilege"          # 2.15
+            ForceRemoteShutdown = Get-UserRight "SeRemoteShutdownPrivilege"  # 2.22
+            GenerateSecAudits   = Get-UserRight "SeAuditPrivilege"           # 2.23
+            ImpersonateClient   = Get-UserRight "SeImpersonatePrivilege"     # 2.24
+            RestoreFiles        = Get-UserRight "SeRestorePrivilege"         # 2.35
+            TakeOwnership       = Get-UserRight "SeTakeOwnershipPrivilege"
+            
+            OsName              = (Get-ComputerInfo).OsName
+            OsVersion           = (Get-ComputerInfo).OsVersion
+        }
+        $results | ConvertTo-Json
+      register: user_rights_audit
+
+    - name: Generate Baseline Report
+      delegate_to: localhost
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline-UserRights-2025.j2"
+        dest: "{{ playbook_dir }}/reports/user_rights_scan.html"
+      vars:
+        report_data: "{{ user_rights_audit.stdout | from_json }}"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/User_Rights_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/user_rights_scan.html"
+        mode: put
+        region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Report URL
+      debug:
+        msg: "The scan report is available at: {{ s3_upload.url }}"
