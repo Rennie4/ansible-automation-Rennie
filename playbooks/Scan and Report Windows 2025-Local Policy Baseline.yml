@@ -8,7 +8,7 @@
 
   tasks:
     - name: Audit All CIS Section 2.2 User Rights
-      win_shell: !unsafe |
+      win_shell: |
         $tempFile = "C:\Windows\Temp\secedit_local_policy.inf"
         secedit /export /cfg $tempFile /areas USER_RIGHTS | Out-Null
         $policy = Get-Content $tempFile
@@ -36,6 +36,7 @@
             return "Not Defined (Default)"
         }
 
+        # The @{ } block must be handled carefully to avoid Jinja2 errors
         $results = @{
             AccessNetwork           = Get-UserRight "SeNetworkLogonRight"
             AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"
@@ -44,4 +45,38 @@
             BackupFiles             = Get-UserRight "SeBackupPrivilege"
             DebugPrograms           = Get-UserRight "SeDebugPrivilege"
             RestoreFiles            = Get-UserRight "SeRestorePrivilege"
-            TakeOwnership           = Get-UserRight "SeTake
+            TakeOwnership           = Get-UserRight "SeTakeOwnershipPrivilege"
+            CredManagerTrusted      = Get-UserRight "SeTrustedCredManAccessPrivilege"
+            OsName                  = (Get-ComputerInfo).OsName
+            OsVersion               = (Get-ComputerInfo).OsVersion
+        }
+        $results | ConvertTo-Json
+      register: user_rights_audit
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate the HTML Report
+      delegate_to: localhost
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline-LocalPolicy_report.j2"
+        dest: "{{ playbook_dir }}/reports/local_policy_defaults.html"
+      vars:
+        report_data: "{{ user_rights_audit.stdout | from_json }}"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/Local_Defaults_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/local_policy_defaults.html"
+        mode: put
+        region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The Local Policy baseline report link is: {{ s3_upload.url }}"
