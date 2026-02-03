@@ -10,24 +10,24 @@
 </head>
 <body>
 
-<h2>Windows Server 2025 Policy Audit Report</h2>
+<h2>Windows Server 2025 Local Policy Baseline Audit</h2>
 <table>
   <tr>
     <th>Policy Setting Name</th>
     <th>Standard Shipped Default</th>
     <th>Audit Status</th>
   </tr>
-  {% for result in policy_results.results %}
+  {% for result in audit_results.results %}
   <tr>
     <td>{{ result.item.display }}</td>
-    <td>{{ result.item.value }}</td>
+    <td>{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
     <td>
-      {% if result.failed and 'Failed to translate' in result.msg %}
+      {% if result.failed and 'Failed to translate' in (result.msg | default('')) %}
         <span class="error">✖ TRANSLATION ERROR</span>
-      {% elif result.changed or result.failed == false %}
-        <span class="match">✔ MATCHES DEFAULT</span>
+      {% elif result.failed %}
+        <span class="error">✖ AUDIT FAILURE</span>
       {% else %}
-        <span class="error">✖ MISMATCH / FAILURE</span>
+        <span class="match">✔ MATCHES DEFAULT</span>
       {% endif %}
     </td>
   </tr>
