@@ -1,55 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Windows Server 2025 Factory Default Audit</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #ffffff; color: #333; }
-        .container { width: 95%; margin: 20px auto; }
-        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 5px; }
-        .header-box { border-bottom: 3px solid #0078d4; padding-bottom: 10px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
-        th { background-color: #0078d4; color: white; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; }
-        td { padding: 10px; border-bottom: 1px solid #efefef; font-size: 13px; border-right: 1px solid #efefef; }
-        .match { color: #27ae60; font-weight: bold; }
-        .modified { color: #e67e22; font-weight: bold; }
-        .error { color: #d32f2f; font-weight: bold; font-style: italic; }
-        .val { font-family: 'Consolas', monospace; color: #2980b9; word-break: break-word; }
-        tr:nth-child(even) { background-color: #fafafa; }
+        table { font-family: Arial, sans-serif; border-collapse: collapse; width: 100%; }
+        td, th { border: 1px solid #dddddd; text-align: left; padding: 8px; }
+        .match { color: green; }
+        .error { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header-box">
-            <h1>Windows Server 2025 Factory Default Audit</h1>
-            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Status:</strong> Comparison against Microsoft Out-of-the-Box Settings.</p>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 35%;">Policy Setting Name</th>
-                    <th style="width: 50%;">Standard Shipped Default</th>
-                    <th style="width: 15%;">Audit Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for result in audit_results.results %}
-                <tr>
-                    <td><strong>{{ result.item.display }}</strong></td>
-                    <td class="val">{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
-                    <td>
-                        {% if result.failed is defined and result.failed %}
-                        <span class="error">✖ TRANSLATION ERROR</span>
-                        {% elif result.changed == false %}
-                        <span class="match">✔ MATCHES DEFAULT</span>
-                        {% else %}
-                        <span class="modified">⚠ MODIFIED</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+
+<h2>Windows Server 2025 Policy Audit Report</h2>
+<table>
+  <tr>
+    <th>Policy Setting Name</th>
+    <th>Standard Shipped Default</th>
+    <th>Audit Status</th>
+  </tr>
+  {% for result in policy_results.results %}
+  <tr>
+    <td>{{ result.item.display }}</td>
+    <td>{{ result.item.value }}</td>
+    <td>
+      {% if result.failed and 'Failed to translate' in result.msg %}
+        <span class="error">✖ TRANSLATION ERROR</span>
+      {% elif result.changed or result.failed == false %}
+        <span class="match">✔ MATCHES DEFAULT</span>
+      {% else %}
+        <span class="error">✖ MISMATCH / FAILURE</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
 </body>
 </html>
