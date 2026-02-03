@@ -2,42 +2,39 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Windows Server 2025: Fresh Install Baseline</title>
+    <title>Windows Server 2025: Full Factory Audit</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
-        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-        .header { border-bottom: 4px solid #0078d4; margin-bottom: 30px; padding-bottom: 10px; }
-        h2 { color: #2c3e50; background: #fdfdfd; padding: 10px; border: 1px solid #eee; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #0078d4; color: white; padding: 12px; text-align: left; width: 60%; font-size: 0.85em; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 95%; margin: auto; }
+        .header { border-bottom: 3px solid #0078d4; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        th { background-color: #0078d4; color: white; padding: 10px; text-align: left; position: sticky; top: 0; }
+        td { padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
         .match { color: #27ae60; font-weight: bold; }
         .modified { color: #e67e22; font-weight: bold; }
-        .val-highlight { font-weight: bold; color: #2980b9; }
+        .val { font-family: 'Consolas', monospace; color: #2980b9; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Windows Server 2025: Fresh Install Baseline</h1>
-            <p><strong>Goal:</strong> Verifying against "Out of the Box" Microsoft defaults.</p>
-            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+            <h1>Windows Server 2025: Full User Rights Audit</h1>
+            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Total Settings:</strong> 39</p>
         </div>
-
-        <h2>User Rights Assignment (Microsoft Shipped Defaults)</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Policy Setting Name</th>
-                    <th>Standard Shipped Default</th>
-                    <th>Status</th>
+                    <th>Policy Setting (API Name)</th>
+                    <th>Microsoft Factory Default (Shipped)</th>
+                    <th>Audit Status</th>
                 </tr>
             </thead>
             <tbody>
                 {% for result in audit_results.results %}
                 <tr>
-                    <td>{{ result.item.key }}</td>
-                    <td class="val-highlight">{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
+                    <td><strong>{{ result.item.key }}</strong></td>
+                    <td class="val">{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
                     <td>
                         {% if result.changed == false %}
                         <span class="match">✔ MATCHES DEFAULT</span>
@@ -48,7 +45,7 @@
                 </tr>
                 {% endfor %}
             </tbody>
-        <tbody>
+        </table>
     </div>
 </body>
 </html>
