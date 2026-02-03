@@ -55,7 +55,7 @@
 
   tasks:
     - name: Audit User Rights in Server Order
-      community.windows.win_user_right: # This is the FQCN fix
+      community.windows.win_user_right: # This FQCN fixed the 'couldn't resolve' error
         name: "{{ item.name }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
@@ -76,16 +76,16 @@
         src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
-    - name: Upload to S3
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Local_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
 
-    - name: Display Report Link
+    - name: Final S3 Link
       debug:
-        msg: "Audit complete. View report here: {{ s3_upload.url }}"
+        msg: "Report is here: {{ s3_upload.url }}"
