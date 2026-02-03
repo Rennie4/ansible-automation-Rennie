@@ -13,16 +13,14 @@
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.9em; }
         .status-pass { color: #27ae60; font-weight: bold; }
         .status-fail { color: #e74c3c; font-weight: bold; }
-        .expected { color: #7f8c8d; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>CIS Benchmark Audit: User Rights</h1>
-            <p><strong>Benchmark Version:</strong> v1.0.0 (Member Server)</p>
+            <p><strong>Benchmark:</strong> Windows Server 2025 v1.0.0 (L1 Member Server) [cite: 25]</p>
             <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-            <p><strong>Scan Date:</strong> {{ ansible_date_time.date }}</p>
         </div>
 
         <h2>User Rights Assignment (Section 2.2)</h2>
@@ -38,7 +36,7 @@
                 {% for result in audit_results.results %}
                 <tr>
                     <td>{{ result.item.key }}</td>
-                    <td class="expected">{{ result.item.value }}</td>
+                    <td style="color: #7f8c8d;">{{ result.item.value if result.item.value != '' else 'No One' }}</td>
                     <td>
                         {% if result.changed == false %}
                         <span class="status-pass">✔ COMPLIANT</span>
