@@ -1,69 +1,90 @@
 - name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
   hosts: windows_server_2025
-  gather_facts: yes
+  gather_facts: false
 
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     secedit_export_path: "C:\\Temp\\secpol_export.inf"
 
+    msft_factory_defaults:
+      - name: SeNetworkLogonRight
+        display: Access this computer from the network
+        value: Everyone, Administrators, Users, Backup Operators
+
+      - name: SeRemoteInteractiveLogonRight
+        display: Allow log on through Remote Desktop Services
+        value: Administrators, Remote Desktop Users
+
+      - name: SeShutdownPrivilege
+        display: Shut down the system
+        value: Administrators, Backup Operators
+
   tasks:
-    - name: Export Local Security Policy (User Rights)
-      ansible.windows.win_command: >
-        secedit /export /cfg {{ secedit_export_path }} /areas USER_RIGHTS
-      register: secedit_export
+    - name: Export local security policy (USER_RIGHTS)
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+        if (!(Test-Path 'C:\Temp')) { New-Item -Path 'C:\Temp' -ItemType Directory | Out-Null }
+        secedit /export /cfg '{{ secedit_export_path }}' /areas USER_RIGHTS
+        "
       changed_when: false
 
-    - name: Read Exported Policy File
-      ansible.windows.win_slurp:
-        src: "{{ secedit_export_path }}"
-      register: raw_policy
+    - name: Read exported security policy
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+        Get-Content -Path '{{ secedit_export_path }}'
+        "
+      register: secpol_content
+      changed_when: false
 
-    - name: Decode Policy Content
+    - name: Build audit results
       ansible.builtin.set_fact:
-        policy_text: "{{ raw_policy.content | b64decode }}"
+        audit_results:
+          results: >-
+            {{
+              audit_results.results | default([]) + [
+                {
+                  'name': item.name,
+                  'display': item.display,
+                  'value': item.value,
+                  'evaluated': (
+                    secpol_content.stdout |
+                    regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
+                  ),
+                  'changed': (
+                    (
+                      secpol_content.stdout |
+                      regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
+                    ) | default('')
+                  ) != item.value
+                }
+              ]
+            }}
+      loop: "{{ msft_factory_defaults }}"
 
-    - name: Build Audit Results (Factory Comparison)
-      ansible.builtin.set_fact:
-        audit_results: >-
-          {{
-            audit_results | default({'results': []}) |
-            combine({
-              'results': audit_results.results + [{
-                'item': item,
-                'evaluated': (policy_text | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)),
-                'changed': (policy_text | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True) | default('') != item.value),
-                'failed': false
-              }]
-            })
-          }}
-      loop:
-        - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
-        - { name: 'SeRemoteInteractiveLogonRight', display: 'Allow log on through Remote Desktop Services', value: 'Administrators, Remote Desktop Users' }
-        - { name: 'SeShutdownPrivilege', display: 'Shut down the system', value: 'Administrators, Backup Operators' }
-
-    - name: Ensure Local Report Directory
+    - name: Ensure local report directory
       delegate_to: localhost
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
 
-    - name: Generate HTML Report
+    - name: Generate HTML report
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
-    - name: Upload Report to S3
+    - name: Upload report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Local_Audit_{{ lookup('pipe', 'date +%Y%m%dT%H%M%S') }}.html"
         src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
 
-    - name: Final S3 Link
+    - name: Final S3 link
       debug:
         msg: "Report is here: {{ s3_upload.url }}"
+``
