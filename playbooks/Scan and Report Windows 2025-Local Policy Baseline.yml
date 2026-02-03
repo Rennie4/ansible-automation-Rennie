@@ -6,7 +6,6 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Exact 44 items in alphabetical order
     msft_factory_defaults:
       - { name: 'SeTrustedCredManAccessPrivilege', display: 'Access Credential Manager as a trusted caller', value: '' }
       - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
