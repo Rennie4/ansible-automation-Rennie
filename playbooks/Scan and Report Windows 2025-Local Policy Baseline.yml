@@ -6,22 +6,23 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # CIS Benchmark v1.0.0 - Section 2.2 Recommended Defaults
+    # CIS Benchmark v1.0.0 - Section 2.2 Level 1 Member Server Defaults
     cis_user_rights_baseline:
       SeNetworkLogonRight: "Administrators, Remote Management Users"
-      SeBackupPrivilege: "Administrators"
+      [cite_start]SeBackupPrivilege: "Administrators" # 
       SeCreatePagefilePrivilege: "Administrators"
       SeDebugPrivilege: "Administrators"
-      SeRemoteShutdownPrivilege: "Administrators"
-      SeServiceLogonRight: "No One"
+      [cite_start]SeRemoteShutdownPrivilege: "Administrators" # 
+      [cite_start]SeServiceLogonRight: "" # CIS recommends "No One" - an empty list 
       SeIncreaseQuotaPrivilege: "Administrators"
       SeInteractiveLogonRight: "Administrators, Users"
 
   tasks:
-    - name: Audit CIS Section 2.2 User Rights against Benchmark
+    - name: Audit CIS Section 2.2 User Rights
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
-        users: "{{ item.value.split(', ') }}"
+        # Logic: If value is empty, send an empty list to satisfy "No One"
+        users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
       register: audit_results
@@ -33,14 +34,11 @@
         path: "{{ playbook_dir }}/reports"
         state: directory
 
-    - name: Generate the HTML Report
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/local_policy_baseline.html"
-      vars:
-        # Passing the baseline dictionary to the template for comparison
-        expected_values: "{{ cis_user_rights_baseline }}"
 
     - name: Upload Report to S3
       delegate_to: localhost
