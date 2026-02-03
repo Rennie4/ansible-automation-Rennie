@@ -1,6 +1,6 @@
 ---
 - name: Scan Windows 2025 and Upload Report to S3
-  hosts: windows_server_2025
+  hosts: "{{ target_hosts }}"
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
@@ -8,38 +8,36 @@
     aws_region: "eu-west-1"
 
   tasks:
+    - name: Ensure temp directory exists for policy export
+      ansible.windows.win_file:
+        path: C:\temp
+        state: directory
+
     - name: Export Current User Rights Assignment
       ansible.windows.win_shell: |
-        secedit /export /areas USER_RIGHTS /cfg C:\temp\audit_scan.inf
-        Get-Content C:\temp\audit_scan.inf | Select-String -Pattern "^Se"
+        $configFile = "C:\temp\audit_scan.inf"
+        secedit /export /areas USER_RIGHTS /cfg $configFile
+        if (Test-Path $configFile) {
+            Get-Content $configFile | Select-String -Pattern "^Se"
+        }
       register: policy_scan
 
-    - name: Generate HTML Report locally
+    - name: Generate HTML Report from Template
       delegate_to: localhost
       ansible.builtin.template:
         src: windows_audit_report.html.j2
-        dest: "/tmp/Audit_{{ inventory_hostname }}.html"
+        dest: "/tmp/Server_Audit_{{ inventory_hostname }}.html"
 
     - name: Upload Audit Report to S3 Bucket
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Audit_{{ inventory_hostname }}_{{ ansible_date_time.epoch }}.html"
-        src: "/tmp/Audit_{{ inventory_hostname }}.html"
+        object: "{{ s3_path }}/Server_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "/tmp/Server_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
 
-    - name: Cleanup Remote and Local Temporary Files
-      block:
-        - ansible.windows.win_file:
-            path: C:\temp\audit_scan.inf
-            state: absent
-        - delegate_to: localhost
-          ansible.builtin.file:
-            path: "/tmp/Audit_{{ inventory_hostname }}.html"
-            state: absent
-
-    - name: Output S3 Link
-      debug:
-        msg: "Report successfully uploaded to: https://{{ s3_bucket }}.s3.{{ aws_region }}.amazonaws.com/{{ s3_path }}/"
+    - name: Cleanup temporary policy file
+      ansible.windows.win_file:
+        path: C:\temp\audit_scan.inf
+        state: absent
