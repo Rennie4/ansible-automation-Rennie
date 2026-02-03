@@ -3,12 +3,10 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    # Environment-agnostic variables
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Microsoft Windows Server 2025 "Out of the Box" Defaults
-    # Note: "" represents "No One" (the factory default for these rights)
+    # Standard Microsoft "Out of the Box" Defaults for Windows Server 2025
     msft_factory_defaults:
       SeTrustedCredManAccessPrivilege: ""  # Access Credential Manager as a trusted caller
       SeNetworkLogonRight: "Administrators, Authenticated Users, Everyone"
@@ -19,11 +17,14 @@
       SeServiceLogonRight: ""
       SeIncreaseQuotaPrivilege: "Administrators, Local Service, Network Service"
       SeInteractiveLogonRight: "Administrators, Users"
+      SeSystemtimePrivilege: "Administrators, Local Service"
+      SeTimeZonePrivilege: "Administrators, Local Service, Users"
 
   tasks:
     - name: Audit Against Microsoft Factory Shipped Defaults
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
+        # Logic to handle "No One" (Empty List)
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
