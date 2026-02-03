@@ -5,24 +5,27 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
+    
+    # CIS Benchmark v1.0.0 - Section 2.2 Recommended Defaults
+    cis_user_rights_baseline:
+      SeNetworkLogonRight: "Administrators, Remote Management Users"
+      SeBackupPrivilege: "Administrators"
+      SeCreatePagefilePrivilege: "Administrators"
+      SeDebugPrivilege: "Administrators"
+      SeRemoteShutdownPrivilege: "Administrators"
+      SeServiceLogonRight: "No One"
+      SeIncreaseQuotaPrivilege: "Administrators"
+      SeInteractiveLogonRight: "Administrators, Users"
 
   tasks:
-    - name: Audit All CIS Section 2.2 User Rights
+    - name: Audit CIS Section 2.2 User Rights against Benchmark
       ansible.windows.win_user_right:
-        name: "{{ item }}"
-        users: []
+        name: "{{ item.key }}"
+        users: "{{ item.value.split(', ') }}"
         action: add
       check_mode: yes
       register: audit_results
-      loop:
-        - SeNetworkLogonRight
-        - SeBackupPrivilege
-        - SeCreatePagefilePrivilege
-        - SeDebugPrivilege
-        - SeRemoteShutdownPrivilege
-        - SeServiceLogonRight
-        - SeIncreaseQuotaPrivilege
-        - SeInteractiveLogonRight
+      loop: "{{ cis_user_rights_baseline | dict2items }}"
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -33,20 +36,18 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        # EXACT pathing logic from your working Account Policy playbook
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/local_policy_baseline.html"
+      vars:
+        # Passing the baseline dictionary to the template for comparison
+        expected_values: "{{ cis_user_rights_baseline }}"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Local_Policy_CIS_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/local_policy_baseline.html"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The Local Policy report link is: {{ s3_upload.url }}"
