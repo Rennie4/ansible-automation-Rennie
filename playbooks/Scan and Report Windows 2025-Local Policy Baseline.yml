@@ -6,6 +6,7 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
+    # Exact 44 items in alphabetical order
     msft_factory_defaults:
       - { name: 'SeTrustedCredManAccessPrivilege', display: 'Access Credential Manager as a trusted caller', value: '' }
       - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
@@ -66,14 +67,14 @@
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
-      file:
+      ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
 
     - name: Generate the HTML Report
       delegate_to: localhost
-      template:
-        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
     - name: Upload Report to S3
