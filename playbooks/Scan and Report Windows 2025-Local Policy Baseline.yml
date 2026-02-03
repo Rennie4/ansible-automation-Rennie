@@ -7,7 +7,6 @@
     s3_region: "eu-west-1"
     
     # Exact 44 items in alphabetical order from your secpol.msc screen
-    # Fixed Service Names to prevent translation errors
     msft_factory_defaults:
       - { name: 'SeTrustedCredManAccessPrivilege', display: 'Access Credential Manager as a trusted caller', value: '' }
       - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
@@ -33,21 +32,21 @@
       - { name: 'SeDenyRemoteInteractiveLogonRight', display: 'Deny log on through Remote Desktop Services', value: '' }
       - { name: 'SeEnableDelegationPrivilege', display: 'Enable computer and user accounts to be trusted for delegation', value: '' }
       - { name: 'SeRemoteShutdownPrivilege', display: 'Force shutdown from a remote system', value: 'Administrators' }
-      - { name: 'SeAuditPrivilege', display: 'Generate security audits', value: 'LOCAL SERVICE, NETWORK SERVICE, NT SERVICE\\ALL RESTRICTED SERVICES, NT SERVICE\\PrintSpoolerService' }
-      - { name: 'SeImpersonatePrivilege', display: 'Impersonate a client after authentication', value: 'LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE, NT SERVICE\\ALL RESTRICTED SERVICES' }
+      - { name: 'SeAuditPrivilege', display: 'Generate security audits', value: 'LOCAL SERVICE, NETWORK SERVICE, NT SERVICE\ALL RESTRICTED SERVICES, NT SERVICE\PrintSpoolerService' }
+      - { name: 'SeImpersonatePrivilege', display: 'Impersonate a client after authentication', value: 'LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE, NT SERVICE\ALL RESTRICTED SERVICES' }
       - { name: 'SeIncreaseWorkingSetPrivilege', display: 'Increase a process working set', value: 'Users' }
-      - { name: 'SeIncreaseBasePriorityPrivilege', display: 'Increase scheduling priority', value: 'Administrators, Window Manager\\Window Manager Group' }
+      - { name: 'SeIncreaseBasePriorityPrivilege', display: 'Increase scheduling priority', value: 'Administrators, Window Manager\Window Manager Group' }
       - { name: 'SeLoadDriverPrivilege', display: 'Load and unload device drivers', value: 'Administrators' }
       - { name: 'SeLockMemoryPrivilege', display: 'Lock pages in memory', value: '' }
       - { name: 'SeBatchLogonRight', display: 'Log on as a batch job', value: 'Administrators, Backup Operators, Performance Log Users' }
-      - { name: 'SeServiceLogonRight', display: 'Log on as a service', value: 'NT SERVICE\\ALL SERVICES, NT SERVICE\\ALL RESTRICTED SERVICES' }
+      - { name: 'SeServiceLogonRight', display: 'Log on as a service', value: 'NT SERVICE\ALL SERVICES, NT SERVICE\ALL RESTRICTED SERVICES' }
       - { name: 'SeSecurityPrivilege', display: 'Manage auditing and security log', value: 'Administrators' }
       - { name: 'SeRelabelPrivilege', display: 'Modify an object label', value: '' }
       - { name: 'SeSystemEnvironmentPrivilege', display: 'Modify firmware environment values', value: 'Administrators' }
       - { name: 'SeDelegateSessionUserImpersonatePrivilege', display: 'Obtain an impersonation token for another user in the same session', value: 'Administrators' }
       - { name: 'SeManageVolumePrivilege', display: 'Perform volume maintenance tasks', value: 'Administrators' }
       - { name: 'SeProfileSingleProcessPrivilege', display: 'Profile single process', value: 'Administrators' }
-      - { name: 'SeSystemProfilePrivilege', display: 'Profile system performance', value: 'Administrators, NT SERVICE\\WdiServiceHost' }
+      - { name: 'SeSystemProfilePrivilege', display: 'Profile system performance', value: 'Administrators, NT SERVICE\WdiServiceHost' }
       - { name: 'SeUndockPrivilege', display: 'Remove computer from docking station', value: 'Administrators' }
       - { name: 'SeAssignPrimaryTokenPrivilege', display: 'Replace a process level token', value: 'LOCAL SERVICE, NETWORK SERVICE' }
       - { name: 'SeRestorePrivilege', display: 'Restore files and directories', value: 'Administrators, Backup Operators' }
@@ -57,7 +56,7 @@
 
   tasks:
     - name: Audit User Rights in Server Order
-      ansible.windows.win_user_right:
+      community.windows.win_user_right:
         name: "{{ item.name }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
@@ -75,7 +74,7 @@
     - name: Generate the HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
+        src: "baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
     - name: Upload Report to S3
