@@ -6,7 +6,6 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Exact 44 items in alphabetical order
     msft_factory_defaults:
       - { name: 'SeTrustedCredManAccessPrivilege', display: 'Access Credential Manager as a trusted caller', value: '' }
       - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
@@ -56,7 +55,7 @@
 
   tasks:
     - name: Audit User Rights in Server Order
-      community.windows.win_user_right:
+      community.windows.win_user_right: # This is the FQCN fix
         name: "{{ item.name }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
@@ -65,19 +64,19 @@
       register: audit_results
       loop: "{{ msft_factory_defaults }}"
 
-    - name: Ensure Local Report Directory Exists
+    - name: Ensure Local Report Directory
       delegate_to: localhost
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
 
-    - name: Generate the HTML Report
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
-    - name: Upload Report to S3
+    - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
@@ -89,4 +88,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "Local Policy Audit Report: {{ s3_upload.url }}"
+        msg: "Audit complete. View report here: {{ s3_upload.url }}"
