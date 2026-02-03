@@ -6,7 +6,7 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Complete list of all 39 User Rights Assignment settings from your secpol.msc
+    # Complete list of all User Rights Assignment settings from your secpol.msc
     msft_factory_defaults:
       SeTrustedCredManAccessPrivilege: ""
       SeNetworkLogonRight: "Everyone, Administrators, Users, Backup Operators"
@@ -52,7 +52,7 @@
       SeTakeOwnershipPrivilege: "Administrators"
 
   tasks:
-    - name: Audit All 39 User Rights Settings
+    - name: Audit All User Rights Settings
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
