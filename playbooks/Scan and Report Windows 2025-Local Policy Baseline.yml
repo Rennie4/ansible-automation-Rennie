@@ -7,13 +7,14 @@
     s3_region: "eu-west-1"
     
     # CIS Benchmark v1.0.0 - Section 2.2 Level 1 Member Server Defaults
+    # Cleaned YAML syntax to prevent parser errors
     cis_user_rights_baseline:
       SeNetworkLogonRight: "Administrators, Remote Management Users"
-      [cite_start]SeBackupPrivilege: "Administrators" # 
+      SeBackupPrivilege: "Administrators"
       SeCreatePagefilePrivilege: "Administrators"
       SeDebugPrivilege: "Administrators"
-      [cite_start]SeRemoteShutdownPrivilege: "Administrators" # 
-      [cite_start]SeServiceLogonRight: "" # CIS recommends "No One" - an empty list 
+      SeRemoteShutdownPrivilege: "Administrators"
+      SeServiceLogonRight: ""
       SeIncreaseQuotaPrivilege: "Administrators"
       SeInteractiveLogonRight: "Administrators, Users"
 
@@ -21,7 +22,7 @@
     - name: Audit CIS Section 2.2 User Rights
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
-        # Logic: If value is empty, send an empty list to satisfy "No One"
+        # If value is empty string, send empty list to achieve "No One" status
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
