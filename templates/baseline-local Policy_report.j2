@@ -10,17 +10,17 @@
         table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
         th { background-color: #0078d4; color: white; padding: 10px; text-align: left; position: sticky; top: 0; }
         td { padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:nth-child(even) { background-color: #fdfdfd; }
         .match { color: #27ae60; font-weight: bold; }
         .modified { color: #e67e22; font-weight: bold; }
-        .val { font-family: 'Consolas', monospace; color: #2980b9; }
+        .val { font-family: 'Consolas', monospace; color: #2980b9; word-break: break-all; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Windows Server 2025: Full User Rights Audit</h1>
-            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Total Settings:</strong> 39</p>
+            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Status:</strong> Verifying Fresh Install Defaults</p>
         </div>
         <table>
             <thead>
