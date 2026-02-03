@@ -1,5 +1,5 @@
 - name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
-  hosts: windows_server_2025
+  hosts: "{{ target_hosts | default('windows_server_2025') }}"
   gather_facts: yes
 
   vars:
@@ -19,6 +19,17 @@
       - name: SeShutdownPrivilege
         display: Shut down the system
         value: Administrators, Backup Operators
+
+  pre_tasks:
+    - name: Require needed collections (fail fast with a clear message)
+      ansible.builtin.meta: |
+        require_collection:
+          - ansible.windows
+          - amazon.aws
+
+    - name: Show target hosts resolved from survey (debug aid)
+      ansible.builtin.debug:
+        msg: "Targeting hosts: {{ ansible_play_hosts_all }} (inventory match for: {{ target_hosts | default('windows_server_2025') }})"
 
   tasks:
     - name: Export local security policy (USER_RIGHTS)
@@ -43,23 +54,23 @@
         audit_results:
           results: >-
             {{
-              audit_results.results | default([]) + [
-                {
+              (audit_results.results | default([]))
+              +
+              [ {
                   'name': item.name,
                   'display': item.display,
                   'value': item.value,
                   'evaluated': (
-                    secpol_text |
-                    regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
+                    secpol_text
+                    | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
                   ),
                   'changed': (
                     (
-                      secpol_text |
-                      regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
+                      secpol_text
+                      | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
                     ) | default('')
                   ) != item.value
-                }
-              ]
+                } ]
             }}
       loop: "{{ msft_factory_defaults }}"
 
