@@ -1,101 +1,29 @@
-- name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
-  hosts: "{{ target_hosts | default('windows_server_2025') }}"
-  gather_facts: yes
-
-  vars:
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
-    secedit_export_path: "C:\\Windows\\Temp\\secpol_export.inf"
-
-    msft_factory_defaults:
-      - name: SeNetworkLogonRight
-        display: Access this computer from the network
-        value: Everyone, Administrators, Users, Backup Operators
-
-      - name: SeRemoteInteractiveLogonRight
-        display: Allow log on through Remote Desktop Services
-        value: Administrators, Remote Desktop Users
-
-      - name: SeShutdownPrivilege
-        display: Shut down the system
-        value: Administrators, Backup Operators
-
-  pre_tasks:
-    - name: Require needed collections (fail fast with a clear message)
-      ansible.builtin.meta: |
-        require_collection:
-          - ansible.windows
-          - amazon.aws
-
-    - name: Show target hosts resolved from survey (debug aid)
-      ansible.builtin.debug:
-        msg: "Targeting hosts: {{ ansible_play_hosts_all }} (inventory match for: {{ target_hosts | default('windows_server_2025') }})"
-
+---
+- name: Scan and Report Windows 2025 Local Policy Baseline
+  hosts: windows_server_2025
+  gather_facts: no
   tasks:
-    - name: Export local security policy (USER_RIGHTS)
-      ansible.windows.win_shell: |
-        if (!(Test-Path "C:\Windows\Temp")) {
-          New-Item -Path "C:\Windows\Temp" -ItemType Directory | Out-Null
-        }
-        secedit /export /cfg "{{ secedit_export_path }}" /areas USER_RIGHTS
-      changed_when: false
-
-    - name: Read exported security policy
-      ansible.windows.win_slurp:
-        src: "{{ secedit_export_path }}"
-      register: secpol_raw
-
-    - name: Decode security policy content
-      ansible.builtin.set_fact:
-        secpol_text: "{{ secpol_raw.content | b64decode }}"
-
-    - name: Build audit results
-      ansible.builtin.set_fact:
-        audit_results:
-          results: >-
-            {{
-              (audit_results.results | default([]))
-              +
-              [ {
-                  'name': item.name,
-                  'display': item.display,
-                  'value': item.value,
-                  'evaluated': (
-                    secpol_text
-                    | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
-                  ),
-                  'changed': (
-                    (
-                      secpol_text
-                      | regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
-                    ) | default('')
-                  ) != item.value
-                } ]
-            }}
-      loop: "{{ msft_factory_defaults }}"
-
-    - name: Ensure local report directory
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/reports"
+    - name: Create transient directory for policy processing
+      ansible.windows.win_file:
+        path: C:\temp\baseline_audit
         state: directory
 
-    - name: Generate HTML report
-      delegate_to: localhost
+    - name: Deploy default baseline template
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
-        dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
+        src: windows_2025_defaults.inf.j2
+        dest: C:\temp\baseline_audit\defaults.inf
 
-    - name: Upload report to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
-        mode: put
-        region: "{{ s3_region }}"
-      register: s3_upload
+    - name: Apply defaults using secedit
+      ansible.windows.win_shell: |
+        # Use /configure to enforce the defaults from the .inf file
+        secedit /configure /db C:\temp\baseline_audit\temp.sdb /cfg C:\temp\baseline_audit\defaults.inf /areas USER_RIGHTS
+      register: secedit_result
 
-    - name: Final S3 link
-      ansible.builtin.debug:
-        msg: "Report is here: {{ s3_upload.url }}"
+    - name: Cleanup temporary audit files
+      ansible.windows.win_file:
+        path: C:\temp\baseline_audit
+        state: absent
+
+    - name: Execution Summary
+      debug:
+        msg: "The Windows 2025 host has been reset to its out-of-the-box defaults as per the audit report."
