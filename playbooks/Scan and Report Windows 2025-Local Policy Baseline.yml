@@ -64,23 +64,28 @@
       register: audit_results
       loop: "{{ msft_factory_defaults }}"
 
-    - name: Ensure Local Report Directory
+    - name: Ensure Local Report Directory Exists
       delegate_to: localhost
-      ansible.builtin.file:
+      file:
         path: "{{ playbook_dir }}/reports"
         state: directory
 
     - name: Generate the HTML Report
       delegate_to: localhost
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
+      template:
+        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Server_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Local_Policy_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
         mode: put
         region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "Local Policy Audit Report: {{ s3_upload.url }}"
