@@ -1,4 +1,3 @@
----
 - name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
   hosts: windows_server_2025
   gather_facts: yes
@@ -55,7 +54,7 @@
 
   tasks:
     - name: Audit User Rights in Server Order
-      community.windows.win_user_right: # This FQCN fixed the 'couldn't resolve' error
+      community.windows.win_user_right:
         name: "{{ item.name }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
@@ -89,3 +88,4 @@
     - name: Final S3 Link
       debug:
         msg: "Report is here: {{ s3_upload.url }}"
+``
