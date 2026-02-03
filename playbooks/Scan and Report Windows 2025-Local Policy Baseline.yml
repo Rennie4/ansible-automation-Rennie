@@ -1,33 +1,36 @@
 ---
-- name: Windows Server 2025 Local Policy Baseline - User Rights
+- name: Windows Server 2025 Local Policy Baseline - Factory Shipped Defaults
   hosts: windows_server_2025
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # CIS Benchmark v1.0.0 - Section 2.2 Level 1 Member Server Defaults
-    # Cleaned YAML syntax to prevent parser errors
-    cis_user_rights_baseline:
-      SeNetworkLogonRight: "Administrators, Remote Management Users"
+    # These are the standard "Out of the Box" settings for Windows Server 2025
+    msft_factory_defaults:
+      SeTrustedCredManAccessPrivilege: ""  # Access Credential Manager as a trusted caller
+      SeNetworkLogonRight: "Administrators, Authenticated Users, Everyone"
       SeBackupPrivilege: "Administrators"
       SeCreatePagefilePrivilege: "Administrators"
       SeDebugPrivilege: "Administrators"
       SeRemoteShutdownPrivilege: "Administrators"
       SeServiceLogonRight: ""
-      SeIncreaseQuotaPrivilege: "Administrators"
+      SeIncreaseQuotaPrivilege: "Administrators, Local Service, Network Service"
       SeInteractiveLogonRight: "Administrators, Users"
+      SeSystemtimePrivilege: "Administrators, Local Service"
+      SeTimeZonePrivilege: "Administrators, Local Service, Users"
+      SeAssignPrimaryTokenPrivilege: ""
+      SeRestorePrivilege: "Administrators"
 
   tasks:
-    - name: Audit CIS Section 2.2 User Rights
+    - name: Audit Against Microsoft Factory Shipped Defaults
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
-        # If value is empty string, send empty list to achieve "No One" status
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
       register: audit_results
-      loop: "{{ cis_user_rights_baseline | dict2items }}"
+      loop: "{{ msft_factory_defaults | dict2items }}"
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -35,18 +38,18 @@
         path: "{{ playbook_dir }}/reports"
         state: directory
 
-    - name: Generate HTML Report
+    - name: Generate the HTML Report
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
-        dest: "{{ playbook_dir }}/reports/local_policy_baseline.html"
+        dest: "{{ playbook_dir }}/reports/msft_factory_defaults.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_CIS_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/local_policy_baseline.html"
+        object: "factory-defaults/Local_Policy_Original_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/msft_factory_defaults.html"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
