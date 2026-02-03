@@ -6,7 +6,7 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Complete list of all User Rights Assignment settings from your secpol.msc
+    # The complete list of 42 User Rights Assignment settings
     msft_factory_defaults:
       SeTrustedCredManAccessPrivilege: ""
       SeNetworkLogonRight: "Everyone, Administrators, Users, Backup Operators"
