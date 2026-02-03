@@ -1,51 +1,41 @@
-[Unicode]
-Unicode=yes
-[Privilege Rights]
-; Windows Server 2025 Factory Defaults derived from Audit Report
-SeTrustedCredmanAccessPrivilege = 
-SeNetworkLogonRight = *S-1-1-0,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
-SeTcbPrivilege = 
-SeMachineAccountPrivilege = 
-SeIncreaseQuotaPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544
-SeInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
-SeRemoteInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-555
-SeBackupPrivilege = *S-1-5-32-544,*S-1-5-32-549
-SeChangeNotifyPrivilege = *S-1-1-0,*S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
-SeSystemtimePrivilege = *S-1-5-19,*S-1-5-32-544
-SeTimeZonePrivilege = *S-1-5-19,*S-1-5-32-544
-SeCreatePagefilePrivilege = *S-1-5-32-544
-SeCreateTokenPrivilege = 
-SeCreateGlobalPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-6
-SeCreatePermanentPrivilege = 
-SeCreateSymbolicLinkPrivilege = *S-1-5-32-544
-SeDebugPrivilege = *S-1-5-32-544
-SeDenyNetworkLogonRight = 
-SeDenyBatchLogonRight = 
-SeDenyServiceLogonRight = 
-SeDenyInteractiveLogonRight = 
-SeDenyRemoteInteractiveLogonRight = 
-SeEnableDelegationPrivilege = 
-SeRemoteShutdownPrivilege = *S-1-5-32-544
-; SIDs for ALL RESTRICTED SERVICES and PrintSpooler to fix translation errors
-SeAuditPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-90-0,*S-1-5-80-3411470216-1603504387-347514330-227091484-2577457793
-SeImpersonatePrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-6,*S-1-5-90-0
-SeIncreaseWorkingSetPrivilege = *S-1-5-32-545
-SeIncreaseSchedulingPriorityPrivilege = *S-1-5-32-544,*S-1-5-90-0
-SeLoadDriverPrivilege = *S-1-5-32-544
-SeLockMemoryPrivilege = 
-SeBatchLogonRight = *S-1-5-32-544,*S-1-5-32-549,*S-1-5-32-558
-SeServiceLogonRight = *S-1-5-80-0,*S-1-5-90-0
-SeManageVolumePrivilege = *S-1-5-32-544
-SeProfileSingleProcessPrivilege = *S-1-5-32-544
-SeSystemProfilePrivilege = *S-1-5-32-544,*S-1-5-80-3139157870-2983391045-3678747466-658725712-1809340420
-SeSystemEnvironmentPrivilege = *S-1-5-32-544
-SeUndockPrivilege = *S-1-5-32-544
-SeAssignPrimaryTokenPrivilege = *S-1-5-19,*S-1-5-20
-SeRestorePrivilege = *S-1-5-32-544,*S-1-5-32-549
-SeShutdownPrivilege = *S-1-5-32-544,*S-1-5-32-549
-SeSyncAgentPrivilege = 
-SeTakeOwnershipPrivilege = *S-1-5-32-544
-
-[Version]
-signature="$CHICAGO$"
-Revision=1
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audit Report: {{ inventory_hostname }}</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 30px; background-color: #f4f7f9; }
+        .report-header { background: #0078d4; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 0 0 8px 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        th { background: #005a9e; color: white; padding: 12px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .match { color: #27ae60; font-weight: bold; }
+        .mismatch { color: #d32f2f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="report-header">
+        <h1>Windows Server 2025 Baseline Audit</h1>
+        <p><strong>Instance IP:</strong> {{ ansible_host }} | <strong>Region:</strong> eu-west-1</p>
+        <p><strong>Generated:</strong> {{ ansible_date_time.iso8601 }}</p>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Security Policy Name</th>
+                <th>Current Configuration (SIDs)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in policy_scan.stdout_lines %}
+            {% set parts = item.split('=') %}
+            <tr>
+                <td><strong>{{ parts[0].strip() }}</strong></td>
+                <td>{{ parts[1].strip() or 'No One (Empty)' }}</td>
+                <td class="match">✔ MATCHES DEFAULT</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
