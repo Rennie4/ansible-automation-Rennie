@@ -2,27 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Windows Server 2025: Local Policy Baseline</title>
+    <title>Windows Server 2025: Factory State Audit</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #333; }
-        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
-        .header { border-bottom: 4px solid #2c3e50; margin-bottom: 30px; padding-bottom: 10px; }
-        h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
+        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        .header { border-bottom: 4px solid #d32f2f; margin-bottom: 30px; padding-bottom: 10px; }
+        h2 { color: #2c3e50; background: #fdfdfd; padding: 10px; border: 1px solid #eee; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 60%; font-size: 0.85em; }
+        th { background-color: #455a64; color: white; padding: 12px; text-align: left; width: 60%; font-size: 0.85em; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
-        .val-highlight { font-weight: bold; }
-        .status-pass { color: #27ae60; font-weight: bold; }
-        .status-fail { color: #e74c3c; font-weight: bold; }
+        .match { color: #2e7d32; font-weight: bold; }
+        .modified { color: #e65100; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>CIS Benchmark Audit: User Rights</h1>
-            <p><strong>Benchmark:</strong> Windows Server 2025 v1.0.0 (L1 Member Server)</p>
-            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-            <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+            <h1>Microsoft Factory Default Audit</h1>
+            <p><strong>Goal:</strong> Comparing current state against "Out of the Box" shipped settings.</p>
+            <p><strong>Host:</strong> {{ inventory_hostname }}</p>
         </div>
 
         <h2>User Rights Assignment (Section 2.2)</h2>
@@ -30,7 +28,7 @@
             <thead>
                 <tr>
                     <th>Policy Setting Name</th>
-                    <th>CIS Recommended Setting</th>
+                    <th>Shipped Factory Default</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -38,12 +36,12 @@
                 {% for result in audit_results.results %}
                 <tr>
                     <td>{{ result.item.key }}</td>
-                    <td style="color: #7f8c8d;">{{ result.item.value if result.item.value != '' else 'No One' }}</td>
-                    <td class="val-highlight">
+                    <td>{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
+                    <td>
                         {% if result.changed == false %}
-                        <span class="status-pass">✔ COMPLIANT</span>
+                        <span class="match">✔ MATCHES DEFAULT</span>
                         {% else %}
-                        <span class="status-fail">✘ NON-COMPLIANT</span>
+                        <span class="modified">⚠ MODIFIED / HARDENED</span>
                         {% endif %}
                     </td>
                 </tr>
