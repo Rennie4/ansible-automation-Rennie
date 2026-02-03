@@ -1,82 +1,42 @@
 ---
 - name: Windows Server 2025 Local Policy Baseline - User Rights
-  hosts: "{{ target_hosts | default('windows_server_2025') }}"
+  hosts: windows_server_2025
   gather_facts: yes
   vars:
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
+    # Avoiding hard-coded EBS paths to ensure stability after reboots
+    report_output_dir: "./audit_reports/{{ inventory_hostname }}"
+    report_date: "{{ ansible_date_time.date }}"
 
   tasks:
     - name: Audit All CIS Section 2.2 User Rights
-      win_shell: |
-        {% raw %}
-        $tempFile = "C:\Windows\Temp\secedit_local_policy.inf"
-        secedit /export /cfg $tempFile /areas USER_RIGHTS | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
-
-        function Convert-Sids($sidString) {
-            if (!$sidString) { return "No one / Right Not Assigned" }
-            $sids = $sidString.Split(',')
-            $translated = foreach ($sid in $sids) {
-                $cleanSid = $sid.Trim().Replace("*", "")
-                try {
-                    $objSid = New-Object System.Security.Principal.SecurityIdentifier($cleanSid)
-                    $objSid.Translate([System.Security.Principal.NTAccount]).Value
-                } catch { $cleanSid }
-            }
-            return $translated -join ", "
-        }
-
-        function Get-UserRight($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) { 
-                $rawVal = $line.ToString().Split('=')[1].Trim()
-                return Convert-Sids($rawVal)
-            }
-            return "Not Defined (Default)"
-        }
-
-        $results = @{
-            AccessNetwork           = Get-UserRight "SeNetworkLogonRight"
-            AdjustMemoryQuotas      = Get-UserRight "SeIncreaseQuotaPrivilege"
-            AllowLocalLogon         = Get-UserRight "SeInteractiveLogonRight"
-            BackupFiles             = Get-UserRight "SeBackupPrivilege"
-            DebugPrograms           = Get-UserRight "SeDebugPrivilege"
-            RestoreFiles            = Get-UserRight "SeRestorePrivilege"
-            TakeOwnership           = Get-UserRight "SeTakeOwnershipPrivilege"
-            OsName                  = (Get-ComputerInfo).OsName
-            OsVersion               = (Get-ComputerInfo).OsVersion
-        }
-        $results | ConvertTo-Json
-        {% endraw %}
-      register: user_rights_audit
+      ansible.windows.win_user_right:
+        name: "{{ item }}"
+        users: []
+        action: add
+      check_mode: yes
+      register: audit_results
+      loop:
+        - SeNetworkLogonRight
+        - SeBackupPrivilege
+        - SeCreatePagefilePrivilege
+        - SeDebugPrivilege
+        - SeRemoteShutdownPrivilege
+        - SeServiceLogonRight
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
-      file:
-        path: "{{ playbook_dir }}/reports"
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
         state: directory
+        mode: '0755'
 
     - name: Generate the HTML Report
       delegate_to: localhost
-      template:
-        # Adjusted path to look for templates in the same directory as playbooks first
-        src: "baseline-LocalPolicy_report.j2"
-        dest: "{{ playbook_dir }}/reports/local_policy_defaults.html"
-      vars:
-        report_data: "{{ user_rights_audit.stdout | from_json }}"
+      ansible.builtin.template:
+        # Exact match for your J2 filename
+        src: "baseline-local Policy_report.j2"
+        dest: "{{ report_output_dir }}/Audit_Report_{{ report_date }}.html"
 
-    - name: Upload Report to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Defaults_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/local_policy_defaults.html"
-        mode: put
-        region: "{{ s3_region }}"
-      register: s3_upload
-
-    - name: Display Report Link
+    - name: Report Completion
       debug:
-        msg: "The Local Policy baseline report link is: {{ s3_upload.url }}"
+        msg: "Audit complete. Report saved to {{ report_output_dir }}"
