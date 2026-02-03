@@ -13,6 +13,7 @@
         tr:nth-child(even) { background-color: #fdfdfd; }
         .match { color: #27ae60; font-weight: bold; }
         .modified { color: #e67e22; font-weight: bold; }
+        .failed { color: #d32f2f; font-weight: bold; font-style: italic; }
         .val { font-family: 'Consolas', monospace; color: #2980b9; word-break: break-all; }
     </style>
 </head>
@@ -36,7 +37,9 @@
                     <td><strong>{{ result.item.key }}</strong></td>
                     <td class="val">{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
                     <td>
-                        {% if result.changed == false %}
+                        {% if result.failed is defined and result.failed %}
+                        <span class="failed">✖ ERROR TRANSLATING SID</span>
+                        {% elif result.changed == false %}
                         <span class="match">✔ MATCHES DEFAULT</span>
                         {% else %}
                         <span class="modified">⚠ MODIFIED</span>
