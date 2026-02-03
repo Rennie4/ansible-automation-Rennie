@@ -1,46 +1,74 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Windows Server 2025 – Local Policy Audit</title>
-  <style>
-    body { font-family: Arial; background: #f5f6fa; margin: 20px; }
-    h1, h2 { color: #2c3e50; }
-    table { width: 100%; border-collapse: collapse; background: white; font-size: 13px; }
-    th, td { border: 1px solid #ccc; padding: 8px; }
-    th { background: #2c3e50; color: white; }
-    .ok { background: #e8f6ef; }
-    .fail { background: #fdecea; }
-  </style>
-</head>
+- name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
+  hosts: windows_server_2025
+  gather_facts: false
 
-<body>
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    secedit_export_path: "C:\\Temp\\secpol_export.inf"
 
-<h1>Windows Server 2025</h1>
-<h2>Local User Rights – Audit Report</h2>
+    msft_factory_defaults:
+      - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
+      - { name: 'SeRemoteInteractiveLogonRight', display: 'Allow log on through Remote Desktop Services', value: 'Administrators, Remote Desktop Users' }
+      - { name: 'SeShutdownPrivilege', display: 'Shut down the system', value: 'Administrators, Backup Operators' }
 
-<table>
-  <thead>
-    <tr>
-      <th>Policy</th>
-      <th>Description</th>
-      <th>Expected</th>
-      <th>Evaluated</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r in audit_results.results %}
-    <tr class="{{ 'fail' if r.changed else 'ok' }}">
-      <td>{{ r.name }}</td>
-      <td>{{ r.display }}</td>
-      <td>{{ r.value }}</td>
-      <td>{{ r.evaluated if r.evaluated else 'Not Defined' }}</td>
-      <td>{{ 'NON-COMPLIANT' if r.changed else 'COMPLIANT' }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+  tasks:
+    - name: Export Local Security Policy (USER_RIGHTS)
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+        if (!(Test-Path 'C:\Temp')) { New-Item -Path 'C:\Temp' -ItemType Directory }
+        secedit /export /cfg {{ secedit_export_path }} /areas USER_RIGHTS
+        "
+      register: secedit_export
+      changed_when: false
 
-</body>
-</html>
+    - name: Read Exported Security Policy
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+        Get-Content -Path '{{ secedit_export_path }}'
+        "
+      register: secpol_content
+      changed_when: false
+
+    - name: Build Audit Results
+      ansible.builtin.set_fact:
+        audit_results:
+          results: >-
+            {{
+              msft_factory_defaults | map('combine', {
+                'evaluated': (
+                  secpol_content.stdout |
+                  regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True)
+                ),
+                'changed': (
+                  secpol_content.stdout |
+                  regex_search('^' ~ item.name ~ '\\s*=\\s*(.*)$', multiline=True) | default('')
+                ) != item.value
+              }) | list
+            }}
+
+    - name: Ensure Local Report Directory
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate HTML Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/baseline-local Policy_report.j2"
+        dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
+
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/Local_Audit_{{ lookup('pipe','date +%Y%m%dT%H%M%S') }}.html"
+        src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
+        mode: put
+        region: "{{ s3_region }}"
+      register: s3_upload
+
+    - name: Final S3 Link
+      debug:
+        msg: "Report is here: {{ s3_upload.url }}"
