@@ -2,134 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Windows Server 2025 – Local Policy Factory Baseline Audit</title>
+  <title>Windows Server 2025 – Local Policy Audit</title>
   <style>
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background-color: #f5f6fa;
-      margin: 20px;
-    }
-    h1, h2 {
-      color: #2c3e50;
-    }
-    .meta {
-      margin-bottom: 20px;
-      padding: 10px;
-      background: #ffffff;
-      border-left: 5px solid #3498db;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #ffffff;
-      font-size: 13px;
-    }
-    th, td {
-      border: 1px solid #dcdcdc;
-      padding: 8px;
-      text-align: left;
-      vertical-align: top;
-    }
-    th {
-      background-color: #2c3e50;
-      color: #ffffff;
-    }
-    tr.compliant {
-      background-color: #e8f6ef;
-    }
-    tr.noncompliant {
-      background-color: #fdecea;
-    }
-    tr.error {
-      background-color: #fff4e5;
-    }
-    .status {
-      font-weight: bold;
-    }
-    .ok {
-      color: #1e8449;
-    }
-    .fail {
-      color: #c0392b;
-    }
-    .warn {
-      color: #d35400;
-    }
+    body { font-family: Arial; background: #f5f6fa; margin: 20px; }
+    h1, h2 { color: #2c3e50; }
+    table { width: 100%; border-collapse: collapse; background: white; font-size: 13px; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+    th { background: #2c3e50; color: white; }
+    .ok { background: #e8f6ef; }
+    .fail { background: #fdecea; }
   </style>
 </head>
 
 <body>
 
 <h1>Windows Server 2025</h1>
-<h2>Local User Rights – Factory Baseline Audit</h2>
-
-<div class="meta">
-  <strong>Host:</strong> {{ inventory_hostname }}<br>
-  <strong>Audit Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}<br>
-  <strong>Audit Mode:</strong> Check Mode (Non-Intrusive)<br>
-  <strong>Baseline Type:</strong> Microsoft Factory Defaults
-</div>
+<h2>Local User Rights Audit Report</h2>
 
 <table>
   <thead>
     <tr>
-      <th>Policy Name</th>
-      <th>Display Name</th>
-      <th>Expected (Factory Default)</th>
-      <th>Evaluated Users</th>
+      <th>Policy</th>
+      <th>Description</th>
+      <th>Expected</th>
+      <th>Evaluated</th>
       <th>Status</th>
-      <th>Notes</th>
     </tr>
   </thead>
   <tbody>
-
-  {% for result in audit_results.results %}
-    {% set expected = result.item.value %}
-    {% set evaluated = result.users | join(', ') if result.users is defined else '' %}
-
-    {% if result.failed is defined and result.failed %}
-      {% set row_class = 'error' %}
-    {% elif result.changed %}
-      {% set row_class = 'noncompliant' %}
-    {% else %}
-      {% set row_class = 'compliant' %}
-    {% endif %}
-
-    <tr class="{{ row_class }}">
-      <td>{{ result.item.name }}</td>
-      <td>{{ result.item.display }}</td>
-      <td>{{ expected if expected != '' else 'Not Defined' }}</td>
-      <td>{{ evaluated if evaluated != '' else 'Not Defined' }}</td>
-      <td class="status">
-        {% if result.failed is defined and result.failed %}
-          <span class="warn">ERROR</span>
-        {% elif result.changed %}
-          <span class="fail">NON-COMPLIANT</span>
-        {% else %}
-          <span class="ok">COMPLIANT</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if result.msg is defined %}
-          {{ result.msg }}
-        {% else %}
-          —
-        {% endif %}
-      </td>
+  {% for r in audit_results.results %}
+    <tr class="{{ 'fail' if r.changed else 'ok' }}">
+      <td>{{ r.item.name }}</td>
+      <td>{{ r.item.display }}</td>
+      <td>{{ r.item.value }}</td>
+      <td>{{ r.evaluated if r.evaluated else 'Not Defined' }}</td>
+      <td>{{ 'NON‑COMPLIANT' if r.changed else 'COMPLIANT' }}</td>
     </tr>
   {% endfor %}
-
   </tbody>
 </table>
-
-<br>
-
-<h2>Legend</h2>
-<ul>
-  <li><strong>COMPLIANT</strong> – Current setting matches factory default</li>
-  <li><strong>NON-COMPLIANT</strong> – Deviation detected (check-mode change)</li>
-  <li><strong>ERROR</strong> – Policy could not be evaluated</li>
-</ul>
 
 </body>
 </html>
