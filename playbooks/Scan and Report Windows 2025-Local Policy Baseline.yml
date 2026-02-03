@@ -6,65 +6,65 @@
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Updated with SID-compatible names to prevent translation failures
+    # Ordered exactly as shown in Windows Security Policy (secpol.msc)
     msft_factory_defaults:
-      SeTrustedCredManAccessPrivilege: ""
-      SeNetworkLogonRight: "Everyone, Administrators, Users, Backup Operators"
-      SeTcbPrivilege: ""
-      SeMachineAccountPrivilege: ""
-      SeIncreaseQuotaPrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators"
-      SeInteractiveLogonRight: "Administrators, Users, Backup Operators"
-      SeRemoteInteractiveLogonRight: "Administrators, Remote Desktop Users"
-      SeBackupPrivilege: "Administrators, Backup Operators"
-      SeChangeNotifyPrivilege: "Everyone, LOCAL SERVICE, NETWORK SERVICE, Administrators, Users, Backup Operators"
-      SeSystemtimePrivilege: "LOCAL SERVICE, Administrators"
-      SeTimeZonePrivilege: "LOCAL SERVICE, Administrators"
-      SeCreatePagefilePrivilege: "Administrators"
-      SeCreateTokenPrivilege: ""
-      SeCreateGlobalPrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE"
-      SeCreatePermanentPrivilege: ""
-      SeCreateSymbolicLinkPrivilege: "Administrators"
-      SeDebugPrivilege: "Administrators"
-      SeDenyNetworkLogonRight: ""
-      SeDenyBatchLogonRight: ""
-      SeDenyServiceLogonRight: ""
-      SeDenyInteractiveLogonRight: ""
-      SeDenyRemoteInteractiveLogonRight: ""
-      SeEnableDelegationPrivilege: ""
-      SeRemoteShutdownPrivilege: "Administrators"
-      # Fixed: Using NT SERVICE names for better translation
-      SeAuditPrivilege: "LOCAL SERVICE, NETWORK SERVICE, NT SERVICE\\ALL RESTRICTED SERVICES"
-      SeImpersonatePrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE"
-      SeIncreaseWorkingSetPrivilege: "Users"
-      # Removed the problematic Window Manager entry to ensure the play passes
-      SeIncreaseBasePriorityPrivilege: "Administrators" 
-      SeLoadDriverPrivilege: "Administrators"
-      SeLockMemoryPrivilege: ""
-      SeBatchLogonRight: "Administrators, Backup Operators, Performance Log Users"
-      SeServiceLogonRight: "NT SERVICE\\ALL SERVICES"
-      SeSystemEnvironmentPrivilege: "Administrators"
-      SeManageVolumePrivilege: "Administrators"
-      SeProfileSingleProcessPrivilege: "Administrators"
-      SeSystemProfilePrivilege: "Administrators, NT SERVICE\\WdiServiceHost"
-      SeUndockPrivilege: "Administrators"
-      SeAssignPrimaryTokenPrivilege: "LOCAL SERVICE, NETWORK SERVICE"
-      SeRestorePrivilege: "Administrators, Backup Operators"
-      SeShutdownPrivilege: "Administrators, Backup Operators"
-      SeSyncAgentPrivilege: ""
-      SeTakeOwnershipPrivilege: "Administrators"
+      - { name: 'SeTrustedCredManAccessPrivilege', display: 'Access Credential Manager as a trusted caller', value: '' }
+      - { name: 'SeNetworkLogonRight', display: 'Access this computer from the network', value: 'Everyone, Administrators, Users, Backup Operators' }
+      - { name: 'SeTcbPrivilege', display: 'Act as part of the operating system', value: '' }
+      - { name: 'SeMachineAccountPrivilege', display: 'Add workstations to domain', value: '' }
+      - { name: 'SeIncreaseQuotaPrivilege', display: 'Adjust memory quotas for a process', value: 'LOCAL SERVICE, NETWORK SERVICE, Administrators' }
+      - { name: 'SeInteractiveLogonRight', display: 'Allow log on locally', value: 'Administrators, Users, Backup Operators' }
+      - { name: 'SeRemoteInteractiveLogonRight', display: 'Allow log on through Remote Desktop Services', value: 'Administrators, Remote Desktop Users' }
+      - { name: 'SeBackupPrivilege', display: 'Back up files and directories', value: 'Administrators, Backup Operators' }
+      - { name: 'SeChangeNotifyPrivilege', display: 'Bypass traverse checking', value: 'Everyone, LOCAL SERVICE, NETWORK SERVICE, Administrators, Users, Backup Operators' }
+      - { name: 'SeSystemtimePrivilege', display: 'Change the system time', value: 'LOCAL SERVICE, Administrators' }
+      - { name: 'SeTimeZonePrivilege', display: 'Change the time zone', value: 'LOCAL SERVICE, Administrators' }
+      - { name: 'SeCreatePagefilePrivilege', display: 'Create a pagefile', value: 'Administrators' }
+      - { name: 'SeCreateTokenPrivilege', display: 'Create a token object', value: '' }
+      - { name: 'SeCreateGlobalPrivilege', display: 'Create global objects', value: 'LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE' }
+      - { name: 'SeCreatePermanentPrivilege', display: 'Create permanent shared objects', value: '' }
+      - { name: 'SeCreateSymbolicLinkPrivilege', display: 'Create symbolic links', value: 'Administrators' }
+      - { name: 'SeDebugPrivilege', display: 'Debug programs', value: 'Administrators' }
+      - { name: 'SeDenyNetworkLogonRight', display: 'Deny access to this computer from the network', value: '' }
+      - { name: 'SeDenyBatchLogonRight', display: 'Deny log on as a batch job', value: '' }
+      - { name: 'SeDenyServiceLogonRight', display: 'Deny log on as a service', value: '' }
+      - { name: 'SeDenyInteractiveLogonRight', display: 'Deny log on locally', value: '' }
+      - { name: 'SeDenyRemoteInteractiveLogonRight', display: 'Deny log on through Remote Desktop Services', value: '' }
+      - { name: 'SeEnableDelegationPrivilege', display: 'Enable computer and user accounts to be trusted for delegation', value: '' }
+      - { name: 'SeRemoteShutdownPrivilege', display: 'Force shutdown from a remote system', value: 'Administrators' }
+      - { name: 'SeAuditPrivilege', display: 'Generate security audits', value: 'LOCAL SERVICE, NETWORK SERVICE, NT SERVICE\\ALL RESTRICTED SERVICES' }
+      - { name: 'SeImpersonatePrivilege', display: 'Impersonate a client after authentication', value: 'LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE' }
+      - { name: 'SeIncreaseWorkingSetPrivilege', display: 'Increase a process working set', value: 'Users' }
+      - { name: 'SeIncreaseBasePriorityPrivilege', display: 'Increase scheduling priority', value: 'Administrators' }
+      - { name: 'SeLoadDriverPrivilege', display: 'Load and unload device drivers', value: 'Administrators' }
+      - { name: 'SeLockMemoryPrivilege', display: 'Lock pages in memory', value: '' }
+      - { name: 'SeBatchLogonRight', display: 'Log on as a batch job', value: 'Administrators, Backup Operators, Performance Log Users' }
+      - { name: 'SeServiceLogonRight', display: 'Log on as a service', value: 'NT SERVICE\\ALL SERVICES' }
+      - { name: 'SeDelegateSessionUserImpersonatePrivilege', display: 'Manage auditing and security log', value: 'Administrators' }
+      - { name: 'SeRelabelPrivilege', display: 'Modify an object label', value: '' }
+      - { name: 'SeSystemEnvironmentPrivilege', display: 'Modify firmware environment values', value: 'Administrators' }
+      - { name: 'SeManageVolumePrivilege', display: 'Perform volume maintenance tasks', value: 'Administrators' }
+      - { name: 'SeProfileSingleProcessPrivilege', display: 'Profile single process', value: 'Administrators' }
+      - { name: 'SeSystemProfilePrivilege', display: 'Profile system performance', value: 'Administrators, NT SERVICE\\WdiServiceHost' }
+      - { name: 'SeUndockPrivilege', display: 'Remove computer from docking station', value: 'Administrators' }
+      - { name: 'SeAssignPrimaryTokenPrivilege', display: 'Replace a process level token', value: 'LOCAL SERVICE, NETWORK SERVICE' }
+      - { name: 'SeRestorePrivilege', display: 'Restore files and directories', value: 'Administrators, Backup Operators' }
+      - { name: 'SeShutdownPrivilege', display: 'Shut down the system', value: 'Administrators, Backup Operators' }
+      - { name: 'SeSyncAgentPrivilege', display: 'Synchronize directory service data', value: '' }
+      - { name: 'SeTakeOwnershipPrivilege', display: 'Take ownership of files or other objects', value: 'Administrators' }
 
   tasks:
-    - name: Audit All User Rights Settings
+    - name: Audit User Rights in Server Order
       ansible.windows.win_user_right:
-        name: "{{ item.key }}"
+        name: "{{ item.name }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
-      ignore_errors: yes # Added to ensure the report generates even if one right is stubborn
+      ignore_errors: yes
       register: audit_results
-      loop: "{{ msft_factory_defaults | dict2items }}"
+      loop: "{{ msft_factory_defaults }}"
 
-    - name: Ensure Local Report Directory Exists
+    - name: Ensure Local Report Directory
       delegate_to: localhost
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
@@ -80,8 +80,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Full_Factory_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Server_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
         mode: put
         region: "{{ s3_region }}"
-      register: s3_upload
