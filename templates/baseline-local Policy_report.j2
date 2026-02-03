@@ -1,47 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Windows Server 2025 – Local Policy Audit</title>
-  <style>
-    body { font-family: Arial, Helvetica, sans-serif; background-color: #f5f6fa; margin: 20px; }
-    h1, h2 { color: #2c3e50; }
-    table { width: 100%; border-collapse: collapse; background-color: #ffffff; font-size: 13px; }
-    th, td { border: 1px solid #dcdcdc; padding: 8px; text-align: left; }
-    th { background-color: #2c3e50; color: #ffffff; }
-    .ok { background-color: #e8f6ef; }
-    .fail { background-color: #fdecea; }
-  </style>
-</head>
+[Unicode]
+Unicode=yes
+[Privilege Rights]
+; Windows Server 2025 Factory Defaults derived from Audit Report
+SeTrustedCredmanAccessPrivilege = 
+SeNetworkLogonRight = *S-1-1-0,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
+SeTcbPrivilege = 
+SeMachineAccountPrivilege = 
+SeIncreaseQuotaPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544
+SeInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
+SeRemoteInteractiveLogonRight = *S-1-5-32-544,*S-1-5-32-555
+SeBackupPrivilege = *S-1-5-32-544,*S-1-5-32-549
+SeChangeNotifyPrivilege = *S-1-1-0,*S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-32-545,*S-1-5-32-549
+SeSystemtimePrivilege = *S-1-5-19,*S-1-5-32-544
+SeTimeZonePrivilege = *S-1-5-19,*S-1-5-32-544
+SeCreatePagefilePrivilege = *S-1-5-32-544
+SeCreateTokenPrivilege = 
+SeCreateGlobalPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-6
+SeCreatePermanentPrivilege = 
+SeCreateSymbolicLinkPrivilege = *S-1-5-32-544
+SeDebugPrivilege = *S-1-5-32-544
+SeDenyNetworkLogonRight = 
+SeDenyBatchLogonRight = 
+SeDenyServiceLogonRight = 
+SeDenyInteractiveLogonRight = 
+SeDenyRemoteInteractiveLogonRight = 
+SeEnableDelegationPrivilege = 
+SeRemoteShutdownPrivilege = *S-1-5-32-544
+; SIDs for ALL RESTRICTED SERVICES and PrintSpooler to fix translation errors
+SeAuditPrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-90-0,*S-1-5-80-3411470216-1603504387-347514330-227091484-2577457793
+SeImpersonatePrivilege = *S-1-5-19,*S-1-5-20,*S-1-5-32-544,*S-1-5-6,*S-1-5-90-0
+SeIncreaseWorkingSetPrivilege = *S-1-5-32-545
+SeIncreaseSchedulingPriorityPrivilege = *S-1-5-32-544,*S-1-5-90-0
+SeLoadDriverPrivilege = *S-1-5-32-544
+SeLockMemoryPrivilege = 
+SeBatchLogonRight = *S-1-5-32-544,*S-1-5-32-549,*S-1-5-32-558
+SeServiceLogonRight = *S-1-5-80-0,*S-1-5-90-0
+SeManageVolumePrivilege = *S-1-5-32-544
+SeProfileSingleProcessPrivilege = *S-1-5-32-544
+SeSystemProfilePrivilege = *S-1-5-32-544,*S-1-5-80-3139157870-2983391045-3678747466-658725712-1809340420
+SeSystemEnvironmentPrivilege = *S-1-5-32-544
+SeUndockPrivilege = *S-1-5-32-544
+SeAssignPrimaryTokenPrivilege = *S-1-5-19,*S-1-5-20
+SeRestorePrivilege = *S-1-5-32-544,*S-1-5-32-549
+SeShutdownPrivilege = *S-1-5-32-544,*S-1-5-32-549
+SeSyncAgentPrivilege = 
+SeTakeOwnershipPrivilege = *S-1-5-32-544
 
-<body>
-
-<h1>Windows Server 2025</h1>
-<h2>Local User Rights – Factory Baseline Audit</h2>
-
-<table>
-  <thead>
-    <tr>
-      <th>Policy</th>
-      <th>Description</th>
-      <th>Expected</th>
-      <th>Evaluated</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for r in audit_results.results %}
-    <tr class="{{ 'fail' if r.changed else 'ok' }}">
-      <td>{{ r.name }}</td>
-      <td>{{ r.display }}</td>
-      <td>{{ r.value }}</td>
-      <td>{{ r.evaluated if r.evaluated else 'Not Defined' }}</td>
-      <td>{{ 'NON-COMPLIANT' if r.changed else 'COMPLIANT' }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-</body>
-</html>
-``
+[Version]
+signature="$CHICAGO$"
+Revision=1
