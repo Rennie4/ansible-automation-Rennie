@@ -1,29 +1,45 @@
 ---
-- name: Scan and Report Windows 2025 Local Policy Baseline
+- name: Scan Windows 2025 and Upload Report to S3
   hosts: windows_server_2025
-  gather_facts: no
+  gather_facts: yes
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files"
+    aws_region: "eu-west-1"
+
   tasks:
-    - name: Create transient directory for policy processing
-      ansible.windows.win_file:
-        path: C:\temp\baseline_audit
-        state: directory
-
-    - name: Deploy default baseline template
-      ansible.builtin.template:
-        src: windows_2025_defaults.inf.j2
-        dest: C:\temp\baseline_audit\defaults.inf
-
-    - name: Apply defaults using secedit
+    - name: Export Current User Rights Assignment
       ansible.windows.win_shell: |
-        # Use /configure to enforce the defaults from the .inf file
-        secedit /configure /db C:\temp\baseline_audit\temp.sdb /cfg C:\temp\baseline_audit\defaults.inf /areas USER_RIGHTS
-      register: secedit_result
+        secedit /export /areas USER_RIGHTS /cfg C:\temp\audit_scan.inf
+        Get-Content C:\temp\audit_scan.inf | Select-String -Pattern "^Se"
+      register: policy_scan
 
-    - name: Cleanup temporary audit files
-      ansible.windows.win_file:
-        path: C:\temp\baseline_audit
-        state: absent
+    - name: Generate HTML Report locally
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: windows_audit_report.html.j2
+        dest: "/tmp/Audit_{{ inventory_hostname }}.html"
 
-    - name: Execution Summary
+    - name: Upload Audit Report to S3 Bucket
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Audit_{{ inventory_hostname }}_{{ ansible_date_time.epoch }}.html"
+        src: "/tmp/Audit_{{ inventory_hostname }}.html"
+        mode: put
+        region: "{{ aws_region }}"
+      register: s3_upload
+
+    - name: Cleanup Remote and Local Temporary Files
+      block:
+        - ansible.windows.win_file:
+            path: C:\temp\audit_scan.inf
+            state: absent
+        - delegate_to: localhost
+          ansible.builtin.file:
+            path: "/tmp/Audit_{{ inventory_hostname }}.html"
+            state: absent
+
+    - name: Output S3 Link
       debug:
-        msg: "The Windows 2025 host has been reset to its out-of-the-box defaults as per the audit report."
+        msg: "Report successfully uploaded to: https://{{ s3_bucket }}.s3.{{ aws_region }}.amazonaws.com/{{ s3_path }}/"
