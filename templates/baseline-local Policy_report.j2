@@ -1,44 +1,52 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Audit Report - {{ inventory_hostname }}</title>
+    <meta charset="UTF-8">
+    <title>Windows Server 2025: Local Policy Baseline</title>
     <style>
-        body { font-family: Segoe UI, Tahoma, sans-serif; margin: 30px; }
-        .header { background-color: #004a99; color: white; padding: 15px; border-radius: 5px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ccc; padding: 12px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .pass { color: #28a745; font-weight: bold; }
-        .fail { color: #dc3545; font-weight: bold; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #333; }
+        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
+        .header { border-bottom: 4px solid #2c3e50; margin-bottom: 30px; padding-bottom: 10px; }
+        h2 { color: #2c3e50; background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background-color: #34495e; color: white; padding: 12px; text-align: left; width: 65%; font-size: 0.85em; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
+        .val-highlight { font-weight: bold; }
+        .status-pass { color: #27ae60; }
+        .status-fail { color: #e74c3c; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Windows Server 2025 Local Policy Audit</h1>
-        <p>Host: {{ inventory_hostname }} | Date: {{ ansible_date_time.iso8601 }}</p>
-    </div>
+    <div class="container">
+        <div class="header">
+            <h1>Local Policy Baseline: User Rights</h1>
+            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+            <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+        </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Policy Setting (User Right)</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in audit_results.results %}
-            <tr>
-                <td>{{ item.item }}</td>
-                <td>
-                    {% if item.changed == false %}
-                    <span class="pass">Compliant</span>
-                    {% else %}
-                    <span class="fail">Non-Compliant</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+        <h2>1. User Rights Assignment (CIS Section 2.2)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Policy Setting Name</th>
+                    <th>Audit Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in audit_results.results %}
+                <tr>
+                    <td>{{ item.item }}</td>
+                    <td class="val-highlight">
+                        {% if item.changed == false %}
+                        <span class="status-pass">COMPLIANT</span>
+                        {% else %}
+                        <span class="status-fail">NON-COMPLIANT</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </body>
 </html>
