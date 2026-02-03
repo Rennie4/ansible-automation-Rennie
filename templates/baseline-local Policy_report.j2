@@ -1,36 +1,135 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <style>
-        table { font-family: Arial, sans-serif; border-collapse: collapse; width: 100%; }
-        td, th { border: 1px solid #dddddd; text-align: left; padding: 8px; }
-        .match { color: green; }
-        .error { color: red; font-weight: bold; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Windows Server 2025 – Local Policy Factory Baseline Audit</title>
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: #f5f6fa;
+      margin: 20px;
+    }
+    h1, h2 {
+      color: #2c3e50;
+    }
+    .meta {
+      margin-bottom: 20px;
+      padding: 10px;
+      background: #ffffff;
+      border-left: 5px solid #3498db;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #dcdcdc;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #2c3e50;
+      color: #ffffff;
+    }
+    tr.compliant {
+      background-color: #e8f6ef;
+    }
+    tr.noncompliant {
+      background-color: #fdecea;
+    }
+    tr.error {
+      background-color: #fff4e5;
+    }
+    .status {
+      font-weight: bold;
+    }
+    .ok {
+      color: #1e8449;
+    }
+    .fail {
+      color: #c0392b;
+    }
+    .warn {
+      color: #d35400;
+    }
+  </style>
 </head>
+
 <body>
-<h2>Windows Server 2025 Local Policy Baseline Audit</h2>
+
+<h1>Windows Server 2025</h1>
+<h2>Local User Rights – Factory Baseline Audit</h2>
+
+<div class="meta">
+  <strong>Host:</strong> {{ inventory_hostname }}<br>
+  <strong>Audit Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}<br>
+  <strong>Audit Mode:</strong> Check Mode (Non-Intrusive)<br>
+  <strong>Baseline Type:</strong> Microsoft Factory Defaults
+</div>
+
 <table>
-  <tr>
-    <th>Policy Setting Name</th>
-    <th>Standard Shipped Default</th>
-    <th>Audit Status</th>
-  </tr>
+  <thead>
+    <tr>
+      <th>Policy Name</th>
+      <th>Display Name</th>
+      <th>Expected (Factory Default)</th>
+      <th>Evaluated Users</th>
+      <th>Status</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+
   {% for result in audit_results.results %}
-  <tr>
-    <td>{{ result.item.display }}</td>
-    <td>{{ result.item.value if result.item.value != '' else 'No One (Empty)' }}</td>
-    <td>
-      {% if result.failed and 'Failed to translate' in (result.msg | default('')) %}
-        <span class="error">✖ TRANSLATION ERROR</span>
-      {% elif result.failed %}
-        <span class="error">✖ AUDIT FAILURE</span>
-      {% else %}
-        <span class="match">✔ MATCHES DEFAULT</span>
-      {% endif %}
-    </td>
-  </tr>
+    {% set expected = result.item.value %}
+    {% set evaluated = result.users | join(', ') if result.users is defined else '' %}
+
+    {% if result.failed is defined and result.failed %}
+      {% set row_class = 'error' %}
+    {% elif result.changed %}
+      {% set row_class = 'noncompliant' %}
+    {% else %}
+      {% set row_class = 'compliant' %}
+    {% endif %}
+
+    <tr class="{{ row_class }}">
+      <td>{{ result.item.name }}</td>
+      <td>{{ result.item.display }}</td>
+      <td>{{ expected if expected != '' else 'Not Defined' }}</td>
+      <td>{{ evaluated if evaluated != '' else 'Not Defined' }}</td>
+      <td class="status">
+        {% if result.failed is defined and result.failed %}
+          <span class="warn">ERROR</span>
+        {% elif result.changed %}
+          <span class="fail">NON-COMPLIANT</span>
+        {% else %}
+          <span class="ok">COMPLIANT</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if result.msg is defined %}
+          {{ result.msg }}
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
   {% endfor %}
+
+  </tbody>
 </table>
+
+<br>
+
+<h2>Legend</h2>
+<ul>
+  <li><strong>COMPLIANT</strong> – Current setting matches factory default</li>
+  <li><strong>NON-COMPLIANT</strong> – Deviation detected (check-mode change)</li>
+  <li><strong>ERROR</strong> – Policy could not be evaluated</li>
+</ul>
+
 </body>
 </html>
