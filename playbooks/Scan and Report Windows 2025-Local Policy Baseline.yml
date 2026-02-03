@@ -1,27 +1,58 @@
 ---
-- name: Windows Server 2025 Local Policy Baseline - Factory Shipped Defaults
+- name: Windows Server 2025 Local Policy Baseline - Full Factory Audit
   hosts: windows_server_2025
   gather_facts: yes
   vars:
-    # Environment-agnostic variables
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # TRUE Microsoft "Out of the Box" Defaults for Server 2025
-    # These match a clean installation before any hardening occurs.
+    # Complete list of all 39 User Rights Assignment settings from your secpol.msc
     msft_factory_defaults:
+      SeTrustedCredManAccessPrivilege: ""
       SeNetworkLogonRight: "Everyone, Administrators, Users, Backup Operators"
-      SeTrustedCredManAccessPrivilege: ""  # Default: No One
+      SeTcbPrivilege: ""
+      SeMachineAccountPrivilege: ""
+      SeIncreaseQuotaPrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators"
+      SeInteractiveLogonRight: "Administrators, Users, Backup Operators"
+      SeRemoteInteractiveLogonRight: "Administrators, Remote Desktop Users"
       SeBackupPrivilege: "Administrators, Backup Operators"
-      SeRestorePrivilege: "Administrators, Backup Operators"
+      SeChangeNotifyPrivilege: "Everyone, LOCAL SERVICE, NETWORK SERVICE, Administrators, Users, Backup Operators"
+      SeSystemtimePrivilege: "LOCAL SERVICE, Administrators"
+      SeTimeZonePrivilege: "LOCAL SERVICE, Administrators"
+      SeCreatePagefilePrivilege: "Administrators"
+      SeCreateTokenPrivilege: ""
+      SeCreateGlobalPrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE"
+      SeCreatePermanentPrivilege: ""
+      SeCreateSymbolicLinkPrivilege: "Administrators"
       SeDebugPrivilege: "Administrators"
+      SeDenyNetworkLogonRight: ""
+      SeDenyBatchLogonRight: ""
+      SeDenyServiceLogonRight: ""
+      SeDenyInteractiveLogonRight: ""
+      SeDenyRemoteInteractiveLogonRight: ""
+      SeEnableDelegationPrivilege: ""
       SeRemoteShutdownPrivilege: "Administrators"
-      SeServiceLogonRight: ""
-      SeIncreaseQuotaPrivilege: "Administrators, Local Service, Network Service"
-      SeInteractiveLogonRight: "Administrators, Users"
+      SeAuditPrivilege: "LOCAL SERVICE, NETWORK SERVICE, RESTRICTED SERVICES, PrintSpoolerService"
+      SeImpersonatePrivilege: "LOCAL SERVICE, NETWORK SERVICE, Administrators, SERVICE, RESTRICTED SERVICES"
+      SeIncreaseWorkingSetPrivilege: "Users"
+      SeIncreaseSchedulingPriorityPrivilege: "Administrators, Window Manager\\Window Manager Group"
+      SeLoadDriverPrivilege: "Administrators"
+      SeLockMemoryPrivilege: ""
+      SeBatchLogonRight: "Administrators, Backup Operators, Performance Log Users"
+      SeServiceLogonRight: "NT SERVICE\\ALL SERVICES, RESTRICTED SERVICES\\ALL RESTRICTED SERVICES"
+      SeSystemEnvironmentPrivilege: "Administrators"
+      SeManageVolumePrivilege: "Administrators"
+      SeProfileSingleProcessPrivilege: "Administrators"
+      SeSystemProfilePrivilege: "Administrators, NT SERVICE\\WdiServiceHost"
+      SeUndockPrivilege: "Administrators"
+      SeAssignPrimaryTokenPrivilege: "LOCAL SERVICE, NETWORK SERVICE"
+      SeRestorePrivilege: "Administrators, Backup Operators"
+      SeShutdownPrivilege: "Administrators, Backup Operators"
+      SeSyncAgentPrivilege: ""
+      SeTakeOwnershipPrivilege: "Administrators"
 
   tasks:
-    - name: Audit Against Microsoft Factory Shipped Defaults
+    - name: Audit All 39 User Rights Settings
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
@@ -40,18 +71,14 @@
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
-        dest: "{{ playbook_dir }}/reports/local_policy_baseline.html"
+        dest: "{{ playbook_dir }}/reports/full_local_policy_report.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_Fresh_Install_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/local_policy_baseline.html"
+        object: "cis-baseline-files/Full_Factory_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/full_local_policy_report.html"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The Fresh Install report link is: {{ s3_upload.url }}"
