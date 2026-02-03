@@ -85,6 +85,5 @@
       register: s3_upload
 
     - name: Final S3 link
-      debug:
+      ansible.builtin.debug:
         msg: "Report is here: {{ s3_upload.url }}"
-``
