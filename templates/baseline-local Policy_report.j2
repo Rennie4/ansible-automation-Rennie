@@ -6,13 +6,13 @@
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
         .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-        .header { border-bottom: 4px solid #b33939; margin-bottom: 30px; padding-bottom: 10px; }
+        .header { border-bottom: 4px solid #0078d4; margin-bottom: 30px; padding-bottom: 10px; }
         h2 { color: #2c3e50; background: #fdfdfd; padding: 10px; border: 1px solid #eee; border-radius: 4px; margin-top: 30px; font-size: 1.1em; text-transform: uppercase; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #2c3e50; color: white; padding: 12px; text-align: left; width: 60%; font-size: 0.85em; }
+        th { background-color: #0078d4; color: white; padding: 12px; text-align: left; width: 60%; font-size: 0.85em; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 0.95em; }
         .match { color: #27ae60; font-weight: bold; }
-        .modified { color: #f39c12; font-weight: bold; }
+        .modified { color: #e67e22; font-weight: bold; }
         .val-highlight { font-weight: bold; color: #2980b9; }
     </style>
 </head>
@@ -20,8 +20,8 @@
     <div class="container">
         <div class="header">
             <h1>Windows Server 2025 Factory Default Audit</h1>
-            <p><strong>Audit Scope:</strong> Verifying "Out of the Box" settings against actual server state.</p>
-            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+            <p><strong>Goal:</strong> Comparing actual server state against "Out of the Box" Microsoft settings.</p>
+            <p><strong>Host:</strong> {{ inventory_hostname }}</p>
         </div>
 
         <h2>User Rights Assignment (Section 2.2)</h2>
@@ -29,7 +29,7 @@
             <thead>
                 <tr>
                     <th>Policy Setting Name</th>
-                    <th>Microsoft Factory Default</th>
+                    <th>Standard Shipped Default</th>
                     <th>Audit Status</th>
                 </tr>
             </thead>
