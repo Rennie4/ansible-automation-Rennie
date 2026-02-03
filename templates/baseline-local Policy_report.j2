@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Windows Server 2025: Factory State Audit</title>
+    <title>Windows Server 2025: Fresh Install Baseline</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
         .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
@@ -19,18 +19,18 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Windows Server 2025 Factory Default Audit</h1>
-            <p><strong>Goal:</strong> Comparing actual server state against "Out of the Box" Microsoft settings.</p>
-            <p><strong>Host:</strong> {{ inventory_hostname }}</p>
+            <h1>Windows Server 2025: Fresh Install Baseline</h1>
+            <p><strong>Goal:</strong> Verifying against "Out of the Box" Microsoft defaults.</p>
+            <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
         </div>
 
-        <h2>User Rights Assignment (Section 2.2)</h2>
+        <h2>User Rights Assignment (Microsoft Shipped Defaults)</h2>
         <table>
             <thead>
                 <tr>
                     <th>Policy Setting Name</th>
                     <th>Standard Shipped Default</th>
-                    <th>Audit Status</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -42,13 +42,13 @@
                         {% if result.changed == false %}
                         <span class="match">✔ MATCHES DEFAULT</span>
                         {% else %}
-                        <span class="modified">⚠ MODIFIED / HARDENED</span>
+                        <span class="modified">⚠ MODIFIED</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
-        </table>
+        <tbody>
     </div>
 </body>
 </html>
