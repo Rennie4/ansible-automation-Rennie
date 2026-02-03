@@ -3,28 +3,27 @@
   hosts: windows_server_2025
   gather_facts: yes
   vars:
+    # Environment-agnostic variables
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     
-    # Standard Microsoft "Out of the Box" Defaults for Windows Server 2025
+    # TRUE Microsoft "Out of the Box" Defaults for Server 2025
+    # These match a clean installation before any hardening occurs.
     msft_factory_defaults:
-      SeTrustedCredManAccessPrivilege: ""  # Access Credential Manager as a trusted caller
-      SeNetworkLogonRight: "Administrators, Authenticated Users, Everyone"
-      SeBackupPrivilege: "Administrators"
-      SeCreatePagefilePrivilege: "Administrators"
+      SeNetworkLogonRight: "Everyone, Administrators, Users, Backup Operators"
+      SeTrustedCredManAccessPrivilege: ""  # Default: No One
+      SeBackupPrivilege: "Administrators, Backup Operators"
+      SeRestorePrivilege: "Administrators, Backup Operators"
       SeDebugPrivilege: "Administrators"
       SeRemoteShutdownPrivilege: "Administrators"
       SeServiceLogonRight: ""
       SeIncreaseQuotaPrivilege: "Administrators, Local Service, Network Service"
       SeInteractiveLogonRight: "Administrators, Users"
-      SeSystemtimePrivilege: "Administrators, Local Service"
-      SeTimeZonePrivilege: "Administrators, Local Service, Users"
 
   tasks:
     - name: Audit Against Microsoft Factory Shipped Defaults
       ansible.windows.win_user_right:
         name: "{{ item.key }}"
-        # Logic to handle "No One" (Empty List)
         users: "{{ [] if item.value == '' else item.value.split(', ') }}"
         action: add
       check_mode: yes
@@ -47,7 +46,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Local_Policy_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "cis-baseline-files/Local_Policy_Fresh_Install_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/local_policy_baseline.html"
         mode: put
         region: "{{ s3_region }}"
@@ -55,4 +54,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The Factory Default report link is: {{ s3_upload.url }}"
+        msg: "The Fresh Install report link is: {{ s3_upload.url }}"
