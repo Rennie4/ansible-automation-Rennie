@@ -1,27 +1,60 @@
 ---
 - name: Scan Windows 2025 and Upload Report to S3
-  # Changed from target_hosts to all to work with the Limit field
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # Dictionary to fix the "TRANSLATION ERROR" items
+    sid_map:
+      "SeNetworkLogonRight": "Access this computer from the network"
+      "SeBackupPrivilege": "Back up files and directories"
+      "SeChangeNotifyPrivilege": "Bypass traverse checking"
+      "SeSystemtimePrivilege": "Change the system time"
+      "SeCreatePagefilePrivilege": "Create a pagefile"
+      "SeDebugPrivilege": "Debug programs"
+      "SeRemoteShutdownPrivilege": "Force shutdown from a remote system"
+      "SeAuditPrivilege": "Generate security audits"
+      "SeIncreaseQuotaPrivilege": "Adjust memory quotas for a process"
+      "SeIncreaseBasePriorityPrivilege": "Increase scheduling priority"
+      "SeLoadDriverPrivilege": "Load and unload device drivers"
+      "SeBatchLogonRight": "Log on as a batch job"
+      "SeServiceLogonRight": "Log on as a service"
+      "SeInteractiveLogonRight": "Allow log on locally"
+      "SeSecurityPrivilege": "Manage auditing and security log"
+      "SeSystemEnvironmentPrivilege": "Modify firmware environment values"
+      "SeProfileSingleProcessPrivilege": "Profile single process"
+      "SeSystemProfilePrivilege": "Profile system performance"
+      "SeAssignPrimaryTokenPrivilege": "Replace a process level token"
+      "SeRestorePrivilege": "Restore files and directories"
+      "SeShutdownPrivilege": "Shut down the system"
+      "SeTakeOwnershipPrivilege": "Take ownership of files or other objects"
+      "SeUndockPrivilege": "Remove computer from docking station"
+      "SeManageVolumePrivilege": "Perform volume maintenance tasks"
+      "SeRemoteInteractiveLogonRight": "Allow log on through Remote Desktop Services"
+      "SeImpersonatePrivilege": "Impersonate a client after authentication"
+      "SeCreateGlobalPrivilege": "Create global objects"
+      "SeIncreaseWorkingSetPrivilege": "Increase a process working set"
+      "SeTimeZonePrivilege": "Change the time zone"
+      "SeCreateSymbolicLinkPrivilege": "Create symbolic links"
+      "SeDelegateSessionUserImpersonatePrivilege": "Obtain an impersonation token for another user"
 
   tasks:
-    - name: Ensure temp directory exists for policy export
-      ansible.windows.win_file:
-        path: C:\temp
-        state: directory
-
     - name: Export Current User Rights Assignment
       ansible.windows.win_shell: |
         $configFile = "C:\temp\audit_scan.inf"
         secedit /export /areas USER_RIGHTS /cfg $configFile
         if (Test-Path $configFile) {
-            Get-Content $configFile | Select-String -Pattern "^Se"
+            Get-Content $configFile | Select-String -Pattern "^Se" | ForEach-Object {
+                $parts = $_.ToString().Split('=')
+                [PSCustomObject]@{
+                    Key = $parts[0].Trim()
+                    Value = $parts[1].Trim()
+                }
+            } | ConvertTo-Json
         }
-      register: policy_scan
+      register: policy_scan_raw
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -32,9 +65,11 @@
     - name: Generate HTML Report from Template
       delegate_to: localhost
       ansible.builtin.template:
-        # Uses the working pathing logic from your Account Policy playbook
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
+      vars:
+        # Convert raw JSON to a list of objects for the template
+        policy_data: "{{ policy_scan_raw.stdout | from_json }}"
 
     - name: Upload Audit Report to S3 Bucket
       delegate_to: localhost
@@ -48,9 +83,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The Local Policy baseline report link is: {{ s3_upload.url }}"
-
-    - name: Cleanup temporary remote policy file
-      ansible.windows.win_file:
-        path: C:\temp\audit_scan.inf
-        state: absent
+        msg: "The Corrected Local Policy report link is: {{ s3_upload.url }}"
