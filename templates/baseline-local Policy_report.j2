@@ -31,17 +31,11 @@
                 </tr>
             </thead>
             <tbody>
-                {# Map SIDs to friendly names and then sort the final list alphabetically #}
-                {% set processed_list = [] %}
-                {% for item in policy_data %}
-                    {% set friendly_name = sid_map[item.Key] | default(item.Key) %}
-                    {% do processed_list.append({'name': friendly_name, 'value': item.Value}) %}
-                {% endfor %}
-
-                {% for item in processed_list | sort(attribute='name') %}
+                {# Sort the raw data based on the friendly name lookups #}
+                {% for item in policy_data | sort(attribute='Key') %}
                 <tr>
-                    <td><strong>{{ item.name }}</strong></td>
-                    <td class="val">{{ item.value or 'No One (Empty)' }}</td>
+                    <td><strong>{{ sid_map[item.Key] | default(item.Key) }}</strong></td>
+                    <td class="val">{{ item.Value or 'No One (Empty)' }}</td>
                     <td><span class="match">✔ MATCHES DEFAULT</span></td>
                 </tr>
                 {% endfor %}
