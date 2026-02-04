@@ -31,11 +31,18 @@
                 </tr>
             </thead>
             <tbody>
-                {# Sort by Key to provide an organized, alphabetical-style list #}
-                {% for item in policy_data | sort(attribute='Key') %}
+                {# First, prepare the list with friendly names #}
+                {% set final_display_list = [] %}
+                {% for item in policy_list %}
+                    {% set name = sid_map[item.key] | default(item.key) %}
+                    {% set _ = final_display_list.append({'name': name, 'val': item.value}) %}
+                {% endfor %}
+
+                {# Then, sort alphabetically by the friendly name #}
+                {% for entry in final_display_list | sort(attribute='name') %}
                 <tr>
-                    <td><strong>{{ sid_map[item.Key] | default(item.Key) }}</strong></td>
-                    <td class="val">{{ item.Value or 'No One (Empty)' }}</td>
+                    <td><strong>{{ entry.name }}</strong></td>
+                    <td class="val">{{ entry.val or 'No One (Empty)' }}</td>
                     <td><span class="match">✔ MATCHES DEFAULT</span></td>
                 </tr>
                 {% endfor %}
