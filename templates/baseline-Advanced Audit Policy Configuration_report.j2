@@ -12,7 +12,6 @@
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: #fff; border: 1px solid #ddd; }
         th { background-color: #0078d4; color: white; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; }
         td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; border-right: 1px solid #eee; }
-        .match { color: #27ae60; font-weight: bold; }
         .val { font-family: 'Consolas', monospace; color: #005a9e; }
         tr:nth-child(even) { background-color: #fafafa; }
     </style>
@@ -24,10 +23,10 @@
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
 
-        {% if scan_results | length > 0 %}
+        {% if scan_results is defined and scan_results | length > 0 %}
             {% set categories = scan_results | groupby('Category') %}
             {% for category, items in categories | sort %}
-            <h2>{{ category or 'Uncategorized' }}</h2>
+            <h2>{{ category }}</h2>
             <table>
                 <thead>
                     <tr>
@@ -39,8 +38,8 @@
                 <tbody>
                     {% for item in items | sort(attribute='Subcategory') %}
                     <tr>
-                        <td><strong>{{ item.Subcategory or 'Unknown' }}</strong></td>
-                        <td class="val">{{ item.Setting or 'Not Configured' }}</td>
+                        <td><strong>{{ item.Subcategory }}</strong></td>
+                        <td class="val">{{ item.Setting }}</td>
                         <td class="val">Not Configured</td>
                     </tr>
                     {% endfor %}
@@ -48,7 +47,9 @@
             </table>
             {% endfor %}
         {% else %}
-            <p style="color: red; font-weight: bold; font-size: 18px;">Error: No data received from server scan. Check auditpol output.</p>
+            <div style="padding: 20px; background: #fff5f5; border: 1px solid #feb2b2; color: #c53030;">
+                <strong>No Audit Data Found:</strong> The scan returned an empty result set. Please check if Advanced Auditing is enabled on the host.
+            </div>
         {% endif %}
     </div>
 </body>
