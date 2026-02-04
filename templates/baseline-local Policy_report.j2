@@ -36,7 +36,16 @@
                     {% set parts = line.split('|') %}
                     {% if parts | length > 1 %}
                         {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
-                        {% set _ = display_items.append({'name': friendly_name, 'value': parts[1]}) %}
+                        
+                        {# SID Translation Logic #}
+                        {% set raw_sids = parts[1].split(',') %}
+                        {% set translated_sids = [] %}
+                        {% for sid in raw_sids %}
+                            {% set clean_sid = sid.strip() %}
+                            {% set _ = translated_sids.append(sid_lookup[clean_sid] | default(clean_sid)) %}
+                        {% endfor %}
+                        
+                        {% set _ = display_items.append({'name': friendly_name, 'value': translated_sids | join(', ')}) %}
                     {% endif %}
                 {% endfor %}
 
