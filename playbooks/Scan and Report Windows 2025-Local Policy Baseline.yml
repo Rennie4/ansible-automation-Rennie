@@ -6,6 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # Map for Policy Names
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -38,6 +39,21 @@
       "SeTimeZonePrivilege": "Change the time zone"
       "SeCreateSymbolicLinkPrivilege": "Create symbolic links"
       "SeDelegateSessionUserImpersonatePrivilege": "Obtain an impersonation token for another user"
+    
+    # Map for the Values (SID to Friendly Name)
+    sid_lookup:
+      "*S-1-1-0": "Everyone"
+      "*S-1-5-32-544": "Administrators"
+      "*S-1-5-32-545": "Users"
+      "*S-1-5-32-551": "Backup Operators"
+      "*S-1-5-19": "LOCAL SERVICE"
+      "*S-1-5-20": "NETWORK SERVICE"
+      "*S-1-5-32-555": "Remote Desktop Users"
+      "*S-1-5-6": "SERVICE"
+      "*S-1-5-90-0": "Window Manager\\Window Manager Group"
+      "*S-1-5-32-559": "Performance Log Users"
+      "*S-1-5-80-0": "NT SERVICE\\ALL SERVICES"
+      "NT SERVICE\\ALL RESTRICTED SERVICES": "NT SERVICE\\ALL RESTRICTED SERVICES"
 
   tasks:
     - name: Export Current User Rights Assignment
@@ -47,7 +63,9 @@
         if (Test-Path $configFile) {
             Get-Content $configFile | Where-Object { $_ -match '^Se.*=.*' } | ForEach-Object {
                 $parts = $_.ToString().Split('=')
-                Write-Output ($parts[0].Trim() + "|" + $parts[1].Trim())
+                $key = $parts[0].Trim()
+                $val = $parts[1].Trim()
+                Write-Output "$key|$val"
             }
         }
       register: policy_scan_raw
@@ -76,4 +94,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
+        msg: "The fully translated baseline report link is: {{ s3_upload.url }}"
