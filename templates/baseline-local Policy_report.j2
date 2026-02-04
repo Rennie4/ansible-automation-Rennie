@@ -31,7 +31,7 @@
                 </tr>
             </thead>
             <tbody>
-                {# Sort the raw data based on the friendly name lookups #}
+                {# Sort by Key to provide an organized, alphabetical-style list #}
                 {% for item in policy_data | sort(attribute='Key') %}
                 <tr>
                     <td><strong>{{ sid_map[item.Key] | default(item.Key) }}</strong></td>
