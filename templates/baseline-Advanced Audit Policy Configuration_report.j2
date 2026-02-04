@@ -24,6 +24,7 @@
         </div>
 
         {% if scan_results | length > 0 %}
+            {# Grouping by Category replicates the Windows GPEdit folder structure #}
             {% for category, items in scan_results | groupby('Category') %}
             <h2>{{ category }}</h2>
             <table>
@@ -47,7 +48,7 @@
             {% endfor %}
         {% else %}
             <div style="background: #fee2e2; border: 1px solid #ef4444; padding: 20px; color: #b91c1c;">
-                <strong>Warning:</strong> No audit settings were found. Verify that the Ansible user has high-integrity Administrative elevation.
+                <strong>Warning:</strong> No audit data retrieved. Ensure 'Privilege escalation' is enabled in the AWX Job Template.
             </div>
         {% endif %}
     </div>
