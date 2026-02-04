@@ -2,9 +2,10 @@
 - name: Scan Windows 2025 Advanced Audit Policy Configuration Baseline
   hosts: all
   gather_facts: yes
-  # This 'become' line is required to see the Audit Policy data
+  # Enable elevation to see the Audit Policy data
   become: yes
   become_method: runas
+  become_user: "{{ ansible_user }}"
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
@@ -34,6 +35,7 @@
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
+        mode: '0755'
 
     - name: Generate Grouped Advanced Audit Report
       delegate_to: localhost
@@ -41,6 +43,7 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
+        # Prevent JSON errors if the scan returns empty
         scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
@@ -51,3 +54,8 @@
         src: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
