@@ -6,7 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Mapping SIDs to friendly names for the report
+    # Mapping for friendly names to avoid "TRANSLATION ERROR"
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -46,13 +46,15 @@
         $configFile = "C:\temp\audit_scan.inf"
         secedit /export /areas USER_RIGHTS /cfg $configFile
         if (Test-Path $configFile) {
+            $results = @()
             Get-Content $configFile | Select-String -Pattern "^Se" | ForEach-Object {
                 $parts = $_.ToString().Split('=')
-                [PSCustomObject]@{
+                $results += [PSCustomObject]@{
                     Key = $parts[0].Trim()
                     Value = $parts[1].Trim()
                 }
-            } | ConvertTo-Json
+            }
+            $results | ConvertTo-Json
         }
       register: policy_scan_raw
 
