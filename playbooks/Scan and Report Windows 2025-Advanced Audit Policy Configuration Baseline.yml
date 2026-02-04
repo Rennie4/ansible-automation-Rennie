@@ -10,20 +10,30 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        $results = @()
-        # Use auditpol /r to get CSV output
-        $raw = auditpol /get /category:* /r
-        $data = $raw | ConvertFrom-Csv | Where-Object { $_.Category -ne $null }
-        
-        foreach ($line in $data) {
-            $results += [PSCustomObject]@{
-                Category    = [string]$line.Category.Trim()
-                Subcategory = [string]$line.Subcategory.Trim()
-                # Map 'No Auditing' to 'Not Configured' per screenshot
-                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { [string]$line.Setting.Trim() }
+        # Use a Try-Catch block to ensure valid JSON is ALWAYS returned
+        try {
+            $raw = auditpol /get /category:* /r
+            if ($null -eq $raw -or $raw.Count -lt 2) {
+                Write-Output "[]"
+                exit 0
             }
+
+            $results = $raw | ConvertFrom-Csv | Where-Object { $_.Category } | ForEach-Object {
+                [PSCustomObject]@{
+                    Category    = $_.Category.Trim()
+                    Subcategory = $_.Subcategory.Trim()
+                    Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
+                }
+            }
+            
+            if ($results) {
+                $results | ConvertTo-Json -Compress
+            } else {
+                Write-Output "[]"
+            }
+        } catch {
+            Write-Output "[]"
         }
-        $results | ConvertTo-Json -Compress
       register: full_audit_raw
 
     - name: Ensure Local Report Directory Exists
@@ -39,7 +49,8 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
+        # If the result is empty or whitespace, use '[]'
+        scan_results: "{{ (full_audit_raw.stdout | trim if full_audit_raw.stdout | trim != '' else '[]') | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
