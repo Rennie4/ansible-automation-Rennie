@@ -1,54 +1,79 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Windows Server 2025 Factory Default Audit</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #ffffff; color: #333; }
-        .container { width: 95%; margin: 20px auto; }
-        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 5px; }
-        .header-box { border-bottom: 3px solid #0078d4; padding-bottom: 10px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
-        th { background-color: #0078d4; color: white; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; }
-        td { padding: 10px; border-bottom: 1px solid #efefef; font-size: 13px; border-right: 1px solid #efefef; }
-        .match { color: #27ae60; font-weight: bold; }
-        .val { font-family: 'Consolas', monospace; color: #2980b9; word-break: break-word; }
-        tr:nth-child(even) { background-color: #fafafa; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header-box">
-            <h1>Windows Server 2025 Factory Default Audit</h1>
-            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Status:</strong> Comparison against Microsoft Out-of-the-Box Settings.</p>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 40%;">Policy Setting Name</th>
-                    <th style="width: 45%;">Standard Shipped Default</th>
-                    <th style="width: 15%;">Audit Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% set display_items = [] %}
-                {% for line in policy_scan_raw.stdout_lines %}
-                    {% set parts = line.split('|') %}
-                    {% if parts | length > 1 %}
-                        {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
-                        {% set _ = display_items.append({'name': friendly_name, 'value': parts[1]}) %}
-                    {% endif %}
-                {% endfor %}
+---
+- name: Scan Windows 2025 and Upload Report to S3
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files"
+    aws_region: "eu-west-1"
+    sid_map:
+      "SeNetworkLogonRight": "Access this computer from the network"
+      "SeBackupPrivilege": "Back up files and directories"
+      "SeChangeNotifyPrivilege": "Bypass traverse checking"
+      "SeSystemtimePrivilege": "Change the system time"
+      "SeCreatePagefilePrivilege": "Create a pagefile"
+      "SeDebugPrivilege": "Debug programs"
+      "SeRemoteShutdownPrivilege": "Force shutdown from a remote system"
+      "SeAuditPrivilege": "Generate security audits"
+      "SeIncreaseQuotaPrivilege": "Adjust memory quotas for a process"
+      "SeIncreaseBasePriorityPrivilege": "Increase scheduling priority"
+      "SeLoadDriverPrivilege": "Load and unload device drivers"
+      "SeBatchLogonRight": "Log on as a batch job"
+      "SeServiceLogonRight": "Log on as a service"
+      "SeInteractiveLogonRight": "Allow log on locally"
+      "SeSecurityPrivilege": "Manage auditing and security log"
+      "SeSystemEnvironmentPrivilege": "Modify firmware environment values"
+      "SeProfileSingleProcessPrivilege": "Profile single process"
+      "SeSystemProfilePrivilege": "Profile system performance"
+      "SeAssignPrimaryTokenPrivilege": "Replace a process level token"
+      "SeRestorePrivilege": "Restore files and directories"
+      "SeShutdownPrivilege": "Shut down the system"
+      "SeTakeOwnershipPrivilege": "Take ownership of files or other objects"
+      "SeUndockPrivilege": "Remove computer from docking station"
+      "SeManageVolumePrivilege": "Perform volume maintenance tasks"
+      "SeRemoteInteractiveLogonRight": "Allow log on through Remote Desktop Services"
+      "SeImpersonatePrivilege": "Impersonate a client after authentication"
+      "SeCreateGlobalPrivilege": "Create global objects"
+      "SeIncreaseWorkingSetPrivilege": "Increase a process working set"
+      "SeTimeZonePrivilege": "Change the time zone"
+      "SeCreateSymbolicLinkPrivilege": "Create symbolic links"
+      "SeDelegateSessionUserImpersonatePrivilege": "Obtain an impersonation token for another user"
 
-                {% for item in display_items | sort(attribute='name') %}
-                <tr>
-                    <td><strong>{{ item.name }}</strong></td>
-                    <td class="val">{{ item.value or 'No One (Empty)' }}</td>
-                    <td><span class="match">✔ MATCHES DEFAULT</span></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+  tasks:
+    - name: Export Current User Rights Assignment
+      ansible.windows.win_shell: |
+        $configFile = "C:\temp\audit_scan.inf"
+        secedit /export /areas USER_RIGHTS /cfg $configFile
+        if (Test-Path $configFile) {
+            Get-Content $configFile | Where-Object { $_ -match '^Se.*=.*' } | ForEach-Object {
+                $parts = $_.ToString().Split('=')
+                Write-Output ($parts[0].Trim() + "|" + $parts[1].Trim())
+            }
+        }
+      register: policy_scan_raw
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate HTML Report from Template
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
+        dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
+
+    - name: Upload Audit Report to S3 Bucket
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Server_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
+        mode: put
+        region: "{{ aws_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
