@@ -23,9 +23,10 @@
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
 
+        {# Group by Category and handle potential nulls #}
         {% set categories = scan_results | groupby('Category') %}
-        {% for category, items in categories %}
-        <h2>{{ category }}</h2>
+        {% for category, items in categories | sort %}
+        <h2>{{ category or 'Uncategorized' }}</h2>
         <table>
             <thead>
                 <tr>
@@ -35,10 +36,11 @@
                 </tr>
             </thead>
             <tbody>
+                {# Sort subcategories, providing an empty string if Subcategory is None #}
                 {% for item in items | sort(attribute='Subcategory') %}
                 <tr>
-                    <td><strong>{{ item.Subcategory }}</strong></td>
-                    <td class="val">{{ item.Setting }}</td>
+                    <td><strong>{{ item.Subcategory or 'Unknown Subcategory' }}</strong></td>
+                    <td class="val">{{ item.Setting or 'Not Configured' }}</td>
                     <td class="val">Not Configured</td>
                 </tr>
                 {% endfor %}
