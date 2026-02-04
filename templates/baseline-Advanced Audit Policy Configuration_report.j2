@@ -23,29 +23,32 @@
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
 
-        {# Group results by Category: Account Logon, Account Management, etc. #}
-        {% set categories = scan_results | groupby('Category') %}
-        {% for category, items in categories %}
-        <h2>{{ category }}</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 50%;">Subcategory</th>
-                    <th style="width: 25%;">Audit Events (Current)</th>
-                    <th style="width: 25%;">Default (Standard)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items | sort(attribute='Subcategory') %}
-                <tr>
-                    <td><strong>{{ item.Subcategory }}</strong></td>
-                    <td class="val">{{ item.Setting }}</td>
-                    <td class="val">Not Configured</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% endfor %}
+        {% if scan_results | length > 0 %}
+            {# Grouping by Category creates the Account Logon and Account Management sections #}
+            {% for category, items in scan_results | groupby('Category') %}
+            <h2>{{ category }}</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 50%;">Subcategory</th>
+                        <th style="width: 25%;">Audit Events (Current)</th>
+                        <th style="width: 25%;">Default (Standard)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items | sort(attribute='Subcategory') %}
+                    <tr>
+                        <td><strong>{{ item.Subcategory }}</strong></td>
+                        <td class="val">{{ item.Setting }}</td>
+                        <td class="val">Not Configured</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+        {% else %}
+            <p style="color: red; font-weight: bold;">No audit data was retrieved. Please check Administrative permissions.</p>
+        {% endif %}
     </div>
 </body>
 </html>
