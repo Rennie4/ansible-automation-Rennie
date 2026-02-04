@@ -22,34 +22,27 @@
             <h1>Advanced Audit Policy Configuration Audit</h1>
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
-
-        {% if scan_results | length > 0 %}
-            {% for category, items in scan_results | groupby('Category') %}
-            <h2>{{ category }}</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 50%;">Subcategory</th>
-                        <th style="width: 25%;">Audit Events (Current)</th>
-                        <th style="width: 25%;">Default (Standard)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in items | sort(attribute='Subcategory') %}
-                    <tr>
-                        <td><strong>{{ item.Subcategory }}</strong></td>
-                        <td class="val">{{ item.Setting }}</td>
-                        <td class="val">Not Configured</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endfor %}
-        {% else %}
-            <div style="background: #fee2e2; border: 1px solid #ef4444; padding: 20px; color: #b91c1c;">
-                <strong>Warning:</strong> No audit settings were found. This usually means the Ansible user is not running with administrative elevation.
-            </div>
-        {% endif %}
+        {% for category, items in scan_results | groupby('Category') %}
+        <h2>{{ category }}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50%;">Subcategory</th>
+                    <th style="width: 25%;">Audit Events (Current)</th>
+                    <th style="width: 25%;">Default (Standard)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items | sort(attribute='Subcategory') %}
+                <tr>
+                    <td><strong>{{ item.Subcategory }}</strong></td>
+                    <td class="val">{{ item.Setting }}</td>
+                    <td class="val">Not Configured</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
     </div>
 </body>
 </html>
