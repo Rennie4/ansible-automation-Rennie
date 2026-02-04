@@ -23,32 +23,29 @@
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
 
-        {% if scan_results is defined and scan_results | length > 0 %}
-            {# Re-mapping to ensure every category is a string before sorting #}
-            {% for category, items in scan_results | groupby('Category') %}
-            <h2>{{ category | default('General') }}</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 50%;">Subcategory</th>
-                        <th style="width: 25%;">Audit Events (Current)</th>
-                        <th style="width: 25%;">Default (Standard)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in items | sort(attribute='Subcategory') %}
-                    <tr>
-                        <td><strong>{{ item.Subcategory }}</strong></td>
-                        <td class="val">{{ item.Setting }}</td>
-                        <td class="val">Not Configured</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endfor %}
-        {% else %}
-            <p style="color: red; font-weight: bold;">No data found. Ensure the Ansible user has Administrative rights.</p>
-        {% endif %}
+        {# Group results by Category: Account Logon, Account Management, etc. #}
+        {% set categories = scan_results | groupby('Category') %}
+        {% for category, items in categories %}
+        <h2>{{ category }}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50%;">Subcategory</th>
+                    <th style="width: 25%;">Audit Events (Current)</th>
+                    <th style="width: 25%;">Default (Standard)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items | sort(attribute='Subcategory') %}
+                <tr>
+                    <td><strong>{{ item.Subcategory }}</strong></td>
+                    <td class="val">{{ item.Setting }}</td>
+                    <td class="val">Not Configured</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
     </div>
 </body>
 </html>
