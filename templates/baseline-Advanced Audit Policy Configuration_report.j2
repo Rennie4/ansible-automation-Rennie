@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Windows Server 2025 Advanced Audit Policy</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; background-color: #f4f7f9; color: #333; }
+        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
+        .header { border-bottom: 4px solid #0078d4; margin-bottom: 30px; padding-bottom: 10px; }
+        h1 { color: #2c3e50; font-size: 26px; margin: 0; }
+        h2 { background-color: #e1f0ff; color: #005a9e; padding: 10px 15px; border-left: 5px solid #0078d4; margin-top: 40px; font-size: 18px; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: #fff; border: 1px solid #ddd; }
+        th { background-color: #0078d4; color: white; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; border-right: 1px solid #eee; }
+        .val { font-family: 'Consolas', monospace; color: #005a9e; }
+        tr:nth-child(even) { background-color: #fafafa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Advanced Audit Policy Configuration Audit</h1>
+            <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
+        </div>
+
+        {% set categories = scan_results | groupby('Category') %}
+        {% for category, items in categories %}
+        <h2>{{ category }}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50%;">Subcategory</th>
+                    <th style="width: 25%;">Audit Events (Current)</th>
+                    <th style="width: 25%;">Default (Standard)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items | sort(attribute='Subcategory') %}
+                <tr>
+                    <td><strong>{{ item.Subcategory }}</strong></td>
+                    <td class="val">{{ item.Setting }}</td>
+                    <td class="val">Not Configured</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+    </div>
+</body>
+</html>
