@@ -1,0 +1,53 @@
+---
+- name: Scan Windows 2025 Advanced Audit Policy Configuration Baseline
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files"
+    aws_region: "eu-west-1"
+
+  tasks:
+    - name: Export Full Advanced Audit Policy Categories
+      ansible.windows.win_shell: |
+        # Use auditpol to get all subcategories in a CSV format
+        $auditData = auditpol /get /category:* /r | ConvertFrom-Csv
+        $results = @()
+        foreach ($line in $auditData) {
+            $results += [PSCustomObject]@{
+                Category    = $line.Category
+                Subcategory = $line.Subcategory
+                # Map "No Auditing" to "Not Configured" as per requirement
+                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { $line.Setting }
+            }
+        }
+        $results | ConvertTo-Json
+      register: full_audit_raw
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate Grouped Advanced Audit Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit_report.j2"
+        dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
+      vars:
+        scan_results: "{{ full_audit_raw.stdout | from_json }}"
+
+    - name: Upload Advanced Audit Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Advanced_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
+        mode: put
+        region: "{{ aws_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
