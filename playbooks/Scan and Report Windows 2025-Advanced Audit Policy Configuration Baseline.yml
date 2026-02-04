@@ -10,15 +10,16 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use auditpol to retrieve all subcategories in a CSV format
         $auditData = auditpol /get /category:* /r | ConvertFrom-Csv
         $results = @()
         foreach ($line in $auditData) {
-            $results += [PSCustomObject]@{
-                Category    = $line.Category
-                Subcategory = $line.Subcategory
-                # Convert "No Auditing" to "Not Configured" per Section 4 requirement
-                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { $line.Setting }
+            # Only add if the line has actual data to prevent NoneType errors
+            if ($line.Category -and $line.Subcategory) {
+                $results += [PSCustomObject]@{
+                    Category    = $line.Category.Trim()
+                    Subcategory = $line.Subcategory.Trim()
+                    Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { $line.Setting }
+                }
             }
         }
         $results | ConvertTo-Json
