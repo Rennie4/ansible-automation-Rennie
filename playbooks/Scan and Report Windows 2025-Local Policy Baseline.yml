@@ -6,7 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Dictionary to fix the "TRANSLATION ERROR" items
+    # Mapping SIDs to friendly names for the report
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -68,7 +68,6 @@
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
       vars:
-        # Convert raw JSON to a list of objects for the template
         policy_data: "{{ policy_scan_raw.stdout | from_json }}"
 
     - name: Upload Audit Report to S3 Bucket
@@ -83,4 +82,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The Corrected Local Policy report link is: {{ s3_upload.url }}"
+        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
