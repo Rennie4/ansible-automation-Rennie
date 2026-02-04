@@ -31,18 +31,19 @@
                 </tr>
             </thead>
             <tbody>
-                {# First, prepare the list with friendly names #}
-                {% set final_display_list = [] %}
-                {% for item in policy_list %}
-                    {% set name = sid_map[item.key] | default(item.key) %}
-                    {% set _ = final_display_list.append({'name': name, 'val': item.value}) %}
+                {% set display_items = [] %}
+                {% for line in policy_scan_raw.stdout_lines %}
+                    {% set parts = line.split('|') %}
+                    {% if parts | length > 1 %}
+                        {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
+                        {% set _ = display_items.append({'name': friendly_name, 'value': parts[1]}) %}
+                    {% endif %}
                 {% endfor %}
 
-                {# Then, sort alphabetically by the friendly name #}
-                {% for entry in final_display_list | sort(attribute='name') %}
+                {% for item in display_items | sort(attribute='name') %}
                 <tr>
-                    <td><strong>{{ entry.name }}</strong></td>
-                    <td class="val">{{ entry.val or 'No One (Empty)' }}</td>
+                    <td><strong>{{ item.name }}</strong></td>
+                    <td class="val">{{ item.value or 'No One (Empty)' }}</td>
                     <td><span class="match">✔ MATCHES DEFAULT</span></td>
                 </tr>
                 {% endfor %}
