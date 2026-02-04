@@ -25,7 +25,7 @@
     - name: Generate HTML Report from Template
       delegate_to: localhost
       ansible.builtin.template:
-        # Changed to filename only; Ansible searches the 'templates' folder automatically
+        # Pointing directly to the filename since it's in your /templates folder
         src: "baseline-local Policy_report.j2"
         dest: "/tmp/Server_Audit_{{ inventory_hostname }}.html"
 
