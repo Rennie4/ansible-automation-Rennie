@@ -10,31 +10,25 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
+        # Use a localized command to ensure we capture the Category tree
         $results = @()
-        # Get CSV data and filter out any empty rows or null categories immediately
-        $data = auditpol /get /category:* /r | ConvertFrom-Csv | Where-Object { $_.Category -ne $null -and $_.Subcategory -ne $null }
+        $raw = auditpol /get /category:* /r
         
-        foreach ($line in $data) {
-            $results += [PSCustomObject]@{
-                # Force everything to be a string to prevent NoneType errors
-                Category    = [string]$line.Category.Trim()
-                Subcategory = [string]$line.Subcategory.Trim()
-                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { [string]$line.Setting.Trim() }
+        # Manually parse to avoid CSV encoding issues
+        $lines = $raw -split "`r`n" | Select-Object -Skip 1
+        foreach ($line in $lines) {
+            if ($line -match ",") {
+                $parts = $line.Split(",")
+                $results += [PSCustomObject]@{
+                    Category    = $parts[0].Trim()
+                    Subcategory = $parts[1].Trim()
+                    # If "No Auditing", map to "Not Configured" to match your screenshot
+                    Setting     = if ($parts[2].Trim() -eq "No Auditing") { "Not Configured" } else { $parts[2].Trim() }
+                }
             }
         }
-        
-        if ($results.Count -gt 0) {
-            $results | ConvertTo-Json -Compress
-        } else {
-            Write-Output "[]"
-        }
+        $results | ConvertTo-Json -Compress
       register: full_audit_raw
-
-    - name: Ensure Local Report Directory Exists
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
 
     - name: Generate Grouped Advanced Audit Report
       delegate_to: localhost
@@ -42,8 +36,7 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # Final safety check: if stdout is empty, use empty list
-        scan_results: "{{ (full_audit_raw.stdout | default('[]', true) | trim) | from_json }}"
+        scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
@@ -53,4 +46,3 @@
         src: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
