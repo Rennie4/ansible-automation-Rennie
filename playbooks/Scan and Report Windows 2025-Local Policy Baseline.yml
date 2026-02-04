@@ -1,6 +1,7 @@
 ---
 - name: Scan Windows 2025 and Upload Report to S3
-  hosts: "{{ target_hosts }}"
+  # Changed from target_hosts to all to work with the Limit field
+  hosts: all
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
@@ -31,7 +32,7 @@
     - name: Generate HTML Report from Template
       delegate_to: localhost
       ansible.builtin.template:
-        # Correct path based on your working Account Policy playbook
+        # Uses the working pathing logic from your Account Policy playbook
         src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
 
