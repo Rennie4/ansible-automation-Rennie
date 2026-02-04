@@ -10,25 +10,24 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use a more reliable way to capture the output directly
         $results = @()
-        & auditpol.exe /get /category:* /r | ConvertFrom-Csv | ForEach-Object {
-            if ($_.Category -and $_.Subcategory) {
-                $results += [PSCustomObject]@{
-                    Category    = $_.Category.Trim()
-                    Subcategory = $_.Subcategory.Trim()
-                    Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
-                }
+        # Get CSV data and filter out any empty rows or null categories immediately
+        $data = auditpol /get /category:* /r | ConvertFrom-Csv | Where-Object { $_.Category -ne $null -and $_.Subcategory -ne $null }
+        
+        foreach ($line in $data) {
+            $results += [PSCustomObject]@{
+                # Force everything to be a string to prevent NoneType errors
+                Category    = [string]$line.Category.Trim()
+                Subcategory = [string]$line.Subcategory.Trim()
+                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { [string]$line.Setting.Trim() }
             }
         }
         
-        # If results are still empty, try a different parsing method
-        if ($results.Count -eq 0) {
-            $raw = & auditpol.exe /get /category:* /r
-            $results = $raw | ConvertFrom-Csv | Select-Object Category, Subcategory, Setting
+        if ($results.Count -gt 0) {
+            $results | ConvertTo-Json -Compress
+        } else {
+            Write-Output "[]"
         }
-
-        $results | ConvertTo-Json -Compress
       register: full_audit_raw
 
     - name: Ensure Local Report Directory Exists
@@ -43,8 +42,8 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # If the result is empty, we pass an empty list to avoid crashes
-        scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
+        # Final safety check: if stdout is empty, use empty list
+        scan_results: "{{ (full_audit_raw.stdout | default('[]', true) | trim) | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
@@ -55,7 +54,3 @@
         mode: put
         region: "{{ aws_region }}"
       register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
