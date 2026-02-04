@@ -10,25 +10,28 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use a localized command to ensure we capture the Category tree
         $results = @()
+        # Use auditpol /r to get CSV output
         $raw = auditpol /get /category:* /r
+        $data = $raw | ConvertFrom-Csv | Where-Object { $_.Category -ne $null }
         
-        # Manually parse to avoid CSV encoding issues
-        $lines = $raw -split "`r`n" | Select-Object -Skip 1
-        foreach ($line in $lines) {
-            if ($line -match ",") {
-                $parts = $line.Split(",")
-                $results += [PSCustomObject]@{
-                    Category    = $parts[0].Trim()
-                    Subcategory = $parts[1].Trim()
-                    # If "No Auditing", map to "Not Configured" to match your screenshot
-                    Setting     = if ($parts[2].Trim() -eq "No Auditing") { "Not Configured" } else { $parts[2].Trim() }
-                }
+        foreach ($line in $data) {
+            $results += [PSCustomObject]@{
+                Category    = [string]$line.Category.Trim()
+                Subcategory = [string]$line.Subcategory.Trim()
+                # Map 'No Auditing' to 'Not Configured' per screenshot
+                Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { [string]$line.Setting.Trim() }
             }
         }
         $results | ConvertTo-Json -Compress
       register: full_audit_raw
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+        mode: '0755'
 
     - name: Generate Grouped Advanced Audit Report
       delegate_to: localhost
@@ -46,3 +49,8 @@
         src: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
+      register: s3_upload
+
+    - name: Display Report Link
+      debug:
+        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
