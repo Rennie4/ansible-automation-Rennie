@@ -10,14 +10,14 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use auditpol to get all subcategories in a CSV format
+        # Use auditpol to retrieve all subcategories in a CSV format
         $auditData = auditpol /get /category:* /r | ConvertFrom-Csv
         $results = @()
         foreach ($line in $auditData) {
             $results += [PSCustomObject]@{
                 Category    = $line.Category
                 Subcategory = $line.Subcategory
-                # Map "No Auditing" to "Not Configured" as per requirement
+                # Convert "No Auditing" to "Not Configured" per Section 4 requirement
                 Setting     = if ($line.Setting -eq "No Auditing") { "Not Configured" } else { $line.Setting }
             }
         }
@@ -33,7 +33,7 @@
     - name: Generate Grouped Advanced Audit Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit_report.j2"
+        src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
         scan_results: "{{ full_audit_raw.stdout | from_json }}"
