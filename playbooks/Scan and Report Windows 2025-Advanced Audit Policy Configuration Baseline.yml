@@ -11,35 +11,38 @@
 
   tasks:
     - name: Export Full Advanced Audit Policy Categories
-      ansible.windows.win_shell: !unsafe |
-        $data = auditpol /get /subcategory:*
+      ansible.windows.win_shell: |
+        $raw = auditpol /get /subcategory:*
         $results = @()
-        $currentCategory = "Advanced Audit"
+        $currentCat = "Advanced Audit"
 
-        foreach ($line in ($data -split "`r`n")) {
-            $line = $line.Trim()
-            if ($line -match "^(\S.*\S)$" -and $line -notmatch "Subcategory" -and $line -notmatch "---") {
-                if ($line -match "^\s") {
-                    $parts = $line -split "  +"
+        # Split by lines and process each
+        $raw -split "`r`n" | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and $line -notmatch "---" -and $line -notmatch "Subcategory") {
+                if ($_ -match "^\s{2,}") {
+                    # This is a Subcategory line
+                    $parts = $line -split "\s{2,}"
                     if ($parts.Count -ge 2) {
                         $results += [PSCustomObject]@{
-                            Category    = $currentCategory
+                            Category    = $currentCat
                             Subcategory = $parts[0].Trim()
+                            # Maps "No Auditing" to "Not Configured"
                             Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
                         }
                     }
                 } else {
-                    $currentCategory = $line
+                    # This is a Category header
+                    $currentCat = $line
                 }
             }
         }
-        if ($results.Count -eq 0) { return "[]" }
         $results | ConvertTo-Json -Compress
       register: full_audit_raw
 
     - name: Set Audit Results Fact
       set_fact:
-        scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
+        scan_results: "{{ full_audit_raw.stdout | from_json }}"
 
     - name: Ensure Local Report Directory
       delegate_to: localhost
@@ -60,8 +63,8 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Unique name to prevent overwriting existing reports
-        object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        # Unique timestamp prevents overwriting [cite: 2025-12-22]
+        object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
