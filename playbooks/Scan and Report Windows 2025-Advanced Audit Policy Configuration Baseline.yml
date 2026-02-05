@@ -7,7 +7,7 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "/tmp/reports"
-    # Points to the correct template folder in your project
+    # Relative path from 'playbooks' folder to 'templates' folder
     template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
@@ -16,7 +16,6 @@
         try {
             $raw = auditpol /get /category:* /r
             if ($null -eq $raw -or $raw.Count -lt 2) { return "[]" }
-
             $results = $raw | ConvertFrom-Csv | Where-Object { $_.Category -and $_.Subcategory } | ForEach-Object {
                 [PSCustomObject]@{
                     Category    = $_.Category.Trim()
@@ -24,20 +23,17 @@
                     Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
                 }
             }
-            if ($results) { 
-                $results | ConvertTo-Json -Compress 
-            } else { 
-                "[]" 
-            }
-        } catch { 
-            "[]" 
-        }
+            if ($results) { $results | ConvertTo-Json -Compress } else { "[]" }
+        } catch { "[]" }
       register: full_audit_raw
 
-    - name: Parse JSON into scan_results
+    - name: Set Audit Results Fact
       set_fact:
-        # Explicitly casting the string to a list to prevent "No Data" errors
         scan_results: "{{ full_audit_raw.stdout | from_json }}"
+
+    - name: Debug Audit Data Count
+      debug:
+        msg: "Found {{ scan_results | length }} audit subcategories."
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -58,8 +54,13 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}.html"
+        # Added timestamp to object name to prevent overwriting files
+        object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
       register: s3_upload
+
+    - name: Display S3 Link
+      debug:
+        msg: "Report available at: {{ s3_upload.url if s3_upload.url is defined else 'Check S3 Bucket' }}"
