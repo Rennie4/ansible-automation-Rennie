@@ -23,26 +23,20 @@
       become: yes
       become_method: runas
       become_user: Administrator
-      ansible.windows.win_shell: auditpol /get /category:* /r
+      ansible.windows.win_shell: |
+        $raw = auditpol /get /category:* /r
+        $data = $raw | ConvertFrom-Csv
+        $results = foreach ($line in $data) {
+            if ($line.Category) {
+                [PSCustomObject]@{
+                    Category    = $line.Category.Trim()
+                    Subcategory = $line.Subcategory.Trim()
+                    Setting     = $line.Setting.Trim()
+                }
+            }
+        }
+        $results | ConvertTo-Json -Compress
       register: full_audit_raw
-
-    - name: Parse Audit Data into List
-      set_fact:
-        audit_list: >-
-          {% set results = [] %}
-          {% for line in full_audit_raw.stdout_lines %}
-            {% if ',' in line and 'Category' not in line %}
-              {% set parts = line.split(',') %}
-              {% if parts | length >= 3 %}
-                {% set _ = results.append({
-                  'Category': parts[0] | trim,
-                  'Subcategory': parts[1] | trim,
-                  'Setting': parts[2] | trim
-                }) %}
-              {% endif %}
-            {% endif %}
-          {% endfor %}
-          {{ results }}
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -59,8 +53,8 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # We pass the clean list directly to the template
-        scan_results: "{{ audit_list }}"
+        # Converting the JSON string from Windows directly into an Ansible List
+        scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
