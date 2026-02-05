@@ -12,7 +12,6 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use standard text output to avoid 'Parameter Incorrect' CSV errors
         $data = auditpol /get /subcategory:*
         $results = @()
         $currentCategory = "Advanced Audit"
@@ -21,23 +20,20 @@
             $line = $line.Trim()
             if ($line -match "^(\S.*\S)$" -and $line -notmatch "Subcategory" -and $line -notmatch "---") {
                 if ($line -match "^\s") {
-                    # This is a subcategory line
                     $parts = $line -split "  +"
                     if ($parts.Count -ge 2) {
                         $results += [PSCustomObject]@{
                             Category    = $currentCategory
                             Subcategory = $parts[0].Trim()
-                            # Maps to MMC "Not Configured"
+                            # Ensures "Not Configured" matches your server's MMC view
                             Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
                         }
                     }
                 } else {
-                    # This is a new Category header
                     $currentCategory = $line
                 }
             }
         }
-        
         if ($results.Count -eq 0) { return "[]" }
         $results | ConvertTo-Json -Compress
       register: full_audit_raw
@@ -65,7 +61,7 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Unique timestamp for version history [cite: 2025-12-22]
+        # Uses ISO basic short timestamp to prevent file overwrites
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
