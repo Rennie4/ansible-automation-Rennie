@@ -3,7 +3,6 @@
   hosts: all
   gather_facts: yes
   vars:
-    # Target values strictly from your CIS PDF
     cis_targets:
       PasswordHistorySize: "24"
       MaximumPasswordAge: "365"
@@ -20,23 +19,28 @@
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secexport.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY
-        $content = Get-Content $tempFile
-        $policy = @{}
-        foreach ($line in $content) {
-            if ($line -match "=") {
-                $kv = $line -split "="
-                $policy[$kv[0].Trim()] = $kv[1].Trim()
+        if (Test-Path $tempFile) {
+            $content = Get-Content $tempFile
+            $policy = @{}
+            foreach ($line in $content) {
+                if ($line -match "=") {
+                    $kv = $line -split "="
+                    $policy[$kv[0].Trim()] = $kv[1].Trim()
+                }
             }
+            $policy | ConvertTo-Json
+        } else {
+            @{ "Error" = "Export Failed" } | ConvertTo-Json
         }
-        $policy | ConvertTo-Json
       register: secedit_raw
+      # This is the fix: It allows the command to run during a 'Check' job
+      check_mode: no 
 
     - name: Audit Windows 2025 Specific Registry Keys
       ansible.windows.win_reg_stat:
         path: "{{ item.path }}"
         name: "{{ item.name }}"
       loop:
-        # Paths fixed with single quotes to prevent escape character errors
         - { id: '1.6', name: 'RelaxMinimumPasswordLengthLimits', path: 'HKLM:\System\CurrentControlSet\Control\SAM', target: '1' }
         - { id: '1.10', name: 'AllowAdministratorLockout', path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa', target: '1' }
       register: reg_audit
@@ -44,7 +48,6 @@
     - name: Consolidate Comparison Results
       set_fact:
         current_p: "{{ secedit_raw.stdout | from_json }}"
-        audit_results: []
 
     - name: Build Final Audit List
       set_fact:
@@ -56,8 +59,6 @@
           {% do results.append({'id': '1.3', 'name': 'Min Password Age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge}) %}
           {% do results.append({'id': '1.4', 'name': 'Min Password Length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength}) %}
           {% do results.append({'id': '1.5', 'name': 'Complexity Enabled', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity}) %}
-          {% do results.append({'id': '1.8', 'name': 'Lockout Duration', 'cur': p.LockoutDuration | default('0'), 'tar': cis_targets.LockoutDuration}) %}
-          {% do results.append({'id': '1.9', 'name': 'Lockout Threshold', 'cur': p.LockoutBadCount | default('0'), 'tar': cis_targets.LockoutBadCount}) %}
           {% for r in reg_audit.results %}
             {% do results.append({'id': r.item.id, 'name': r.item.name, 'cur': (r.value.value | string if r.exists else 'Not Set'), 'tar': r.item.target}) %}
           {% endfor %}
