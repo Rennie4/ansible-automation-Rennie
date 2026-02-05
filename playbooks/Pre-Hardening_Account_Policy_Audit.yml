@@ -40,15 +40,12 @@
 
     - name: Build Report List
       set_fact:
-        # We use from_json here to ensure audit_results is a real LIST, not a string
         audit_results: >-
           {% set p = secedit_raw.stdout | from_json %}
           {% set base_list = [
-            {'id': '1.1', 'name': 'Password History', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
-            {'id': '1.2', 'name': 'Max Password Age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
-            {'id': '1.3', 'name': 'Min Password Age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge},
-            {'id': '1.4', 'name': 'Min Password Length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength},
-            {'id': '1.5', 'name': 'Complexity Enabled', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity}
+            {'id': '1.1', 'name': 'Enforce password history', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
+            {'id': '1.2', 'name': 'Maximum password age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
+            {'id': '1.4', 'name': 'Minimum password length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength}
           ] %}
           {% set reg_list = [] %}
           {% for r in reg_audit.results %}
@@ -62,6 +59,7 @@
       ansible.builtin.template:
         src: "../templates/pre_hardening_comparison.j2"
         dest: "/tmp/reports/Pre_Hardening_{{ inventory_hostname }}.html"
+      check_mode: no
 
     - name: Upload to S3
       delegate_to: localhost
@@ -72,3 +70,5 @@
         src: "/tmp/reports/Pre_Hardening_{{ inventory_hostname }}.html"
         mode: put
         region: "eu-west-1"
+      # This ensures the file actually uploads while in Check Mode
+      check_mode: no
