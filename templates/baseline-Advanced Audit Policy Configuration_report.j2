@@ -22,9 +22,7 @@
             <h1>Advanced Audit Policy Configuration Audit</h1>
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Baseline:</strong> Section 4 Configuration</p>
         </div>
-
         {% if scan_results | length > 0 %}
-            {# Grouping by Category replicates the Windows GPEdit folder structure #}
             {% for category, items in scan_results | groupby('Category') %}
             <h2>{{ category }}</h2>
             <table>
