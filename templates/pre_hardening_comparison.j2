@@ -25,13 +25,13 @@
                 <tr>
                     <th>ID</th>
                     <th>Policy Setting</th>
-                    <th>Current Server Value</th>
+                    <th>Current Value</th>
                     <th>CIS Target</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in audit_results | sort(attribute='id') %}
+                {% for item in audit_results | from_json | sort(attribute='id') %}
                 <tr>
                     <td>{{ item.id }}</td>
                     <td><strong>{{ item.name }}</strong></td>
