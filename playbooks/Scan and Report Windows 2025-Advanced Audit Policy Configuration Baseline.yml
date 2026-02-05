@@ -12,36 +12,36 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        $raw = auditpol /get /subcategory:*
+        # Explicitly targeting subcategories to avoid the Help Menu
+        $data = auditpol /get /subcategory:*
         $results = @()
-        $currentCat = "Advanced Audit"
+        $currentCategory = "Advanced Audit"
 
-        $raw -split "`r`n" | ForEach-Object {
-            $line = $_.Trim()
-            if ($line -and $line -notmatch "---" -and $line -notmatch "Subcategory") {
-                if ($_ -match "^\s{2,}") {
-                    $parts = $line -split "\s{2,}"
+        foreach ($line in ($data -split "`r`n")) {
+            $trimmed = $line.Trim()
+            if ($trimmed -and $trimmed -notmatch "Subcategory" -and $trimmed -notmatch "---") {
+                if ($line -match "^\s{2,}") {
+                    $parts = $trimmed -split "\s{2,}"
                     if ($parts.Count -ge 2) {
                         $results += [PSCustomObject]@{
-                            Category    = $currentCat
+                            Category    = $currentCategory.Trim()
                             Subcategory = $parts[0].Trim()
-                            # Ensures we match the "Not Configured" state from your MMC
+                            # Maps to the "Not Configured" look in your MMC
                             Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
                         }
                     }
                 } else {
-                    $currentCat = $line
+                    $currentCategory = $trimmed
                 }
             }
         }
-        # Explicitly convert to JSON to ensure Ansible receives data
-        ConvertTo-Json -InputObject $results -Compress
+        $results | ConvertTo-Json -Compress
       register: full_audit_raw
 
     - name: Set Audit Results Fact
       set_fact:
-        # Use .stdout_lines or .stdout with a check to prevent empty facts
-        scan_results: "{{ full_audit_raw.stdout | from_json }}"
+        # Ensures the fact is populated even if formatting characters exist
+        scan_results: "{{ full_audit_raw.stdout | trim | from_json }}"
 
     - name: Ensure Local Report Directory
       delegate_to: localhost
@@ -62,7 +62,7 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Unique timestamp ensures every run is saved [cite: 2025-12-22, 2025-12-24]
+        # Unique timestamp prevents the 1.7KB "empty" files from overwriting good data
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
