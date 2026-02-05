@@ -2,14 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Full Account Policy Audit</title>
+    <title>Comprehensive Account Policy Audit</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f4f7f9; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
         .header { border-bottom: 3px solid #0078d4; margin-bottom: 20px; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background-color: #0078d4; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+        .cat-row { background-color: #f1f1f1; font-weight: bold; color: #555; }
         .non-compliant { color: #d93025; font-weight: bold; background-color: #fff2f0; padding: 4px 8px; border-radius: 4px; }
         .compliant { color: #1e7e34; font-weight: bold; background-color: #e6ffed; padding: 4px 8px; border-radius: 4px; }
     </style>
@@ -17,13 +18,14 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Comprehensive Password Policy Audit: {{ inventory_hostname }}</h1>
-            <p><strong>Baseline:</strong> CIS Microsoft Windows Server 2025 v1.0.0</p>
+            <h1>Account Policy Audit: {{ inventory_hostname }}</h1>
+            <p><strong>Baseline:</strong> CIS Microsoft Windows Server 2025 v1.0.0 (Unified Password & Lockout Scan)</p>
         </div>
         <table>
             <thead>
                 <tr>
                     <th>CIS ID</th>
+                    <th>Category</th>
                     <th>Policy Setting</th>
                     <th>Current Value</th>
                     <th>CIS Target</th>
@@ -31,9 +33,10 @@
                 </tr>
             </thead>
             <tbody>
-                {% for item in audit_results | from_json %}
+                {% for item in audit_results | from_json | sort(attribute='id') %}
                 <tr>
                     <td>{{ item.id }}</td>
+                    <td>{{ item.category }}</td>
                     <td><strong>{{ item.name }}</strong></td>
                     <td>{{ item.cur }}</td>
                     <td>{{ item.tar }}</td>
