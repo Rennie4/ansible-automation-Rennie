@@ -22,24 +22,18 @@
             <h1>Advanced Audit Policy Configuration Audit</h1>
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Scan Date:</strong> {{ ansible_date_time.date }}</p>
         </div>
-
-        {% if scan_results is defined and scan_results | length > 0 %}
+        {% if scan_results and scan_results | length > 0 %}
             {% for category, items in scan_results | groupby('Category') %}
             <h2>{{ category }}</h2>
             <table>
                 <thead>
-                    <tr>
-                        <th style="width: 60%;">Subcategory</th>
-                        <th>Current Setting</th>
-                    </tr>
+                    <tr><th style="width: 60%;">Subcategory</th><th>Current Setting</th></tr>
                 </thead>
                 <tbody>
                     {% for item in items %}
                     <tr>
                         <td><strong>{{ item.Subcategory }}</strong></td>
-                        <td class="val {% if item.Setting == 'Not Configured' %}not-configured{% endif %}">
-                            {{ item.Setting }}
-                        </td>
+                        <td class="val {% if item.Setting == 'Not Configured' %}not-configured{% endif %}">{{ item.Setting }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
