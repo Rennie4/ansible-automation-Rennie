@@ -1,20 +1,23 @@
 ---
-- name: Pre-Hardening Audit - Full Account Policy Audit
+- name: Pre-Hardening Audit - Comprehensive Account Policy
   hosts: all
   gather_facts: yes
   vars:
-    # Full mapping of all 8 settings from your screenshot to CIS Targets
+    # Combined CIS Benchmark v1.0.0 Targets
     cis_targets:
+      # Password Policy Targets
       PasswordHistorySize: "24"          # 1.1.1
       MaximumPasswordAge: "365"          # 1.1.2
       MinimumPasswordAge: "1"            # 1.1.3
       MinimumPasswordLength: "14"        # 1.1.4
       PasswordComplexity: "1"            # 1.1.5
       ClearTextPassword: "0"             # 1.1.6
-      # Registry-based Password Settings
       RelaxMinimumPasswordLengthLimits: "1" # 1.1.7
-      # Encryption setting
-      StorePasswordsUsingReversibleEncryption: "0"
+      # Account Lockout Policy Targets
+      LockoutDuration: "15"              # 1.2.1
+      LockoutBadCount: "10"              # 1.2.2
+      ResetLockoutCount: "15"            # 1.2.3
+      AllowAdministratorLockout: "1"     # 1.10
 
   tasks:
     - name: Export Security Policy via Secedit
@@ -34,26 +37,33 @@
       register: secedit_raw
       check_mode: no 
 
-    - name: Audit Specific Registry Keys
+    - name: Audit Admin Lockout and Relax Length Registry Keys
       ansible.windows.win_reg_stat:
-        path: 'HKLM:\System\CurrentControlSet\Control\SAM'
-        name: 'RelaxMinimumPasswordLengthLimits'
-      register: reg_relax
+        path: "{{ item.path }}"
+        name: "{{ item.name }}"
+      loop:
+        - { name: 'RelaxMinimumPasswordLengthLimits', path: 'HKLM:\System\CurrentControlSet\Control\SAM' }
+        - { name: 'AllowAdministratorLockout', path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' }
+      register: reg_audit
       check_mode: no
 
-    - name: Build Full Report List
+    - name: Build Combined Report List
       set_fact:
         audit_results: >-
           {% set p = secedit_raw.stdout | from_json %}
+          {% set r = reg_audit.results %}
           {% set results = [
-            {'id': '1.1.1', 'name': 'Enforce password history', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
-            {'id': '1.1.2', 'name': 'Maximum password age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
-            {'id': '1.1.3', 'name': 'Minimum password age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge},
-            {'id': '1.1.4', 'name': 'Minimum password length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength},
-            {'id': '1.1.5', 'name': 'Password must meet complexity requirements', 'cur': p.PasswordComplexity | default('1'), 'tar': cis_targets.PasswordComplexity},
-            {'id': '1.1.6', 'name': 'Store passwords using reversible encryption', 'cur': p.ClearTextPassword | default('0'), 'tar': cis_targets.ClearTextPassword},
-            {'id': '1.1.7', 'name': 'Relax minimum password length limits', 'cur': (reg_relax.value.value | string if reg_relax.exists else 'Not Set'), 'tar': cis_targets.RelaxMinimumPasswordLengthLimits},
-            {'id': 'N/A', 'name': 'Minimum password length audit', 'cur': 'Not Defined', 'tar': 'Audit Enabled'}
+            {'id': '1.1.1', 'category': 'Password', 'name': 'Enforce password history', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
+            {'id': '1.1.2', 'category': 'Password', 'name': 'Maximum password age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
+            {'id': '1.1.3', 'category': 'Password', 'name': 'Minimum password age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge},
+            {'id': '1.1.4', 'category': 'Password', 'name': 'Minimum password length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength},
+            {'id': '1.1.5', 'category': 'Password', 'name': 'Password complexity requirements', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity},
+            {'id': '1.1.6', 'category': 'Password', 'name': 'Store passwords using reversible encryption', 'cur': p.ClearTextPassword | default('0'), 'tar': cis_targets.ClearTextPassword},
+            {'id': '1.1.7', 'category': 'Password', 'name': 'Relax minimum password length limits', 'cur': (r[0].value.value | string if r[0].exists else 'Not Set'), 'tar': cis_targets.RelaxMinimumPasswordLengthLimits},
+            {'id': '1.2.1', 'category': 'Lockout', 'name': 'Account lockout duration', 'cur': p.LockoutDuration | default('0'), 'tar': cis_targets.LockoutDuration},
+            {'id': '1.2.2', 'category': 'Lockout', 'name': 'Account lockout threshold', 'cur': p.LockoutBadCount | default('0'), 'tar': cis_targets.LockoutBadCount},
+            {'id': '1.2.3', 'category': 'Lockout', 'name': 'Reset account lockout counter after', 'cur': p.ResetLockoutCount | default('0'), 'tar': cis_targets.ResetLockoutCount},
+            {'id': '1.10',  'category': 'Lockout', 'name': 'Allow Administrator account lockout', 'cur': (r[1].value.value | string if r[1].exists else 'Disabled'), 'tar': cis_targets.AllowAdministratorLockout}
           ] %}
           {{ results | to_json }}
 
