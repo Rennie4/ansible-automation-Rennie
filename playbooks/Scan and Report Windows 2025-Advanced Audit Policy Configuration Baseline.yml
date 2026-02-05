@@ -23,15 +23,26 @@
       become: yes
       become_method: runas
       become_user: Administrator
-      ansible.windows.win_shell: |
-        # Use /r to get CSV format for easier parsing
-        $raw = auditpol /get /category:* /r
-        if ($raw -match "Category,Subcategory") {
-            $raw
-        } else {
-            Write-Error "No data returned or Access Denied"
-        }
+      ansible.windows.win_shell: auditpol /get /category:* /r
       register: full_audit_raw
+
+    - name: Parse Audit Data into List
+      set_fact:
+        audit_list: >-
+          {% set results = [] %}
+          {% for line in full_audit_raw.stdout_lines %}
+            {% if ',' in line and 'Category' not in line %}
+              {% set parts = line.split(',') %}
+              {% if parts | length >= 3 %}
+                {% set _ = results.append({
+                  'Category': parts[0] | trim,
+                  'Subcategory': parts[1] | trim,
+                  'Setting': parts[2] | trim
+                }) %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+          {{ results }}
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -48,22 +59,8 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # Parsing the CSV output into a list for the template
-        scan_results: >-
-          {% set results = [] %}
-          {% if full_audit_raw.stdout_lines is defined %}
-            {% for line in full_audit_raw.stdout_lines %}
-              {% if ',' in line and 'Category' not in line %}
-                {% set parts = line.split(',') %}
-                {% set _ = results.append({
-                  'Category': parts[0].strip(),
-                  'Subcategory': parts[1].strip(),
-                  'Setting': 'Not Configured' if 'No Auditing' in parts[2] else parts[2].strip()
-                }) %}
-              {% endif %}
-            {% endfor %}
-          {% endif %}
-          {{ results }}
+        # We pass the clean list directly to the template
+        scan_results: "{{ audit_list }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
