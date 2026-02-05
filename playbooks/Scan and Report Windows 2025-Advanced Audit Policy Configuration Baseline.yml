@@ -12,14 +12,14 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # The --% is the magic fix to stop the 'Help Menu' loop
+        # Using --% ensures auditpol provides the 13.0 KB data set
         $data = auditpol --% /get /subcategory:*
         $results = @()
         $currentCategory = "Advanced Audit"
 
         foreach ($line in ($data -split "`r`n")) {
             $trimmed = $line.Trim()
-            # Filter out the 'Commands' text that caused the 4.1KB error
+            # Explicitly exclude the Help Menu keywords
             if ($trimmed -and $trimmed -notmatch "---" -and $trimmed -notmatch "Subcategory" -and $trimmed -notmatch "Commands") {
                 if ($line -match "^\s{2,}") {
                     $parts = $trimmed -split "\s{2,}"
@@ -27,7 +27,7 @@
                         $results += [PSCustomObject]@{
                             Category    = $currentCategory
                             Subcategory = $parts[0].Trim()
-                            # Maps results to 'Not Configured' to match your MMC
+                            # Aligns the output with your 'Not Configured' view
                             Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
                         }
                     }
@@ -62,7 +62,7 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Unique timestamp ensures every run is saved [cite: 2025-12-22, 2025-12-24]
+        # Unique timestamp prevents bad runs from overwriting good files [cite: 2025-12-22, 2025-12-24]
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
