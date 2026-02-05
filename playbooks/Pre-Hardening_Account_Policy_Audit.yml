@@ -1,0 +1,63 @@
+---
+- name: Pre-Hardening Audit - Account and Password Policies
+  hosts: all
+  gather_facts: yes
+  vars:
+    # Defined targets based on Level 1 Member Server
+    cis_targets:
+      - { id: "1.1", name: "Enforce password history", key: "PasswordHistorySize", target: "24", type: "policy", section: "Password Policy" }
+      - { id: "1.2", name: "Maximum password age", key: "MaximumPasswordAge", target: "365", type: "policy", section: "Password Policy" }
+      - { id: "1.3", name: "Minimum password age", key: "MinimumPasswordAge", target: "1", type: "policy", section: "Password Policy" }
+      - { id: "1.4", name: "Minimum password length", key: "MinimumPasswordLength", target: "14", type: "policy", section: "Password Policy" }
+      - { id: "1.5", name: "Password complexity", key: "PasswordComplexity", target: "1", type: "policy", section: "Password Policy" }
+      - { id: "1.6", name: "Relax min password length limits", key: "RelaxMinimumPasswordLengthLimits", target: "1", type: "reg", path: "HKLM:\\System\\CurrentControlSet\\Control\\SAM" }
+      - { id: "1.7", name: "Reversible encryption", key: "ClearTextPassword", target: "0", type: "policy", section: "Password Policy" }
+      - { id: "1.8", name: "Account lockout duration", key: "LockoutDuration", target: "15", type: "policy", section: "Account Lockout Policy" }
+      - { id: "1.9", name: "Account lockout threshold", key: "LockoutBadCount", target: "10", type: "policy", section: "Account Lockout Policy" }
+      - { id: "1.10", name: "Allow Admin account lockout", key: "AllowAdministratorLockout", target: "1", type: "reg", path: "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Lsa" }
+      - { id: "1.11", name: "Reset lockout counter", key: "ResetLockoutCount", target: "15", type: "policy", section: "Account Lockout Policy" }
+
+  tasks:
+    - name: Audit Security Policies (Dry Run)
+      community.windows.win_security_policy:
+        section: "{{ item.section }}"
+        key: "{{ item.key }}"
+      loop: "{{ cis_targets | selectattr('type', 'equalto', 'policy') | list }}"
+      register: policy_audit
+      check_mode: yes
+
+    - name: Audit Security Registry Keys
+      ansible.windows.win_reg_stat:
+        path: "{{ item.path }}"
+        name: "{{ item.key }}"
+      loop: "{{ cis_targets | selectattr('type', 'equalto', 'reg') | list }}"
+      register: reg_audit
+
+    - name: Consolidate Audit Findings
+      set_fact:
+        audit_results: >-
+          {% set results = [] %}
+          {% for p in policy_audit.results %}
+            {% do results.append({'id': p.item.id, 'name': p.item.name, 'current': p.current_value, 'target': p.item.target}) %}
+          {% endfor %}
+          {% for r in reg_audit.results %}
+            {% do results.append({'id': r.item.id, 'name': r.item.name, 'current': (r.value | string if r.exists else 'Not Set'), 'target': r.item.target}) %}
+          {% endfor %}
+          {{ results | sort(attribute='id') }}
+
+    - name: Generate Pre-Hardening Report
+      delegate_to: localhost
+      become: false
+      ansible.builtin.template:
+        src: "../templates/pre_hardening_comparison.j2"
+        dest: "/tmp/reports/Pre_Hardening_{{ inventory_hostname }}.html"
+
+    - name: Upload Comparison to S3
+      delegate_to: localhost
+      become: false
+      amazon.aws.s3_object:
+        bucket: "oml-s3-automation-sandbox"
+        object: "cis-baseline-files/Pre_Hardening_{{ inventory_hostname }}.html"
+        src: "/tmp/reports/Pre_Hardening_{{ inventory_hostname }}.html"
+        mode: put
+        region: "eu-west-1"
