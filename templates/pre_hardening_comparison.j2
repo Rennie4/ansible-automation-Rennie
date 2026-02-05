@@ -2,32 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pre-Hardening Account Policy Audit</title>
+    <title>Pre-Hardening Audit Report</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; background-color: #f4f7f9; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f4f7f9; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
         .header { border-bottom: 3px solid #0078d4; margin-bottom: 20px; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; }
         th { background-color: #0078d4; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
-        .delta { color: #d93025; font-weight: bold; background-color: #fff2f0; padding: 2px 5px; border-radius: 3px; }
+        .non-compliant { color: #d93025; font-weight: bold; background-color: #fff2f0; padding: 2px 5px; border-radius: 4px; }
         .compliant { color: #1e7e34; font-weight: bold; }
-        .status-pill { font-size: 11px; text-transform: uppercase; padding: 4px 8px; border-radius: 12px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Pre-Hardening Account Policy Audit</h1>
-            <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Mode:</strong> Dry Run (Read-Only)</p>
+            <h1>Account Policy Audit: Current vs. CIS PDF</h1>
+            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Job Type:</strong> CHECK MODE</p>
         </div>
         <table>
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Policy Description</th>
-                    <th>Current Configuration</th>
-                    <th>CIS PDF Target</th>
+                    <th>Setting</th>
+                    <th>Current Value</th>
+                    <th>CIS Target</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -36,15 +35,15 @@
                 <tr>
                     <td>{{ item.id }}</td>
                     <td><strong>{{ item.name }}</strong></td>
-                    <td class="{{ 'delta' if item.current|string != item.target|string else 'compliant' }}">
-                        {{ item.current }}
+                    <td class="{{ 'non-compliant' if item.cur|string != item.tar|string else 'compliant' }}">
+                        {{ item.cur }}
                     </td>
-                    <td>{{ item.target }}</td>
+                    <td>{{ item.tar }}</td>
                     <td>
-                        {% if item.current|string == item.target|string %}
-                            <span class="status-pill compliant" style="background: #e6ffed;">Compliant</span>
+                        {% if item.cur|string == item.tar|string %}
+                            <span class="compliant">Compliant</span>
                         {% else %}
-                            <span class="status-pill delta">Non-Compliant</span>
+                            <span class="non-compliant">Action Required</span>
                         {% endif %}
                     </td>
                 </tr>
