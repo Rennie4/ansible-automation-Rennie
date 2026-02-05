@@ -7,7 +7,7 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "/tmp/reports"
-    # This path matches your Git structure: up from 'playbooks', into 'templates'
+    # Points to the correct template folder in your project
     template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
@@ -16,6 +16,7 @@
         try {
             $raw = auditpol /get /category:* /r
             if ($null -eq $raw -or $raw.Count -lt 2) { return "[]" }
+
             $results = $raw | ConvertFrom-Csv | Where-Object { $_.Category -and $_.Subcategory } | ForEach-Object {
                 [PSCustomObject]@{
                     Category    = $_.Category.Trim()
@@ -23,9 +24,20 @@
                     Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
                 }
             }
-            if ($results) { $results | ConvertTo-Json -Compress } else { "[]" }
-        } catch { "[]" }
+            if ($results) { 
+                $results | ConvertTo-Json -Compress 
+            } else { 
+                "[]" 
+            }
+        } catch { 
+            "[]" 
+        }
       register: full_audit_raw
+
+    - name: Parse JSON into scan_results
+      set_fact:
+        # Explicitly casting the string to a list to prevent "No Data" errors
+        scan_results: "{{ full_audit_raw.stdout | from_json }}"
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -40,9 +52,6 @@
       ansible.builtin.template:
         src: "{{ template_src }}"
         dest: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
-      vars:
-        # Converts PowerShell JSON string to an Ansible list
-        scan_results: "{{ full_audit_raw.stdout | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
@@ -54,7 +63,3 @@
         mode: put
         region: "{{ aws_region }}"
       register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "Success! Report uploaded to S3: {{ s3_upload.url if s3_upload.url is defined else 'Check Bucket' }}"
