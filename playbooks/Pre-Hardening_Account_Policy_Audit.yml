@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: yes
   vars:
-    # Target values from your CIS PDF
+    # Targets derived from CIS Benchmark v1.0.0
     cis_targets:
       PasswordHistorySize: "24"
       MaximumPasswordAge: "365"
@@ -16,7 +16,8 @@
       ResetLockoutCount: "15"
 
   tasks:
-    - name: Export Current Security Policy via Secedit
+    - name: Export Security Policy via Secedit
+      # Native secedit bypasses the need for the community.windows collection
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secexport.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY
@@ -31,7 +32,7 @@
         $policy | ConvertTo-Json
       register: secedit_raw
 
-    - name: Audit Security Registry Keys (Admin Lockout & Length)
+    - name: Audit Windows 2025 Specific Registry Keys
       ansible.windows.win_reg_stat:
         path: "{{ item.path }}"
         name: "{{ item.name }}"
@@ -40,24 +41,27 @@
         - { id: "1.10", name: "AllowAdministratorLockout", path: "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa", target: "1" }
       register: reg_audit
 
-    - name: Consolidate Audit Findings
+    - name: Consolidate Comparison Results
       set_fact:
-        current_policy: "{{ secedit_raw.stdout | from_json }}"
+        current_p: "{{ secedit_raw.stdout | from_json }}"
         audit_results: []
 
-    - name: Build Comparison List
+    - name: Build Final Audit List
       set_fact:
         audit_results: >-
           {% set results = [] %}
-          {% set p = current_policy %}
-          {% do results.append({'id': '1.1', 'name': 'Password History', 'current': p.PasswordHistorySize | default('0'), 'target': cis_targets.PasswordHistorySize}) %}
-          {% do results.append({'id': '1.2', 'name': 'Max Password Age', 'current': p.MaximumPasswordAge | default('0'), 'target': cis_targets.MaximumPasswordAge}) %}
-          {% do results.append({'id': '1.4', 'name': 'Min Password Length', 'current': p.MinimumPasswordLength | default('0'), 'target': cis_targets.MinimumPasswordLength}) %}
-          {% do results.append({'id': '1.9', 'name': 'Lockout Threshold', 'current': p.LockoutBadCount | default('0'), 'target': cis_targets.LockoutBadCount}) %}
+          {% set p = current_p %}
+          {% do results.append({'id': '1.1', 'name': 'Password History', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize}) %}
+          {% do results.append({'id': '1.2', 'name': 'Max Password Age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge}) %}
+          {% do results.append({'id': '1.3', 'name': 'Min Password Age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge}) %}
+          {% do results.append({'id': '1.4', 'name': 'Min Password Length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength}) %}
+          {% do results.append({'id': '1.5', 'name': 'Complexity Enabled', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity}) %}
+          {% do results.append({'id': '1.8', 'name': 'Lockout Duration', 'cur': p.LockoutDuration | default('0'), 'tar': cis_targets.LockoutDuration}) %}
+          {% do results.append({'id': '1.9', 'name': 'Lockout Threshold', 'cur': p.LockoutBadCount | default('0'), 'tar': cis_targets.LockoutBadCount}) %}
           {% for r in reg_audit.results %}
-            {% do results.append({'id': r.item.id, 'name': r.item.name, 'current': (r.value | string if r.exists else '0'), 'target': r.item.target}) %}
+            {% do results.append({'id': r.item.id, 'name': r.item.name, 'cur': (r.value | string if r.exists else 'Not Set'), 'tar': r.item.target}) %}
           {% endfor %}
-          {{ results }}
+          {{ results | sort(attribute='id') }}
 
     - name: Generate Comparison Report
       delegate_to: localhost
