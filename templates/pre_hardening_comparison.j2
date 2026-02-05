@@ -17,21 +17,21 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Pre-Hardening Audit: {{ inventory_hostname }}</h1>
-            <p><strong>Status:</strong> Audit Scan against CIS Benchmark v1.0.0</p>
+            <h1>Account Policy Audit: {{ inventory_hostname }}</h1>
+            <p><strong>Baseline:</strong> CIS Microsoft Windows Server 2025 v1.0.0</p>
         </div>
         <table>
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Setting</th>
-                    <th>Current Value</th>
+                    <th>Policy Setting</th>
+                    <th>Current Server Value</th>
                     <th>CIS Target</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in audit_results %}
+                {% for item in audit_results | sort(attribute='id') %}
                 <tr>
                     <td>{{ item.id }}</td>
                     <td><strong>{{ item.name }}</strong></td>
