@@ -18,22 +18,25 @@
     - name: Export Security Policy via Secedit
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secexport.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY
+        # Force encoding to UTF8 to avoid BOM issues
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         if (Test-Path $tempFile) {
             $content = Get-Content $tempFile
             $policy = @{}
             foreach ($line in $content) {
                 if ($line -match "=") {
                     $kv = $line -split "="
-                    $policy[$kv[0].Trim()] = $kv[1].Trim()
+                    if ($kv.Count -eq 2) {
+                        $key = $kv[0].Trim()
+                        $val = $kv[1].Trim()
+                        $policy[$key] = $val
+                    }
                 }
             }
-            $policy | ConvertTo-Json
-        } else {
-            @{ "Error" = "Export Failed" } | ConvertTo-Json
+            # Convert to JSON and ensure NO other output is returned
+            return ($policy | ConvertTo-Json -Compress)
         }
       register: secedit_raw
-      # This is the fix: It allows the command to run during a 'Check' job
       check_mode: no 
 
     - name: Audit Windows 2025 Specific Registry Keys
