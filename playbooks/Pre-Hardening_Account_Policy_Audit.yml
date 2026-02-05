@@ -3,6 +3,7 @@
   hosts: all
   gather_facts: yes
   vars:
+    # Values from CIS PDF
     cis_targets:
       PasswordHistorySize: "24"
       MaximumPasswordAge: "365"
@@ -53,6 +54,15 @@
           {% endfor %}
           {{ (base_list + reg_list) | to_json }}
 
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "/tmp/reports"
+        state: directory
+        mode: '0755'
+      check_mode: no
+
     - name: Generate Comparison Report
       delegate_to: localhost
       become: false
@@ -70,5 +80,4 @@
         src: "/tmp/reports/Pre_Hardening_{{ inventory_hostname }}.html"
         mode: put
         region: "eu-west-1"
-      # This ensures the file actually uploads while in Check Mode
       check_mode: no
