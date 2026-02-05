@@ -7,7 +7,7 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "/tmp/reports"
-    # Points to your template folder
+    # Reusable relative path [cite: 2025-12-22]
     template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
@@ -50,13 +50,8 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # This prevents overwriting by adding a date/time string to the name
+        # Unique naming to prevent overwriting [cite: 2025-12-22]
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
-
-    - name: Show S3 URL
-      debug:
-        msg: "Report uploaded: {{ s3_upload.url if s3_upload.url is defined else 'Check S3' }}"
