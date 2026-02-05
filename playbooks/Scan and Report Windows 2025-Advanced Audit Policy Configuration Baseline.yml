@@ -12,21 +12,38 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        $results = auditpol /get /subcategory:* /r | ConvertFrom-Csv | Where-Object { $_.Subcategory } | ForEach-Object {
-            [PSCustomObject]@{
-                Category    = if ($_.Category) { $_.Category.Trim() } else { "Advanced Audit" }
-                Subcategory = $_.Subcategory.Trim()
-                # Matches the MMC "Not Configured" look
-                Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
+        # Use standard text output to avoid 'Parameter Incorrect' CSV errors
+        $data = auditpol /get /subcategory:*
+        $results = @()
+        $currentCategory = "Advanced Audit"
+
+        foreach ($line in ($data -split "`r`n")) {
+            $line = $line.Trim()
+            if ($line -match "^(\S.*\S)$" -and $line -notmatch "Subcategory" -and $line -notmatch "---") {
+                if ($line -match "^\s") {
+                    # This is a subcategory line
+                    $parts = $line -split "  +"
+                    if ($parts.Count -ge 2) {
+                        $results += [PSCustomObject]@{
+                            Category    = $currentCategory
+                            Subcategory = $parts[0].Trim()
+                            # Maps to MMC "Not Configured"
+                            Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
+                        }
+                    }
+                } else {
+                    # This is a new Category header
+                    $currentCategory = $line
+                }
             }
         }
-        if ($null -eq $results) { return "[]" }
+        
+        if ($results.Count -eq 0) { return "[]" }
         $results | ConvertTo-Json -Compress
       register: full_audit_raw
 
     - name: Set Audit Results Fact
       set_fact:
-        # Added default value to prevent 'char 0' errors
         scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
 
     - name: Ensure Local Report Directory
