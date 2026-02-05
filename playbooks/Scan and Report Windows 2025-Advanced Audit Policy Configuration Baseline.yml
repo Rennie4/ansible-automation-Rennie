@@ -7,8 +7,7 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "{{ playbook_dir }}/reports"
-    # Points to the template file shared in the previous step
-    template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
+    template_src: "{{ playbook_dir }}/templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
     - name: Export Full Advanced Audit Policy Categories
@@ -17,7 +16,6 @@
             $raw = auditpol /get /category:* /r
             if ($null -eq $raw -or $raw.Count -lt 2) { return "[]" }
 
-            # Clean whitespace and filter objects to ensure Category/Subcategory exist
             $results = $raw | ConvertFrom-Csv | Where-Object { $_.Category -and $_.Subcategory } | ForEach-Object {
                 [PSCustomObject]@{
                     Category    = $_.Category.Trim()
@@ -25,15 +23,8 @@
                     Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
                 }
             }
-            
-            if ($results) {
-                $results | ConvertTo-Json -Compress
-            } else {
-                "[]"
-            }
-        } catch {
-            "[]"
-        }
+            if ($results) { $results | ConvertTo-Json -Compress } else { "[]" }
+        } catch { "[]" }
       register: full_audit_raw
 
     - name: Ensure Local Report Directory Exists
@@ -49,9 +40,8 @@
         src: "{{ template_src }}"
         dest: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # Robust parsing: handles empty strings or malformed output safely
-        clean_stdout: "{{ full_audit_raw.stdout | trim if full_audit_raw.stdout is defined else '[]' }}"
-        scan_results: "{{ (clean_stdout if clean_stdout != '' else '[]') | from_json }}"
+        # Converts the raw JSON string from PowerShell into an Ansible-readable list
+        scan_results: "{{ full_audit_raw.stdout | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
       delegate_to: localhost
@@ -65,4 +55,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
+        msg: "The report is available in S3: {{ s3_upload.url if s3_upload.url is defined else 'Upload failed check AWX logs' }}"
