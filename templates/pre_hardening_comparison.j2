@@ -5,13 +5,13 @@
     <title>Pre-Hardening Audit Report</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f4f7f9; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
         .header { border-bottom: 3px solid #0078d4; margin-bottom: 20px; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; }
         th { background-color: #0078d4; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
-        .non-compliant { color: #d93025; font-weight: bold; background-color: #fff2f0; padding: 2px 5px; border-radius: 4px; }
-        .compliant { color: #1e7e34; font-weight: bold; }
+        .non-compliant { color: #d93025; font-weight: bold; background-color: #fff2f0; padding: 4px 8px; border-radius: 4px; }
+        .compliant { color: #1e7e34; font-weight: bold; background-color: #e6ffed; padding: 4px 8px; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -35,9 +35,7 @@
                 <tr>
                     <td>{{ item.id }}</td>
                     <td><strong>{{ item.name }}</strong></td>
-                    <td class="{{ 'non-compliant' if item.cur|string != item.tar|string else 'compliant' }}">
-                        {{ item.cur }}
-                    </td>
+                    <td>{{ item.cur }}</td>
                     <td>{{ item.tar }}</td>
                     <td>
                         {% if item.cur|string == item.tar|string %}
