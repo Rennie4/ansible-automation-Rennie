@@ -7,7 +7,8 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "/tmp/reports"
-    template_src: "{{ playbook_dir }}/templates/baseline-Advanced Audit Policy Configuration_report.j2"
+    # This path matches your Git structure: up from 'playbooks', into 'templates'
+    template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
     - name: Export Full Advanced Audit Policy Categories
@@ -40,6 +41,7 @@
         src: "{{ template_src }}"
         dest: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
+        # Converts PowerShell JSON string to an Ansible list
         scan_results: "{{ full_audit_raw.stdout | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
@@ -55,4 +57,4 @@
 
     - name: Display Report Link
       debug:
-        msg: "Success! Report uploaded to: {{ s3_upload.url if s3_upload.url is defined else 'S3 Bucket' }}"
+        msg: "Success! Report uploaded to S3: {{ s3_upload.url if s3_upload.url is defined else 'Check Bucket' }}"
