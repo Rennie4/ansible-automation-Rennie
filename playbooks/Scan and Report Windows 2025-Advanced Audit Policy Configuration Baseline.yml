@@ -12,14 +12,14 @@
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        # Use --% to stop PowerShell from misinterpreting the /get switch
-        $data = auditpol /get /subcategory:*
+        # The --% is the magic fix to stop the 'Help Menu' loop
+        $data = auditpol --% /get /subcategory:*
         $results = @()
         $currentCategory = "Advanced Audit"
 
         foreach ($line in ($data -split "`r`n")) {
             $trimmed = $line.Trim()
-            # Ignore help headers, dashes, and empty lines
+            # Filter out the 'Commands' text that caused the 4.1KB error
             if ($trimmed -and $trimmed -notmatch "---" -and $trimmed -notmatch "Subcategory" -and $trimmed -notmatch "Commands") {
                 if ($line -match "^\s{2,}") {
                     $parts = $trimmed -split "\s{2,}"
@@ -27,7 +27,7 @@
                         $results += [PSCustomObject]@{
                             Category    = $currentCategory
                             Subcategory = $parts[0].Trim()
-                            # Match the "Not Configured" state from your MMC
+                            # Maps results to 'Not Configured' to match your MMC
                             Setting     = if ($parts[1] -match "No Auditing") { "Not Configured" } else { $parts[1].Trim() }
                         }
                     }
@@ -62,7 +62,7 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Uses timestamp to prevent overwriting with smaller, broken files
+        # Unique timestamp ensures every run is saved [cite: 2025-12-22, 2025-12-24]
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
