@@ -17,8 +17,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Account Policy Audit: Current vs. CIS PDF</h1>
-            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Job Type:</strong> CHECK MODE</p>
+            <h1>Pre-Hardening Audit: Current vs. CIS PDF</h1>
+            <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Mode:</strong> CHECK (Simulation)</p>
         </div>
         <table>
             <thead>
@@ -43,7 +43,7 @@
                         {% if item.cur|string == item.tar|string %}
                             <span class="compliant">Compliant</span>
                         {% else %}
-                            <span class="non-compliant">Action Required</span>
+                            <span class="non-compliant">Non-Compliant</span>
                         {% endif %}
                     </td>
                 </tr>
