@@ -23,7 +23,7 @@
             <p><strong>Target Host:</strong> {{ inventory_hostname }} | <strong>Scan Date:</strong> {{ ansible_date_time.date }}</p>
         </div>
 
-        {% if scan_results and scan_results | length > 0 %}
+        {% if scan_results is defined and scan_results | length > 0 %}
             {% for category, items in scan_results | groupby('Category') %}
             <h2>{{ category }}</h2>
             <table>
@@ -48,7 +48,6 @@
         {% else %}
             <div style="background-color: #fee2e2; border: 1px solid #ef4444; padding: 20px; border-radius: 8px;">
                 <p style="color: #b91c1c; font-weight: bold; margin: 0;">Error: No data retrieved from the host.</p>
-                <p style="font-size: 12px; color: #7f1d1d; margin-top: 10px;">Check the raw PowerShell output in the 'Export Full' task.</p>
             </div>
         {% endif %}
     </div>
