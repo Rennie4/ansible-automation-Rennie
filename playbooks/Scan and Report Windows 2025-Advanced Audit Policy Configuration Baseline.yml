@@ -7,24 +7,32 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_dir: "/tmp/reports"
-    # Dynamic relative path to find your template file
     template_src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
 
   tasks:
     - name: Export Full Advanced Audit Policy Categories
       ansible.windows.win_shell: |
-        try {
-            $raw = auditpol /get /category:* /r
-            if ($null -eq $raw -or $raw.Count -lt 2) { return "[]" }
-            $results = $raw | ConvertFrom-Csv | Where-Object { $_.Category -and $_.Subcategory } | ForEach-Object {
+        $ErrorActionPreference = 'Continue'
+        # Try CSV format first
+        $raw = auditpol /get /category:* /r | ConvertFrom-Csv
+        
+        # If empty, try to force a subcategory list
+        if (-not $raw) {
+            $raw = auditpol /get /subcategory:* /r | ConvertFrom-Csv
+        }
+
+        if ($raw) {
+            $results = $raw | Where-Object { $_.Subcategory } | ForEach-Object {
                 [PSCustomObject]@{
-                    Category    = $_.Category.Trim()
+                    Category    = if ($_.Category) { $_.Category.Trim() } else { "Advanced Audit" }
                     Subcategory = $_.Subcategory.Trim()
                     Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
                 }
             }
-            if ($results) { $results | ConvertTo-Json -Compress } else { "[]" }
-        } catch { "[]" }
+            $results | ConvertTo-Json -Compress
+        } else {
+            "[]"
+        }
       register: full_audit_raw
 
     - name: Set Audit Results Fact
@@ -54,7 +62,7 @@
       become: false
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Uses timestamp to prevent overwriting previous reports
+        # Prevents overwriting [cite: 2025-12-22]
         object: "{{ s3_path }}/Advanced_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ report_dir }}/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
