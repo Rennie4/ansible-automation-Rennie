@@ -10,62 +10,52 @@
       MinimumPasswordLength: "14"
       PasswordComplexity: "1"
       ClearTextPassword: "0"
-      LockoutDuration: "15"
-      LockoutBadCount: "10"
-      ResetLockoutCount: "15"
 
   tasks:
-    - name: Export Security Policy via Secedit
+    - name: Export and Clean Security Policy
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secexport.inf"
-        # Force encoding to UTF8 to avoid BOM issues
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         if (Test-Path $tempFile) {
-            $content = Get-Content $tempFile
             $policy = @{}
-            foreach ($line in $content) {
-                if ($line -match "=") {
-                    $kv = $line -split "="
-                    if ($kv.Count -eq 2) {
-                        $key = $kv[0].Trim()
-                        $val = $kv[1].Trim()
-                        $policy[$key] = $val
-                    }
+            # Use -Raw and -split to handle UTF16 encoding issues reliably
+            (Get-Content $tempFile -Raw) -split "`r`n" | ForEach-Object {
+                if ($_ -match '^([^=]+)=(.*)$') {
+                    $policy[$matches[1].Trim()] = $matches[2].Trim()
                 }
             }
-            # Convert to JSON and ensure NO other output is returned
-            return ($policy | ConvertTo-Json -Compress)
+            Remove-Item $tempFile
+            $policy | ConvertTo-Json -Compress
         }
       register: secedit_raw
       check_mode: no 
 
-    - name: Audit Windows 2025 Specific Registry Keys
+    - name: Audit Windows 2025 Registry Keys
       ansible.windows.win_reg_stat:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
+        path: '{{ item.path }}'
+        name: '{{ item.name }}'
       loop:
         - { id: '1.6', name: 'RelaxMinimumPasswordLengthLimits', path: 'HKLM:\System\CurrentControlSet\Control\SAM', target: '1' }
         - { id: '1.10', name: 'AllowAdministratorLockout', path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa', target: '1' }
       register: reg_audit
 
-    - name: Consolidate Comparison Results
+    - name: Build Report List
       set_fact:
-        current_p: "{{ secedit_raw.stdout | from_json }}"
-
-    - name: Build Final Audit List
-      set_fact:
+        # We build the list using + (combine) instead of .append() to avoid the 'do' error
         audit_results: >-
-          {% set results = [] %}
-          {% set p = current_p %}
-          {% do results.append({'id': '1.1', 'name': 'Password History', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize}) %}
-          {% do results.append({'id': '1.2', 'name': 'Max Password Age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge}) %}
-          {% do results.append({'id': '1.3', 'name': 'Min Password Age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge}) %}
-          {% do results.append({'id': '1.4', 'name': 'Min Password Length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength}) %}
-          {% do results.append({'id': '1.5', 'name': 'Complexity Enabled', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity}) %}
+          {% set p = secedit_raw.stdout | from_json %}
+          {% set base_list = [
+            {'id': '1.1', 'name': 'Password History', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
+            {'id': '1.2', 'name': 'Max Password Age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
+            {'id': '1.3', 'name': 'Min Password Age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge},
+            {'id': '1.4', 'name': 'Min Password Length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength},
+            {'id': '1.5', 'name': 'Complexity Enabled', 'cur': p.PasswordComplexity | default('0'), 'tar': cis_targets.PasswordComplexity}
+          ] %}
+          {% set reg_list = [] %}
           {% for r in reg_audit.results %}
-            {% do results.append({'id': r.item.id, 'name': r.item.name, 'cur': (r.value.value | string if r.exists else 'Not Set'), 'tar': r.item.target}) %}
+            {% set reg_list = reg_list + [{'id': r.item.id, 'name': r.item.name, 'cur': (r.value.value | string if r.exists else 'Not Set'), 'tar': r.item.target}] %}
           {% endfor %}
-          {{ results | sort(attribute='id') }}
+          {{ base_list + reg_list }}
 
     - name: Generate Comparison Report
       delegate_to: localhost
