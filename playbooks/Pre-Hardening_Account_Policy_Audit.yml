@@ -18,7 +18,6 @@
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         if (Test-Path $tempFile) {
             $policy = @{}
-            # Use -Raw and -split to handle UTF16 encoding issues reliably
             (Get-Content $tempFile -Raw) -split "`r`n" | ForEach-Object {
                 if ($_ -match '^([^=]+)=(.*)$') {
                     $policy[$matches[1].Trim()] = $matches[2].Trim()
@@ -41,7 +40,7 @@
 
     - name: Build Report List
       set_fact:
-        # We build the list using + (combine) instead of .append() to avoid the 'do' error
+        # We use from_json here to ensure audit_results is a real LIST, not a string
         audit_results: >-
           {% set p = secedit_raw.stdout | from_json %}
           {% set base_list = [
@@ -55,7 +54,7 @@
           {% for r in reg_audit.results %}
             {% set reg_list = reg_list + [{'id': r.item.id, 'name': r.item.name, 'cur': (r.value.value | string if r.exists else 'Not Set'), 'tar': r.item.target}] %}
           {% endfor %}
-          {{ base_list + reg_list }}
+          {{ (base_list + reg_list) | to_json }}
 
     - name: Generate Comparison Report
       delegate_to: localhost
