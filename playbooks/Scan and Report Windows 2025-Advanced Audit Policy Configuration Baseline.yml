@@ -2,6 +2,10 @@
 - name: Scan Windows 2025 Advanced Audit Policy Configuration Baseline
   hosts: all
   gather_facts: yes
+  # These lines activate the escalation you enabled in AWX
+  become: yes
+  become_method: runas
+  become_user: Administrator
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
@@ -9,20 +13,14 @@
 
   tasks:
     - name: Export Full Advanced Audit Policy Categories
-      # Elevation is required to read Advanced Audit data
-      become: yes
-      become_method: runas
-      become_user: Administrator
       ansible.windows.win_shell: |
         try {
             $raw = auditpol /get /category:* /r
             if ($null -eq $raw -or $raw.Count -lt 2) { return "[]" }
-            
             $results = $raw | ConvertFrom-Csv | ForEach-Object {
                 [PSCustomObject]@{
                     Category    = $_.Category.Trim()
                     Subcategory = $_.Subcategory.Trim()
-                    # Maps "No Auditing" to "Not Configured" to match your GPEdit view
                     Setting     = if ($_.Setting -eq "No Auditing") { "Not Configured" } else { $_.Setting.Trim() }
                 }
             }
@@ -32,8 +30,7 @@
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
-      # become: no prevents Linux 'chmod' errors on the AWX runner
-      become: no
+      become: no # Essential to prevent Linux permission errors
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
@@ -46,7 +43,6 @@
         src: "{{ playbook_dir }}/../templates/baseline-Advanced Audit Policy Configuration_report.j2"
         dest: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
       vars:
-        # Prevents JSONDecodeError if the scan returns an empty string
         scan_results: "{{ (full_audit_raw.stdout | default('[]')) | from_json }}"
 
     - name: Upload Advanced Audit Report to S3
@@ -58,8 +54,3 @@
         src: "{{ playbook_dir }}/reports/Advanced_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The Advanced Audit report link is: {{ s3_upload.url }}"
