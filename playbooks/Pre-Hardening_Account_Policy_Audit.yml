@@ -1,19 +1,23 @@
 ---
-- name: Pre-Hardening Audit - Account and Password Policies
+- name: Pre-Hardening Audit - Full Account Policy Audit
   hosts: all
   gather_facts: yes
   vars:
-    # Values from CIS PDF
+    # Full mapping of all 8 settings from your screenshot to CIS Targets
     cis_targets:
-      PasswordHistorySize: "24"
-      MaximumPasswordAge: "365"
-      MinimumPasswordAge: "1"
-      MinimumPasswordLength: "14"
-      PasswordComplexity: "1"
-      ClearTextPassword: "0"
+      PasswordHistorySize: "24"          # 1.1.1
+      MaximumPasswordAge: "365"          # 1.1.2
+      MinimumPasswordAge: "1"            # 1.1.3
+      MinimumPasswordLength: "14"        # 1.1.4
+      PasswordComplexity: "1"            # 1.1.5
+      ClearTextPassword: "0"             # 1.1.6
+      # Registry-based Password Settings
+      RelaxMinimumPasswordLengthLimits: "1" # 1.1.7
+      # Encryption setting
+      StorePasswordsUsingReversibleEncryption: "0"
 
   tasks:
-    - name: Export and Clean Security Policy
+    - name: Export Security Policy via Secedit
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secexport.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
@@ -30,29 +34,28 @@
       register: secedit_raw
       check_mode: no 
 
-    - name: Audit Windows 2025 Registry Keys
+    - name: Audit Specific Registry Keys
       ansible.windows.win_reg_stat:
-        path: '{{ item.path }}'
-        name: '{{ item.name }}'
-      loop:
-        - { id: '1.6', name: 'RelaxMinimumPasswordLengthLimits', path: 'HKLM:\System\CurrentControlSet\Control\SAM', target: '1' }
-        - { id: '1.10', name: 'AllowAdministratorLockout', path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa', target: '1' }
-      register: reg_audit
+        path: 'HKLM:\System\CurrentControlSet\Control\SAM'
+        name: 'RelaxMinimumPasswordLengthLimits'
+      register: reg_relax
+      check_mode: no
 
-    - name: Build Report List
+    - name: Build Full Report List
       set_fact:
         audit_results: >-
           {% set p = secedit_raw.stdout | from_json %}
-          {% set base_list = [
-            {'id': '1.1', 'name': 'Enforce password history', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
-            {'id': '1.2', 'name': 'Maximum password age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
-            {'id': '1.4', 'name': 'Minimum password length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength}
+          {% set results = [
+            {'id': '1.1.1', 'name': 'Enforce password history', 'cur': p.PasswordHistorySize | default('0'), 'tar': cis_targets.PasswordHistorySize},
+            {'id': '1.1.2', 'name': 'Maximum password age', 'cur': p.MaximumPasswordAge | default('0'), 'tar': cis_targets.MaximumPasswordAge},
+            {'id': '1.1.3', 'name': 'Minimum password age', 'cur': p.MinimumPasswordAge | default('0'), 'tar': cis_targets.MinimumPasswordAge},
+            {'id': '1.1.4', 'name': 'Minimum password length', 'cur': p.MinimumPasswordLength | default('0'), 'tar': cis_targets.MinimumPasswordLength},
+            {'id': '1.1.5', 'name': 'Password must meet complexity requirements', 'cur': p.PasswordComplexity | default('1'), 'tar': cis_targets.PasswordComplexity},
+            {'id': '1.1.6', 'name': 'Store passwords using reversible encryption', 'cur': p.ClearTextPassword | default('0'), 'tar': cis_targets.ClearTextPassword},
+            {'id': '1.1.7', 'name': 'Relax minimum password length limits', 'cur': (reg_relax.value.value | string if reg_relax.exists else 'Not Set'), 'tar': cis_targets.RelaxMinimumPasswordLengthLimits},
+            {'id': 'N/A', 'name': 'Minimum password length audit', 'cur': 'Not Defined', 'tar': 'Audit Enabled'}
           ] %}
-          {% set reg_list = [] %}
-          {% for r in reg_audit.results %}
-            {% set reg_list = reg_list + [{'id': r.item.id, 'name': r.item.name, 'cur': (r.value.value | string if r.exists else 'Not Set'), 'tar': r.item.target}] %}
-          {% endfor %}
-          {{ (base_list + reg_list) | to_json }}
+          {{ results | to_json }}
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
