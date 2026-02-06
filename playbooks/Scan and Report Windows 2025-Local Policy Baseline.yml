@@ -6,8 +6,8 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    template_path: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
-
+    
+    # Map for Policy Names (Expanded to 37)
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -47,38 +47,39 @@
       "SeRelabelPrivilege": "Modify an object label"
       "SeSyncAgentPrivilege": "Synchronize directory service data"
 
+    # Map for Values (Added the Window Manager and missing SIDs)
+    sid_lookup:
+      "*S-1-1-0": "Everyone"
+      "*S-1-5-32-544": "Administrators"
+      "*S-1-5-32-545": "Users"
+      "*S-1-5-32-551": "Backup Operators"
+      "*S-1-5-19": "LOCAL SERVICE"
+      "*S-1-5-20": "NETWORK SERVICE"
+      "*S-1-5-32-555": "Remote Desktop Users"
+      "*S-1-5-6": "SERVICE"
+      "*S-1-5-90-0": "Window Manager\\Window Manager Group"
+      "*S-1-5-80-0": "NT SERVICE\\ALL SERVICES"
+      "*S-1-5-32-559": "Performance Log Users"
+      # This is the one you specifically wanted translated:
+      "*S-1-5-80-3139157870-2983391045-3678747466-658725712-1809340420": "Window Manager\\Window Manager Group"
+      "NT SERVICE\\ALL RESTRICTED SERVICES": "NT SERVICE\\ALL RESTRICTED SERVICES"
+
   tasks:
-    - name: Export and Dynamically Translate All SIDs
+    - name: Export Current User Rights Assignment
       ansible.windows.win_shell: |
-        {% raw %}
         $configFile = "C:\temp\audit_scan.inf"
         if (!(Test-Path "C:\temp")) { New-Item -Path "C:\" -Name "temp" -ItemType "Directory" | Out-Null }
         secedit /export /areas USER_RIGHTS /cfg $configFile | Out-Null
-        
-        $results = @()
         if (Test-Path $configFile) {
-            $raw = Get-Content $configFile | Where-Object { $_ -match '=' }
-            foreach ($line in $raw) {
-                $parts = $line.Split('=')
+            Get-Content $configFile | Where-Object { $_ -match '=' } | ForEach-Object {
+                $parts = $_.ToString().Split('=')
                 $key = $parts[0].Trim()
-                $rawVals = $parts[1].Trim() -split ','
-                
-                $translated = foreach ($val in $rawVals) {
-                    $cleanVal = $val.Trim().Trim('*')
-                    if ($cleanVal -match '^S-1-5-') {
-                        try {
-                            $sid = New-Object System.Security.Principal.SecurityIdentifier($cleanVal)
-                            $sid.Translate([System.Security.Principal.NTAccount]).Value
-                        } catch { $cleanVal }
-                    } else { $cleanVal }
-                }
-                $results += @{ id = $key; value = ($translated -join ", ") }
+                $val = $parts[1].Trim()
+                Write-Output "$key|$val"
             }
             Remove-Item $configFile
         }
-        $results | ConvertTo-Json -Compress
-        {% endraw %}
-      register: policy_scan_translated
+      register: policy_scan_raw
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -89,7 +90,7 @@
     - name: Generate HTML Report from Template
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ template_path }}"
+        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
 
     - name: Upload Audit Report to S3 Bucket
