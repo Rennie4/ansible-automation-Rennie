@@ -6,11 +6,8 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    
-    # Pathing as per your last working version
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
 
-    # Full map of 37 User Rights Assignment (CIS 2.2.1 - 2.2.37)
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -53,6 +50,7 @@
   tasks:
     - name: Export and Dynamically Translate All SIDs
       ansible.windows.win_shell: |
+        {% raw %}
         $configFile = "C:\temp\audit_scan.inf"
         if (!(Test-Path "C:\temp")) { New-Item -Path "C:\" -Name "temp" -ItemType "Directory" | Out-Null }
         secedit /export /areas USER_RIGHTS /cfg $configFile | Out-Null
@@ -79,6 +77,7 @@
             Remove-Item $configFile
         }
         $results | ConvertTo-Json -Compress
+        {% endraw %}
       register: policy_scan_translated
 
     - name: Ensure Local Report Directory Exists
@@ -101,8 +100,3 @@
         src: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The report is available at: {{ s3_upload.url }}"
