@@ -1,12 +1,13 @@
 ---
-- name: Scan Windows 2025 and Upload Report to S3
+- name: Scan Windows 2025 - Full 37 User Rights Baseline
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Map for Policy Names
+    
+    # This map helps convert the technical constant to the readable Policy Name
     sid_map:
       "SeNetworkLogonRight": "Access this computer from the network"
       "SeBackupPrivilege": "Back up files and directories"
@@ -39,59 +40,54 @@
       "SeTimeZonePrivilege": "Change the time zone"
       "SeCreateSymbolicLinkPrivilege": "Create symbolic links"
       "SeDelegateSessionUserImpersonatePrivilege": "Obtain an impersonation token for another user"
-    
-    # Map for the Values (SID to Friendly Name)
-    sid_lookup:
-      "*S-1-1-0": "Everyone"
-      "*S-1-5-32-544": "Administrators"
-      "*S-1-5-32-545": "Users"
-      "*S-1-5-32-551": "Backup Operators"
-      "*S-1-5-19": "LOCAL SERVICE"
-      "*S-1-5-20": "NETWORK SERVICE"
-      "*S-1-5-32-555": "Remote Desktop Users"
-      "*S-1-5-6": "SERVICE"
-      "*S-1-5-90-0": "Window Manager\\Window Manager Group"
-      "*S-1-5-32-559": "Performance Log Users"
-      "*S-1-5-80-0": "NT SERVICE\\ALL SERVICES"
-      "NT SERVICE\\ALL RESTRICTED SERVICES": "NT SERVICE\\ALL RESTRICTED SERVICES"
+      "SeTrustedCredManAccessPrivilege": "Access Credential Manager as a trusted caller"
+      "SeTcbPrivilege": "Act as part of the operating system"
+      "SeCreateTokenPrivilege": "Create a token object"
+      "SeLockMemoryPrivilege": "Lock pages in memory"
+      "SeRelabelPrivilege": "Modify an object label"
+      "SeSyncAgentPrivilege": "Synchronize directory service data"
 
   tasks:
-    - name: Export Current User Rights Assignment
+    - name: Export and Dynamically Translate All SIDs
       ansible.windows.win_shell: |
         $configFile = "C:\temp\audit_scan.inf"
-        secedit /export /areas USER_RIGHTS /cfg $configFile
+        secedit /export /areas USER_RIGHTS /cfg $configFile | Out-Null
+        
+        $results = @()
         if (Test-Path $configFile) {
-            Get-Content $configFile | Where-Object { $_ -match '^Se.*=.*' } | ForEach-Object {
-                $parts = $_.ToString().Split('=')
+            $raw = Get-Content $configFile | Where-Object { $_ -match '=' }
+            foreach ($line in $raw) {
+                $parts = $line.Split('=')
                 $key = $parts[0].Trim()
-                $val = $parts[1].Trim()
-                Write-Output "$key|$val"
+                $rawVals = $parts[1].Trim() -split ','
+                
+                $translated = foreach ($val in $rawVals) {
+                    $cleanVal = $val.Trim().Trim('*')
+                    if ($cleanVal -match '^S-1-5-') {
+                        try {
+                            $sid = New-Object System.Security.Principal.SecurityIdentifier($cleanVal)
+                            $sid.Translate([System.Security.Principal.NTAccount]).Value
+                        } catch { $cleanVal }
+                    } else { $cleanVal }
+                }
+                $results += @{ id = $key; value = ($translated -join ", ") }
             }
+            Remove-Item $configFile
         }
-      register: policy_scan_raw
+        $results | ConvertTo-Json -Compress
+      register: policy_scan_translated
 
-    - name: Ensure Local Report Directory Exists
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
-
-    - name: Generate HTML Report from Template
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/baseline-local Policy_report.j2"
+        src: "{{ playbook_dir }}/../templates/baseline-local_Policy_report.j2"
         dest: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
 
-    - name: Upload Audit Report to S3 Bucket
+    - name: Upload to S3 with Timestamp
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Server_Audit_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "{{ s3_path }}/Server_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/Server_Audit_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-      register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The fully translated baseline report link is: {{ s3_upload.url }}"
