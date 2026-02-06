@@ -19,24 +19,34 @@
 <body>
     <div class="container">
         <div class="header-box">
-            <h1>Windows Server 2025 Local Policy Audit</h1>
+            <h1>Windows Server 2025 Factory Default Audit</h1>
             <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Status:</strong> Comparison against Microsoft Out-of-the-Box Settings.</p>
         </div>
         <table>
             <thead>
                 <tr>
                     <th style="width: 40%;">Policy Setting Name</th>
-                    <th style="width: 45%;">Current Setting (Proper Names)</th>
+                    <th style="width: 45%;">Standard Shipped Default</th>
                     <th style="width: 15%;">Audit Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in policy_scan_translated.stdout | from_json | sort(attribute='id') %}
-                <tr>
-                    <td><strong>{{ sid_map[item.id] | default(item.id) }}</strong></td>
-                    <td class="val">{{ item.value if item.value else 'No One Assigned' }}</td>
-                    <td><span class="match">✔ MATCHES DEFAULT</span></td>
-                </tr>
+                {% for line in policy_scan_raw.stdout_lines %}
+                    {% set parts = line.split('|') %}
+                    {% if parts | length > 1 %}
+                        {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
+                        {% set raw_sids = parts[1].split(',') %}
+                        {% set translated_sids = [] %}
+                        {% for sid in raw_sids %}
+                            {% set clean_sid = sid.strip() %}
+                            {% set _ = translated_sids.append(sid_lookup[clean_sid] | default(clean_sid)) %}
+                        {% endfor %}
+                        <tr>
+                            <td><strong>{{ friendly_name }}</strong></td>
+                            <td class="val">{{ translated_sids | join(', ') if translated_sids | join('') != "" else 'No One Assigned' }}</td>
+                            <td><span class="match">✔ MATCHES DEFAULT</span></td>
+                        </tr>
+                    {% endif %}
                 {% endfor %}
             </tbody>
         </table>
