@@ -1,0 +1,70 @@
+---
+- name: Scan Windows 2025 Security Options and Upload to S3
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files"
+    aws_region: "eu-west-1"
+    template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
+
+    security_options_map:
+      # Accounts Section (From Screenshot)
+      "EnableAdminAccount": "Accounts: Administrator account status"
+      "EnableGuestAccount": "Accounts: Guest account status"
+      "NewAdminName": "Accounts: Rename administrator account"
+      "NewGuestName": "Accounts: Rename guest account"
+      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
+      
+      # Audit Section (From Screenshot)
+      "AuditBaseObjects": "Audit: Audit the access of global system objects"
+      "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
+      "CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
+      
+      # Device Section
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
+      
+      # Network / UAC Section
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "User Account Control: Run all administrators in Admin Approval Mode"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Do not display last user name"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "Network access: Let Everyone permissions apply to anonymous users"
+      "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
+
+  tasks:
+    - name: Export Security Options Policy
+      ansible.windows.win_shell: |
+        $configFile = "C:\temp\security_options.inf"
+        secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
+        if (Test-Path $configFile) {
+            Get-Content $configFile | Where-Object { $_ -match '=' } | ForEach-Object {
+                $parts = $_.ToString().Split('=')
+                $key = $parts[0].Trim()
+                $val = $parts[1].Trim()
+                Write-Output "$key|$val"
+            }
+            Remove-Item $configFile
+        }
+      register: security_scan_raw
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+
+    - name: Generate Security Options HTML Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "{{ template_path }}"
+        dest: "{{ playbook_dir }}/reports/Security_Options_{{ inventory_hostname }}.html"
+
+    - name: Upload to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/Security_Options_{{ inventory_hostname }}.html"
+        mode: put
+        region: "{{ aws_region }}"
