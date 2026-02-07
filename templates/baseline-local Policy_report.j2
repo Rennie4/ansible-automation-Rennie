@@ -31,22 +31,30 @@
                 </tr>
             </thead>
             <tbody>
+                {% set display_items = [] %}
                 {% for line in policy_scan_raw.stdout_lines %}
                     {% set parts = line.split('|') %}
                     {% if parts | length > 1 %}
                         {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
+                        
+                        {# Your original SID Translation Logic #}
                         {% set raw_sids = parts[1].split(',') %}
                         {% set translated_sids = [] %}
                         {% for sid in raw_sids %}
                             {% set clean_sid = sid.strip() %}
                             {% set _ = translated_sids.append(sid_lookup[clean_sid] | default(clean_sid)) %}
                         {% endfor %}
-                        <tr>
-                            <td><strong>{{ friendly_name }}</strong></td>
-                            <td class="val">{{ translated_sids | join(', ') if translated_sids | join('') != "" else 'No One Assigned' }}</td>
-                            <td><span class="match">✔ MATCHES DEFAULT</span></td>
-                        </tr>
+                        
+                        {% set _ = display_items.append({'name': friendly_name, 'value': translated_sids | join(', ')}) %}
                     {% endif %}
+                {% endfor %}
+
+                {% for item in display_items | sort(attribute='name') %}
+                <tr>
+                    <td><strong>{{ item.name }}</strong></td>
+                    <td class="val">{{ item.value or 'No One (Empty)' }}</td>
+                    <td><span class="match">✔ MATCHES DEFAULT</span></td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
