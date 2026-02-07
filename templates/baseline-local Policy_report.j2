@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Windows Server 2025 Factory Default Audit</title>
+    <title>Windows Server 2025 Local Policy Audit</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #ffffff; color: #333; }
         .container { width: 95%; margin: 20px auto; }
-        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 5px; }
         .header-box { border-bottom: 3px solid #0078d4; padding-bottom: 10px; margin-bottom: 20px; }
+        .section-header { background-color: #f4f7f9; padding: 10px; margin: 20px 0 10px 0; border-left: 5px solid #0078d4; font-weight: bold; font-size: 16px; color: #2c3e50; }
+        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 5px; }
         table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
         th { background-color: #0078d4; color: white; padding: 12px; text-align: left; font-size: 13px; font-weight: 600; }
         td { padding: 10px; border-bottom: 1px solid #efefef; font-size: 13px; border-right: 1px solid #efefef; }
@@ -22,6 +23,11 @@
             <h1>Windows Server 2025 Factory Default Audit</h1>
             <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Status:</strong> Comparison against Microsoft Out-of-the-Box Settings.</p>
         </div>
+
+        <div class="section-header">
+            Local Policies: User Rights Assignment
+        </div>
+
         <table>
             <thead>
                 <tr>
@@ -36,15 +42,12 @@
                     {% set parts = line.split('|') %}
                     {% if parts | length > 1 %}
                         {% set friendly_name = sid_map[parts[0]] | default(parts[0]) %}
-                        
-                        {# Your original SID Translation Logic #}
                         {% set raw_sids = parts[1].split(',') %}
                         {% set translated_sids = [] %}
                         {% for sid in raw_sids %}
                             {% set clean_sid = sid.strip() %}
                             {% set _ = translated_sids.append(sid_lookup[clean_sid] | default(clean_sid)) %}
                         {% endfor %}
-                        
                         {% set _ = display_items.append({'name': friendly_name, 'value': translated_sids | join(', ')}) %}
                     {% endif %}
                 {% endfor %}
@@ -52,7 +55,7 @@
                 {% for item in display_items | sort(attribute='name') %}
                 <tr>
                     <td><strong>{{ item.name }}</strong></td>
-                    <td class="val">{{ item.value or 'No One (Empty)' }}</td>
+                    <td class="val">{{ item.value if item.value else 'No One Assigned' }}</td>
                     <td><span class="match">✔ MATCHES DEFAULT</span></td>
                 </tr>
                 {% endfor %}
