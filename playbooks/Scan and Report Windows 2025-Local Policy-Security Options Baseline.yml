@@ -9,28 +9,58 @@
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
 
     security_options_map:
-      # Accounts Section (From Screenshot)
+      # Accounts & Audit (Standard Names)
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
-      
-      # Audit Section (From Screenshot)
       "AuditBaseObjects": "Audit: Audit the access of global system objects"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
       
-      # Device Section
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
+      # Recovery Console
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SecurityLevel": "Recovery console: Allow automatic administrative logon"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Allow floppy copy and access to all drives and all folders"
       
-      # Network / UAC Section
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "User Account Control: Run all administrators in Admin Approval Mode"
+      # Interactive Logon
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\CachedLogonsCount": "Interactive logon: Number of previous logons to cache"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\ForceUnlockLogon": "Interactive logon: Display user information when the session is locked"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\PasswordExpiryWarning": "Interactive logon: Prompt user to change password before expiration"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\ScRemoveOption": "Interactive logon: Smart card removal behavior"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Do not display last user name"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "Network access: Let Everyone permissions apply to anonymous users"
-      "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeCaption": "Interactive logon: Message title for users attempting to log on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeText": "Interactive logon: Message text for users attempting to log on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ShutdownWithoutLogon": "Shutdown: Allow system to be shut down without having to log on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      
+      # User Account Control (UAC)
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorEnhancedAdmin": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "User Account Control: Behavior of the elevation prompt for standard users"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "User Account Control: Only elevate UIAccess applications that are installed in secure locations"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "User Account Control: Allow UIAccess applications to prompt for elevation without using the secure desktop"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "User Account Control: Virtualize file and registry write failures to per-user locations"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\TypeOfAdminApprovalMode": "User Account Control: Run all administrators in Admin Approval Mode"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ValidateAdminCodeSignatures": "User Account Control: Only elevate executables that are signed and validated"
+      
+      # Network Security & Access
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Minimum session security for NTLM SSP based clients"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinServerSec": "Network security: Minimum session security for NTLM SSP based servers"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoLMHash": "Network security: Do not store LAN Manager hash value on next password change"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\ForceGuest": "Network access: Sharing and security model for local accounts"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign communications (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign communications (always)"
+      
+      # Domain Member
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
 
   tasks:
     - name: Export Security Options Policy
