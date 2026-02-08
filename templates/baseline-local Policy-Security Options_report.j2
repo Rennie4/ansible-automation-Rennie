@@ -17,31 +17,29 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="box">
-            <h2>Windows Server 2025: Security Options Report</h2>
-            <div class="meta">
-                <strong>Server:</strong> {{ inventory_hostname }} | 
-                <strong>Total Policies Scanned:</strong> {{ security_scan_raw.stdout_lines | length }}
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Policy Name</th>
-                        <th>Security Setting</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for line in security_scan_raw.stdout_lines %}
-                    {% set parts = line.split('|') %}
-                    <tr>
-                        <td>{{ parts[0] }}</td>
-                        <td class="{{ parts[1] }}">{{ parts[1] }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <div class="box">
+        <h2>Windows Server 2025: Security Options Report</h2>
+        <div class="meta">
+            <strong>Server:</strong> {{ inventory_hostname }} | 
+            <strong>Total Policies Scanned:</strong> {{ security_scan_raw.stdout_lines | length }}
         </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Policy Name</th>
+                    <th>Security Setting</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in security_scan_raw.stdout_lines %}
+                {% set parts = line.split('|') %}
+                <tr>
+                    <td>{{ parts[0] }}</td>
+                    <td class="{{ parts[1] }}">{{ parts[1] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </body>
 </html>
