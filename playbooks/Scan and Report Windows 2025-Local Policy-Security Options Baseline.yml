@@ -8,7 +8,6 @@
     aws_region: "eu-west-1"
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
 
-    # THIS MAPS REGISTRY KEYS TO THE EXACT NAMES IN YOUR SCREENSHOT
     security_options_map:
       # Accounts
       "EnableAdminAccount": "Accounts: Administrator account status"
@@ -24,14 +23,19 @@
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings (Windows Vista or later) to override audit policy category settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
       
-      # DCOM
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions in Security Descriptor Definition Language (SDDL) syntax"
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions in Security Descriptor Definition Language (SDDL) syntax"
-
       # Devices
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
+      
+      # Domain controller
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\AllowSingleSignOn": "Domain controller: Allow computer account re-use during domain join"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain controller: Refuse machine account password changes"
+      
+      # Interactive logon
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
 
   tasks:
     - name: Export Security Options Policy
@@ -48,6 +52,13 @@
             Remove-Item $configFile
         }
       register: security_scan_raw
+
+    - name: Create Reports Directory on Localhost
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+        mode: '0755'
 
     - name: Generate Security Options HTML Report
       delegate_to: localhost
