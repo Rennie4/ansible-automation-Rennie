@@ -28,10 +28,24 @@
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       
-      # Network Access & Security
-      "AllowAnonymousSIDOrNameTranslation": "Network access: Allow anonymous SID/Name translation"
-      "DoNotAllowAnonymousEnumerationOfSAMAccounts": "Network access: Do not allow anonymous enumeration of SAM accounts"
-      "AllowLocalSystemNULLSessionFallback": "Network security: Allow LocalSystem NULL session fallback"
+      # Domain Member
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign secure channel data (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
+      
+      # Interactive Logon
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
+      
+      # Network Access
+      "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
+      "RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
+      "RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
 
   tasks:
     - name: Export Security Options Policy
