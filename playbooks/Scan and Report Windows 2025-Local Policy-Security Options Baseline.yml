@@ -9,40 +9,29 @@
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
 
     security_options_map:
-      # Accounts
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      
-      # Audit
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings (Windows Vista or later) to override audit policy category settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
-      
-      # Devices
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      
-      # Domain Member
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign secure channel data (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
-      
-      # Interactive Logon
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
-      
-      # Network Access
       "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
       "RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
       "RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
@@ -53,23 +42,22 @@
         $configFile = "C:\temp\security_options.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         if (Test-Path $configFile) {
-            $data = Get-Content $configFile | Where-Object { $_ -match '=' }
-            foreach ($line in $data) {
-                $parts = $line.Split('=')
+            Get-Content $configFile | Where-Object { $_ -match '=' } | ForEach-Object {
+                $parts = $_.ToString().Split('=')
                 Write-Output ($parts[0].Trim() + "|" + $parts[1].Trim())
             }
             Remove-Item $configFile
         }
       register: security_scan_raw
 
-    - name: Create Reports Directory on Localhost
+    - name: Create Reports Directory
       delegate_to: localhost
       ansible.builtin.file:
         path: "{{ playbook_dir }}/reports"
         state: directory
         mode: '0755'
 
-    - name: Generate Security Options HTML Report
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
         src: "{{ template_path }}"
