@@ -5,8 +5,8 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Ensure this points to your actual template file location
-    template_path: "baseline-local Policy-Security Options_report.j2"
+    # Updated to the specific filename; Ansible will search in /templates/ by default
+    template_name: "baseline-local Policy-Security Options_report.j2"
     report_dir: "{{ playbook_dir }}/reports"
 
     security_options_map:
@@ -82,14 +82,14 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
 
   tasks:
-    - name: Ensure Local Reports Directory Exists
+    - name: Create Reports Directory on Runner
       delegate_to: localhost
       ansible.builtin.file:
         path: "{{ report_dir }}"
         state: directory
         mode: '0755'
 
-    - name: Execute Comprehensive Scan
+    - name: Execute Security Options Scan
       ansible.windows.win_shell: |
         $map = @{
             {% for key, value in security_options_map.items() %}
@@ -137,10 +137,10 @@
     - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ template_path }}"
+        src: "{{ template_name }}"
         dest: "{{ report_dir }}/Security_Options_{{ inventory_hostname }}.html"
 
-    - name: Upload to S3
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
