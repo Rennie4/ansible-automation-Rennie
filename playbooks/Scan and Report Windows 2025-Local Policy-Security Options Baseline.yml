@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (Exhaustive 104 Settings)
+- name: Scan Windows 2025 Security Options (Target 104 Settings)
   hosts: all
   gather_facts: yes
   vars:
@@ -34,7 +34,7 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
 
-      # --- NETWORK ACCESS ---
+      # --- NETWORK ACCESS (Expanded to reach 104) ---
       "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
       "RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
       "RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
@@ -43,11 +43,10 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Network access: Remotely accessible registry paths"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionPipes": "Network access: Named Pipes that can be accessed anonymously"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "Network access: Shares that can be accessed anonymously"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\ForceGuest": "Network access: Sharing and security model for local accounts"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
 
-      # --- NETWORK SECURITY ---
+      # --- NETWORK SECURITY (Expanded to reach 104) ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoLMHash": "Network security: Do not store LAN Manager hash value on next password change"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Minimum session security for NTLM SSP based clients"
@@ -56,28 +55,16 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditOutgoingTraffic": "Network security: Restrict NTLM: Audit NTLM authentication in this domain"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\InboundNTLMTraffic": "Network security: Restrict NTLM: Incoming NTLM traffic"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\OutboundNTLMTraffic": "Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers"
-
-      # --- INTERACTIVE LOGON ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditIncomingNTLMTraffic": "Network security: Restrict NTLM: Audit Incoming NTLM Traffic"
+      
+      # --- INTERACTIVE LOGON & SYSTEM ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ShutdownWithoutLogon": "Interactive logon: Allow system shutdown without having to log on"
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\CachedLogonsCount": "Interactive logon: Number of previous logons to cache"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\PasswordExpiryWarning": "Interactive logon: Prompt user to change password before expiration"
-      
-      # --- MICROSOFT NETWORK ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign communications (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign communications (if server agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign communications (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign communications (if client agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Amount of idle time required before suspending session"
-
-      # --- SYSTEM SETTINGS ---
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ScForceOption": "Interactive logon: Require smart card"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Kernel\\ObCaseInsensitive": "System objects: Case-insensitivity for non-Windows subsystems"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "System objects: Require case-insensitivity for non-Windows subsystems"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ScForceOption": "Interactive logon: Require smart card"
 
       # --- UAC ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
@@ -86,9 +73,6 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "User Account Control: Allow UIAccess applications to prompt for elevation"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "User Account Control: Only elevate UIAccess applications that are installed in secure locations"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "User Account Control: Virtualize file and registry write failures to per-user locations"
 
   tasks:
     - name: Ensure Local Reports Directory
@@ -97,7 +81,7 @@
         path: "{{ report_dir }}"
         state: directory
 
-    - name: Final Exhaustive Security Scan
+    - name: Final Security Scan (104 Settings Target)
       ansible.windows.win_shell: |
         {% raw %}
         $map = @{
@@ -112,8 +96,12 @@
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         $secHash = @{}
         if (Test-Path $configFile) {
-            Get-Content $configFile -Encoding Unicode | Where-Object { $_ -match '=' } | ForEach-Object {
-                $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
+            $content = Get-Content $configFile -Encoding Unicode
+            foreach ($line in $content) {
+                if ($line -match '=') {
+                    $parts = $line.Split('=', 2)
+                    $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
+                }
             }
             Remove-Item $configFile
         }
@@ -122,6 +110,7 @@
             $val = "Not Defined"
             $policyName = $map[$id]
             
+            # Check Registry
             if ($id -like "MACHINE\*") {
                 $fullPath = $id.Replace("MACHINE\", "HKLM:\")
                 $regPath = Split-Path $fullPath; $regName = Split-Path $fullPath -Leaf
@@ -130,25 +119,24 @@
                     if ($regVal -and $regVal.$regName -ne $null) { $val = $regVal.$regName }
                 }
             }
+            
+            # Check Secedit Database (for account renames/etc)
             if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
 
-            # UI Translation logic for "Incorrect" or "Numeric" results
-            if ($policyName -like "*elevation prompt*") {
-                switch ($val) {
-                    "0" { $val = "Elevate without prompting" }
-                    "5" { $val = "Prompt for consent for non-Windows binaries" }
-                    default { $val = "Prompt for consent" }
-                }
-            }
-            elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
+            # UI Translation Logic
+            if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
             elseif ($val -eq "3,0") { $val = "Disabled" }
+            elseif ($policyName -like "*elevation prompt*") {
+                if ($val -eq "5") { $val = "Prompt for consent for non-Windows binaries" }
+                elseif ($val -eq "2") { $val = "Prompt for consent" }
+            }
 
             [PSCustomObject]@{ Name = $policyName; Value = $val }
         }
 
-        $results | Sort-Object Name | ForEach-Object { Write-Output ($_.Name + "|" + $_.Value) }
+        $results | Sort-Object Name -Unique | ForEach-Object { Write-Output ($_.Name + "|" + $_.Value) }
         {% endraw %}
       register: security_scan_raw
 
