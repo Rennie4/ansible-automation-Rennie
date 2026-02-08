@@ -7,8 +7,8 @@
     aws_region: "eu-west-1"
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
 
+    # Full Expanded Policy Map (Targeting 104)
     security_options_map:
-      # --- ACCOUNTS / PASSWORD POLICIES (Added to reach 104) ---
       "PasswordHistorySize": "Account Policy: Enforce password history"
       "MaximumPasswordAge": "Account Policy: Maximum password age"
       "MinimumPasswordAge": "Account Policy: Minimum password age"
@@ -24,25 +24,22 @@
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      # --- AUDIT ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings to override audit policy category settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
-      # --- DEVICES ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access to locally logged-on user only"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access to locally logged-on user only"
-      # --- DOMAIN MEMBER ---
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign secure channel data (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Maximum machine account password age"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
-      # --- INTERACTIVE LOGON ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
@@ -54,7 +51,13 @@
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\ScRemoveOption": "Interactive logon: Smart card removal behavior"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisplayLogonInfo": "Interactive logon: Display user information when the session is locked"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayUsername": "Interactive logon: Don't display username at sign-in"
-      # --- NETWORK ACCESS & SECURITY ---
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign communications (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign communications (if server agrees)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnablePlainTextPassword": "Microsoft network client: Send unencrypted password to third-party SMB servers"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign communications (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign communications (if client agrees)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Amount of idle time required before suspending session"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableForcedLogOff": "Microsoft network server: Disconnect clients when logon hours expire"
       "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
       "RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
       "RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
@@ -68,67 +71,63 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Minimum session security for NTLM SSP based clients"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinServerSec": "Network security: Minimum session security for NTLM SSP based servers"
-      # --- MSS (Extra Legacy/Hardened Settings) ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: (DisableIPSourceRouting) IP source routing protection"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: (NoNameReleaseOnDemand) Allow the computer to ignore NetBIOS name release requests"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: (SafeDllSearchMode) Enable Safe DLL search mode"
-      # --- UAC ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditIncomingTraffic": "Network security: Restrict NTLM: Audit Incoming NTLM Traffic"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\InboundNTLMTraffic": "Network security: Restrict NTLM: Incoming NTLM traffic"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\OutboundNTLMTraffic": "Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditOutgoingTraffic": "Network security: Restrict NTLM: Audit NTLM authentication in this domain"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "User Account Control: Behavior of the elevation prompt for standard users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "User Account Control: Run all administrators in Admin Approval Mode"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "User Account Control: Allow UIAccess applications to prompt for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "User Account Control: Only elevate UIAccess applications that are installed in secure locations"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "User Account Control: Virtualize file and registry write failures to per-user locations"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SecurityLevel": "Recovery console: Allow automatic administrative logon"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Allow floppy copy and access to all drives and all folders"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\ProtectionMode": "System objects: Strengthen default permissions of internal system objects"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
 
   tasks:
-    - name: Execute Comprehensive Security Scan
+    - name: Execute Security Scan
       ansible.windows.win_shell: |
-        $map = @{
-            {% for key, value in security_options_map.items() %}
-            "{{ key }}" = "{{ value }}"
-            {% endfor %}
-        }
+        $mapJson = '{{ security_options_map | to_json }}'
+        $map = $mapJson | ConvertFrom-Json
         
-        # Export SAM and Security Policy
-        $configFile = "C:\temp\secedit_full.inf"
+        $configFile = "C:\temp\secedit_audit.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         $secHash = @{}
         if (Test-Path $configFile) {
             Get-Content $configFile -Encoding Unicode | ForEach-Object {
                 if ($_ -match '=') {
-                    $parts = $_.Split('=', 2); $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
+                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
                 }
             }
             Remove-Item $configFile
         }
 
-        $results = foreach ($id in $map.Keys) {
+        $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"
-            $policyName = $map[$id]
+            $policyName = $map.$id
             
-            # Check Registry
             if ($id -like "MACHINE\*") {
-                $fullPath = $id.Replace("MACHINE\", "HKLM:\")
-                $regPath = Split-Path $fullPath; $regName = Split-Path $fullPath -Leaf
-                if (Test-Path $regPath) {
-                    $regVal = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
-                    if ($regVal -and $regVal.$regName -ne $null) { $val = $regVal.$regName }
+                $f = $id.Replace("MACHINE\", "HKLM:\")
+                $p = Split-Path $f; $n = Split-Path $f -Leaf
+                if (Test-Path $p) {
+                    $rv = Get-ItemProperty -Path $p -Name $n -ErrorAction SilentlyContinue
+                    if ($rv -and $rv.$n -ne $null) { $val = $rv.$n }
                 }
             }
-            
-            # Check Secedit Export if Registry failed or if it's a SAM policy
-            if (($val -eq "Not Defined" -or $val -eq $null) -and $secHash.ContainsKey($id)) {
-                $val = $secHash[$id]
-            }
+            if (($val -eq "Not Defined") -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
 
-            # Human Readable Formatting
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
-            elseif ($val -eq "3,0") { $val = "Disabled" }
-
             [PSCustomObject]@{ Name = $policyName; Value = $val }
         }
-
-        $results | Sort-Object Name -Unique | ForEach-Object { Write-Output ($_.Name + "|" + $_.Value) }
+        $results | Sort-Object Name -Unique | ForEach-Object { "$($_.Name)|$($_.Value)" }
       register: security_scan_raw
 
     - name: Generate HTML Report
@@ -143,10 +142,9 @@
               <style>
                   body { font-family: sans-serif; margin: 40px; background: #f4f7f6; }
                   .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                  h2 { border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                  table { width: 100%; border-collapse: collapse; }
                   th { background: #232f3e; color: white; padding: 12px; text-align: left; }
-                  td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
+                  td { padding: 10px; border-bottom: 1px solid #eee; }
                   .Enabled { color: green; font-weight: bold; }
                   .Disabled { color: red; font-weight: bold; }
               </style>
@@ -154,7 +152,7 @@
           <body>
               <div class="container">
                   <h2>Windows Server 2025 Security Audit</h2>
-                  <p><strong>Server:</strong> {{ inventory_hostname }} | <strong>Total Policies:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
+                  <p><strong>Server:</strong> {{ inventory_hostname }} | <strong>Count:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
                   <table>
                       <tr><th>Policy Name</th><th>Setting</th></tr>
                       {% for line in security_scan_raw.stdout_lines %}
