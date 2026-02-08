@@ -15,7 +15,6 @@
         .Enabled { color: #28a745; font-weight: bold; }
         .Disabled { color: #dc3545; font-weight: bold; }
         .Not.Defined { color: #888; font-style: italic; }
-        .Require { color: #007bff; font-weight: bold; } /* For 128-bit encryption */
     </style>
 </head>
 <body>
@@ -23,15 +22,11 @@
         <h2>Windows Server 2025: Security Options Audit</h2>
         <div class="info-bar">
             Server: {{ inventory_hostname }} | 
-            Policies Scanned: {{ security_scan_raw.stdout_lines | length }} | 
-            Date: {{ ansible_date_time.date }}
+            Policies Scanned: {{ security_scan_raw.stdout_lines | length }}
         </div>
         <table>
             <thead>
-                <tr>
-                    <th>Security Policy Name</th>
-                    <th>Configured Setting</th>
-                </tr>
+                <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
             </thead>
             <tbody>
                 {% for line in security_scan_raw.stdout_lines %}
