@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (Strict 104 Target)
+- name: Scan Windows 2025 Security Options (Target 104)
   hosts: all
   gather_facts: yes
   vars:
@@ -75,39 +75,42 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\OutboundNTLMTraffic": "Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditOutgoingTraffic": "Network security: Restrict NTLM: Audit NTLM authentication in this domain"
       "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing requirements"
-      # --- UAC (User Account Control) ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoAdapterLsa": "Network security: Allow LocalSystem NULL session fallback"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NegOption": "Network security: Allow PKU2U authentication requests"
+      # --- USER ACCOUNT CONTROL ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "User Account Control: Behavior of the elevation prompt for standard users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "User Account Control: Run all administrators in Admin Approval Mode"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the desktop when prompting for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "User Account Control: Allow UIAccess applications to prompt for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "User Account Control: Only elevate UIAccess applications that are installed in secure locations"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "User Account Control: Virtualize file and registry write failures to per-user locations"
-      # --- SYSTEM ---
+      # --- SYSTEM & MSS ---
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SecurityLevel": "Recovery console: Allow automatic administrative logon"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Allow floppy copy and access to all drives and all folders"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Allow floppy copy and access to all drives"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\ProtectionMode": "System objects: Strengthen default permissions of internal system objects"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
-      # --- MSS (To complete the set) ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption"
       "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpMaxConnectResponseRetransmissions": "MSS: SYN Attack Protection"
       "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\EnableICMPRedirect": "MSS: Allow ICMP redirects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: IP source routing protection"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release requests"
 
   tasks:
-    - name: Ensure Temp Directory
+    - name: Prepare Workspace
       ansible.windows.win_file:
         path: C:\temp
         state: directory
 
-    - name: Drop Mapping File
+    - name: Transfer Policy Map
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Scan All Security Options
+    - name: Run Security Audit
       ansible.windows.win_shell: |
         $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $configFile = "C:\temp\secedit_options.inf"
@@ -133,7 +136,7 @@
             }
             if (($val -eq "Not Defined") -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
 
-            # Normalize values
+            # Normalize output
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
@@ -143,42 +146,17 @@
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
       register: security_scan_raw
 
-    - name: Generate HTML
+    - name: Build Report
       delegate_to: localhost
       ansible.builtin.copy:
         dest: "{{ report_file }}"
-        content: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Security Options Audit</title>
-            <style>
-              body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f7f6; }
-              table { width: 100%; border-collapse: collapse; background: white; }
-              th { background: #232f3e; color: white; padding: 12px; text-align: left; }
-              td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.85em; }
-              .Enabled { color: green; font-weight: bold; }
-              .Disabled { color: red; font-weight: bold; }
-            </style>
-          </head>
-          <body>
-            <h2>Security Options Scan: {{ inventory_hostname }}</h2>
-            <p><strong>Total Security Options:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
-            <table>
-              <tr><th>Policy Name</th><th>Setting</th></tr>
-              {% for line in security_scan_raw.stdout_lines %}
-              {% set p = line.split('|') %}
-              <tr><td>{{ p[0] }}</td><td class="{{ p[1] }}">{{ p[1] }}</td></tr>
-              {% endfor %}
-            </table>
-          </body>
-          </html>
+        content: "{{ lookup('template', 'audit_template.j2') }}"
 
-    - name: Upload to S3
+    - name: Push to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_Clean_{{ inventory_hostname }}.html"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
