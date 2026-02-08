@@ -5,26 +5,29 @@
     <title>Full Security Audit - {{ inventory_hostname }}</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f4f4f9; }
-        .box { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
-        h2 { color: #232f3e; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .box { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h2 { color: #232f3e; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
+        .summary { margin: 15px 0; font-weight: bold; color: #555; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background-color: #232f3e; color: white; padding: 12px; text-align: left; }
-        td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
-        .status-Enabled { color: green; font-weight: bold; }
-        .status-Disabled { color: red; font-weight: bold; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 0.85em; }
+        .status-Enabled { color: #28a745; font-weight: bold; }
+        .status-Disabled { color: #dc3545; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h2>Windows Server 2025: All Security Options</h2>
-        <p><strong>Server:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Total Settings Found:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
+        <h2>Windows Server 2025: Comprehensive Security Baseline</h2>
+        <div class="summary">
+            Total Policies Scanned: {{ security_scan_raw.stdout_lines | length }}<br>
+            Hostname: {{ inventory_hostname }}
+        </div>
 
         <table>
             <thead>
                 <tr>
-                    <th>Technical Policy Name</th>
-                    <th>Security Setting</th>
+                    <th>Policy Name</th>
+                    <th>Setting</th>
                 </tr>
             </thead>
             <tbody>
