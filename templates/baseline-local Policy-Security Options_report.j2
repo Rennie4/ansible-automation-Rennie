@@ -2,65 +2,51 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <title>Security Options Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; margin: 0; padding: 20px; }
-        .container { width: 100%; max-width: 1000px; margin: auto; border: 1px solid #ccc; padding: 15px; }
-        h1 { font-size: 14px; font-weight: normal; border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
-        th { text-align: left; padding: 8px 12px; font-size: 12px; background-color: #f3f3f3; border: 1px solid #ddd; }
-        td { padding: 6px 12px; border: 1px solid #eee; font-size: 11px; }
-        tr:nth-child(even) { background-color: #fafafa; }
-        .is-default { color: #2c3e50; font-weight: bold; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f4f7f6; }
+        h2 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; background-color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        th, td { padding: 12px; text-align: left; border: 1px solid #ddd; }
+        th { background-color: #34495e; color: white; text-transform: uppercase; letter-spacing: 1px; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #f1f1f1; }
+        .status-enabled { color: #27ae60; font-weight: bold; }
+        .status-disabled { color: #c0392b; font-weight: bold; }
+        .status-defined { color: #2980b9; }
+        .footer { margin-top: 20px; font-size: 0.8em; color: #7f8c8d; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Local Policies > Security Options Audit</h1>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 70%;">Policy</th>
-                    <th style="width: 30%;">Security Setting</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% set scan_results = {} %}
-                {# Windows Server 2025 Default Values Mapping #}
-                {% set os_defaults = {
-                    "BlockConsumerMicrosoftAccounts": "Not Defined",
-                    "LimitBlankPasswordUse": "Enabled",
-                    "NewAdminName": "Administrator",
-                    "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Enabled",
-                    "AllowedToFormatAndEjectRemovableMedia": "Administrators",
-                    "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Disabled",
-                    "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "0 (Disabled)",
-                    "RestrictAnonymousSAM": "Enabled",
-                    "RestrictAnonymous": "Disabled"
-                } %}
 
-                {% for line in security_scan_raw.stdout_lines %}
-                    {% set parts = line.split('|') %}
-                    {% if parts | length > 1 %}
-                        {% set key = parts[0] %}
-                        {% set val = parts[1] | default('') | replace('"', '') %}
-                        {% set clean_val = val.split(',')[-1] %}
-                        {% if clean_val == "1" %}{% set d_val = "Enabled" %}
-                        {% elif clean_val == "0" %}{% set d_val = "Disabled" %}
-                        {% else %}{% set d_val = clean_val %}{% endif %}
-                        {% set _ = scan_results.update({key: d_val}) %}
-                    {% endif %}
-                {% endfor %}
+    <h2>Local Security Policies: Security Options</h2>
+    <p><strong>Server Name:</strong> {{ inventory_hostname }}</p>
+    <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
 
-                {% for key, friendly in security_options_map.items() | sort(attribute=1) %}
-                <tr>
-                    <td>{{ friendly }}</td>
-                    <td class="{% if not scan_results.get(key) %}is-default{% endif %}">
-                        {{ scan_results.get(key) | default(os_defaults.get(key, "Not Defined")) }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <table>
+        <thead>
+            <tr>
+                <th>Policy</th>
+                <th>Security Setting</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in security_scan_raw.stdout_lines %}
+            {% set parts = line.split('|') %}
+            <tr>
+                <td>{{ parts[0] }}</td>
+                <td class="{% if parts[1] == 'Enabled' %}status-enabled{% elif parts[1] == 'Disabled' %}status-disabled{% else %}status-defined{% endif %}">
+                    {{ parts[1] }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        <p>Report generated by Ansible Automation Automation Sandbox</p>
+        <p>Target S3 Bucket: oml-s3-automation-sandbox</p>
     </div>
+
 </body>
 </html>
