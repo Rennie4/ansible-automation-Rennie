@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (Target 104 Settings)
+- name: Scan Windows 2025 Security Options (Completed 104 List)
   hosts: all
   gather_facts: yes
   vars:
@@ -9,25 +9,23 @@
     report_dir: "{{ playbook_dir }}/reports"
 
     security_options_map:
-      # --- ACCOUNTS ---
+      # --- ACCOUNTS & AUDIT ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      # --- AUDIT ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings to override audit policy category settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
-      # --- DEVICES ---
+      # --- DEVICES & DOMAIN ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access to locally logged-on user only"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access to locally logged-on user only"
-      # --- DOMAIN MEMBER ---
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign secure channel data (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
@@ -80,20 +78,18 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
-      # --- SHUTDOWN & SYSTEM ---
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "User Account Control: Allow UIAccess applications to prompt for elevation"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "User Account Control: Only elevate UIAccess applications that are installed in secure locations"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "User Account Control: Virtualize file and registry write failures to per-user locations"
+      # --- MSS & SYSTEM ---
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SecurityLevel": "Recovery console: Allow automatic administrative logon"
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Allow floppy copy and access to all drives and all folders"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\ProtectionMode": "System objects: Strengthen default permissions of internal system objects"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
 
   tasks:
-    - name: Ensure Local Reports Directory
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ report_dir }}"
-        state: directory
-
-    - name: Execute Full Security Scan
+    - name: Execute Comprehensive Scan
       ansible.windows.win_shell: |
         $map = @{
             {% for key, value in security_options_map.items() %}
@@ -107,7 +103,7 @@
         if (Test-Path $configFile) {
             Get-Content $configFile -Encoding Unicode | ForEach-Object {
                 if ($_ -match '=') {
-                    $parts = $_.Split('=', 2); $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
+                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
                 }
             }
             Remove-Item $configFile
@@ -127,20 +123,11 @@
             }
             if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
 
+            # UI Formatting
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
             elseif ($val -eq "3,0") { $val = "Disabled" }
-            elseif ($policyName -like "*elevation prompt*") {
-                switch ($val) {
-                    "0" { $val = "Elevate without prompting" }
-                    "1" { $val = "Prompt for credentials on the secure desktop" }
-                    "2" { $val = "Prompt for consent on the secure desktop" }
-                    "3" { $val = "Prompt for credentials" }
-                    "4" { $val = "Prompt for consent" }
-                    "5" { $val = "Prompt for consent for non-Windows binaries" }
-                }
-            }
 
             [PSCustomObject]@{ Name = $policyName; Value = $val }
         }
