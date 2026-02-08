@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; margin: 0; }
-        .container { width: 98%; margin: 10px auto; border: 1px solid #ccc; padding: 10px; }
-        h1 { font-size: 14px; font-weight: normal; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 6px 10px; font-size: 12px; background-color: #f9f9f9; border: 1px solid #ddd; }
-        td { padding: 4px 10px; border: 1px solid #eee; font-size: 11px; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; margin: 0; padding: 20px; }
+        .container { width: 100%; max-width: 1000px; margin: auto; border: 1px solid #ccc; padding: 15px; }
+        h1 { font-size: 15px; font-weight: normal; border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 15px; color: #000; }
+        table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
+        th { text-align: left; padding: 8px 12px; font-size: 12px; font-weight: normal; background-color: #f3f3f3; border: 1px solid #ddd; }
+        td { padding: 6px 12px; border: 1px solid #eee; font-size: 11px; }
+        tr:nth-child(even) { background-color: #fafafa; }
         .not-defined { color: #888; font-style: italic; }
     </style>
 </head>
@@ -19,7 +20,7 @@
             <thead>
                 <tr>
                     <th style="width: 70%;">Policy</th>
-                    <th style="width: 30%;">Security Setting</th>
+                    <th style="th-width: 30%;">Security Setting</th>
                 </tr>
             </thead>
             <tbody>
@@ -39,7 +40,6 @@
                     {% endif %}
                 {% endfor %}
 
-                {# Alphabetical loop through the Master Map #}
                 {% for key, friendly in security_options_map.items() | sort(attribute=1) %}
                 <tr>
                     <td>{{ friendly }}</td>
