@@ -28,14 +28,10 @@
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       
-      # Domain controller
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\AllowSingleSignOn": "Domain controller: Allow computer account re-use during domain join"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain controller: Refuse machine account password changes"
-      
-      # Interactive logon
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
+      # Network Access & Security
+      "AllowAnonymousSIDOrNameTranslation": "Network access: Allow anonymous SID/Name translation"
+      "DoNotAllowAnonymousEnumerationOfSAMAccounts": "Network access: Do not allow anonymous enumeration of SAM accounts"
+      "AllowLocalSystemNULLSessionFallback": "Network security: Allow LocalSystem NULL session fallback"
 
   tasks:
     - name: Export Security Options Policy
@@ -43,11 +39,10 @@
         $configFile = "C:\temp\security_options.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         if (Test-Path $configFile) {
-            Get-Content $configFile | Where-Object { $_ -match '=' } | ForEach-Object {
-                $parts = $_.ToString().Split('=')
-                $key = $parts[0].Trim()
-                $val = $parts[1].Trim()
-                Write-Output "$key|$val"
+            $data = Get-Content $configFile | Where-Object { $_ -match '=' }
+            foreach ($line in $data) {
+                $parts = $line.Split('=')
+                Write-Output ($parts[0].Trim() + "|" + $parts[1].Trim())
             }
             Remove-Item $configFile
         }
