@@ -2,30 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Security Options - {{ inventory_hostname }}</title>
+    <title>Full Security Audit - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; background-color: #f0f2f5; }
-        .report-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-        h2 { color: #1a202c; border-left: 5px solid #007bff; padding-left: 15px; margin-bottom: 25px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background-color: #f8f9fa; color: #4a5568; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; padding: 15px; border-bottom: 2px solid #edf2f7; text-align: left; }
-        td { padding: 12px 15px; border-bottom: 1px solid #edf2f7; font-size: 0.95rem; color: #2d3748; }
-        tr:hover { background-color: #fdfdfd; }
-        .status-Enabled { color: #38a169; font-weight: 600; }
-        .status-Disabled { color: #e53e3e; font-weight: 600; }
-        .status-Default { color: #718096; font-style: italic; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f4f4f9; }
+        .box { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h2 { color: #232f3e; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background-color: #232f3e; color: white; padding: 12px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
+        .status-Enabled { color: green; font-weight: bold; }
+        .status-Disabled { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="report-card">
-        <h2>Windows Server 2025 Security Baseline</h2>
-        <p><strong>Hostname:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Generated:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+    <div class="box">
+        <h2>Windows Server 2025: All Security Options</h2>
+        <p><strong>Server:</strong> {{ inventory_hostname }}</p>
+        <p><strong>Total Settings Found:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
 
         <table>
             <thead>
                 <tr>
-                    <th>Policy</th>
+                    <th>Technical Policy Name</th>
                     <th>Security Setting</th>
                 </tr>
             </thead>
@@ -34,9 +32,7 @@
                 {% set parts = line.split('|') %}
                 <tr>
                     <td>{{ parts[0] }}</td>
-                    <td class="status-{{ parts[1] }}">
-                        {{ parts[1] }}
-                    </td>
+                    <td class="status-{{ parts[1] }}">{{ parts[1] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
