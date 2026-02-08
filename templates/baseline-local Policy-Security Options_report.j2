@@ -2,28 +2,30 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Security Options - {{ inventory_hostname }}</title>
+    <title>Security Audit - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; background-color: #f8f9fa; }
-        .report-box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h2 { color: #232f3e; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #232f3e; color: white; padding: 12px; text-align: left; }
-        td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
-        .Enabled { color: #28a745; font-weight: bold; }
-        .Disabled { color: #dc3545; font-weight: bold; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f6f9; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
+        h2 { color: #1e293b; border-bottom: 4px solid #3b82f6; padding-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 25px; }
+        th { background-color: #1e293b; color: white; padding: 15px; text-align: left; font-size: 0.9em; }
+        td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 0.9em; color: #334155; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        .Enabled { color: #16a34a; font-weight: 700; }
+        .Disabled { color: #dc2626; font-weight: 700; }
+        .Not.Defined { color: #94a3b8; font-style: italic; }
     </style>
 </head>
 <body>
-    <div class="report-box">
-        <h2>Windows Server 2025: Security Options Audit</h2>
+    <div class="container">
+        <h2>Windows Server 2025 Security Options Report</h2>
         <p><strong>Hostname:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Generated:</strong> {{ ansible_date_time.date }}</p>
+        <p><strong>Total Policies Mapped:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
 
         <table>
             <thead>
                 <tr>
-                    <th>Policy</th>
+                    <th>Policy Name</th>
                     <th>Security Setting</th>
                 </tr>
             </thead>
