@@ -2,31 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Security Audit - {{ inventory_hostname }}</title>
+    <title>Security Options Baseline - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f4f6f9; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); }
-        h2 { color: #1e293b; border-bottom: 4px solid #3b82f6; padding-bottom: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 25px; }
-        th { background-color: #1e293b; color: white; padding: 15px; text-align: left; font-size: 0.9em; }
-        td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 0.9em; color: #334155; }
-        tr:nth-child(even) { background-color: #f8fafc; }
-        .Enabled { color: #16a34a; font-weight: 700; }
-        .Disabled { color: #dc2626; font-weight: 700; }
-        .Not.Defined { color: #94a3b8; font-style: italic; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f3f4f6; color: #1f2937; }
+        .box { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        h2 { color: #111827; border-bottom: 4px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px; }
+        .stats { font-size: 0.9em; color: #6b7280; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background-color: #111827; color: white; padding: 15px; text-align: left; font-size: 0.85em; text-transform: uppercase; }
+        td { padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 0.9em; }
+        tr:nth-child(even) { background-color: #f9fafb; }
+        .Enabled { color: #059669; font-weight: bold; }
+        .Disabled { color: #dc2626; font-weight: bold; }
+        .Not.Defined { color: #9ca3af; font-style: italic; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Windows Server 2025 Security Options Report</h2>
-        <p><strong>Hostname:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Total Policies Mapped:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
-
+    <div class="box">
+        <h2>Windows Server 2025 Security Audit</h2>
+        <div class="stats">
+            <strong>Server:</strong> {{ inventory_hostname }}<br>
+            <strong>Policies Scanned:</strong> {{ security_scan_raw.stdout_lines | length }}
+        </div>
         <table>
             <thead>
                 <tr>
-                    <th>Policy Name</th>
-                    <th>Security Setting</th>
+                    <th>Security Policy Name</th>
+                    <th>Configured Setting</th>
                 </tr>
             </thead>
             <tbody>
