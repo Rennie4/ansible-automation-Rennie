@@ -5,40 +5,43 @@
     <title>Security Audit - {{ inventory_hostname }}</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f3f4f6; }
-        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         h2 { color: #1e293b; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; }
         .meta { color: #64748b; margin-bottom: 20px; font-size: 0.9em; }
         table { width: 100%; border-collapse: collapse; }
-        th { background-color: #1e293b; color: white; padding: 12px; text-align: left; font-size: 0.85em; }
+        th { background-color: #1e293b; color: white; padding: 12px; text-align: left; }
         td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.85em; }
         .Enabled { color: #16a34a; font-weight: bold; }
         .Disabled { color: #dc2626; font-weight: bold; }
+        .Not.Defined { color: #94a3b8; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>Windows Server 2025: Security Options Report</h2>
-        <div class="meta">
-            <strong>Server:</strong> {{ inventory_hostname }} | 
-            <strong>Policies Scanned:</strong> {{ security_scan_raw.stdout_lines | length }}
+        <div class="box">
+            <h2>Windows Server 2025: Security Options Report</h2>
+            <div class="meta">
+                <strong>Server:</strong> {{ inventory_hostname }} | 
+                <strong>Total Policies Scanned:</strong> {{ security_scan_raw.stdout_lines | length }}
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Policy Name</th>
+                        <th>Security Setting</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in security_scan_raw.stdout_lines %}
+                    {% set parts = line.split('|') %}
+                    <tr>
+                        <td>{{ parts[0] }}</td>
+                        <td class="{{ parts[1] }}">{{ parts[1] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Policy Name</th>
-                    <th>Security Setting</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for line in security_scan_raw.stdout_lines %}
-                {% set parts = line.split('|') %}
-                <tr>
-                    <td>{{ parts[0] }}</td>
-                    <td class="{{ parts[1] }}">{{ parts[1] }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
     </div>
 </body>
 </html>
