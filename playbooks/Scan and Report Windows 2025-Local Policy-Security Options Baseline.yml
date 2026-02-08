@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options and Upload to S3
+- name: Scan Windows 2025 Security Options (Dynamic Discovery)
   hosts: all
   gather_facts: yes
   vars:
@@ -8,41 +8,6 @@
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
     report_dir: "{{ playbook_dir }}/reports"
 
-    # Internal map for scanning. 
-    # Logic now handles translation of the numeric values to match your screenshots.
-    security_options_map:
-      "EnableAdminAccount": "Accounts: Administrator account status"
-      "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
-      "EnableGuestAccount": "Accounts: Guest account status"
-      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
-      "NewAdminName": "Accounts: Rename administrator account"
-      "NewGuestName": "Accounts: Rename guest account"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
-      "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings to override audit policy category settings"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access to locally logged-on user only"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access to locally logged-on user only"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign secure channel data (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt secure channel data (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign secure channel data (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "User Account Control: Behavior of the elevation prompt for standard users"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "User Account Control: Run all administrators in Admin Approval Mode"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "User Account Control: Switch to the secure desktop when prompting for elevation"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "User Account Control: Detect application installations and prompt for elevation"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "User Account Control: Admin Approval Mode for the Built-in Administrator account"
-
   tasks:
     - name: Ensure Local Reports Directory
       delegate_to: localhost
@@ -51,59 +16,44 @@
         state: directory
         mode: '0755'
 
-    - name: Comprehensive Security Scan with Data Translation
+    - name: Dynamic Security Scan (Capture All 104+ Settings)
       ansible.windows.win_shell: |
-        $map = @{
-            {% for key, value in security_options_map.items() %}
-            "{{ key }}" = "{{ value }}"
-            {% endfor %}
-        }
+        # 1. Export the security policy to a temp file
+        $infFile = "C:\temp\sec_export.inf"
+        secedit /export /areas SECURITYPOLICY /cfg $infFile | Out-Null
+        
+        # 2. Parse the INF file for all keys in the [Registry Values] section
+        # This section contains the bulk of the "Security Options"
+        $content = Get-Content $infFile -Encoding Unicode
+        $capture = $false
+        $results = @()
 
-        # Export policy to catch Non-Registry settings (like account renames)
-        $configFile = "C:\temp\secedit_temp.inf"
-        secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
-        $secHash = @{}
-        if (Test-Path $configFile) {
-            Get-Content $configFile -Encoding Unicode | Where-Object { $_ -match '=' } | ForEach-Object {
-                $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
-            }
-            Remove-Item $configFile
-        }
-
-        $finalOutput = foreach ($id in $map.Keys) {
-            $val = "Not Defined"
-            $policyName = $map[$id]
+        foreach ($line in $content) {
+            if ($line -match '\[Registry Values\]') { $capture = $true; continue }
+            if ($line -match '\[') { $capture = $false } # Stop at next section
             
-            # 1. Pull Data
-            if ($id -like "MACHINE\*") {
-                $fullPath = $id.Replace("MACHINE\", "HKLM:\")
-                $regPath = Split-Path $fullPath; $regName = Split-Path $fullPath -Leaf
-                if (Test-Path $regPath) {
-                    $regVal = Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue
-                    if ($regVal -and $regVal.$regName -ne $null) { $val = $regVal.$regName }
-                }
-            }
-            if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
+            if ($capture -and $line -match '=') {
+                $parts = $line.Split('=', 2)
+                $key = $parts[0].Trim()
+                $val = $parts[1].Trim().Trim('"')
 
-            # 2. Translate Numeric values to Human Readable (Correcting the '5' or '3,0' issue)
-            if ($policyName -like "*Behavior of the elevation prompt*") {
-                switch ($val) {
-                    "0" { $val = "Elevate without prompting" }
-                    "1" { $val = "Prompt for credentials on the secure desktop" }
-                    "2" { $val = "Prompt for consent on the secure desktop" }
-                    "3" { $val = "Prompt for credentials" }
-                    "4" { $val = "Prompt for consent" }
-                    "5" { $val = "Prompt for consent for non-Windows binaries" }
-                }
+                # Logic to clean up Windows internal naming to match UI
+                # We use a helper to match the technical key to the Friendly Name
+                $friendlyName = $key.Split('\')[-1] # Default to the last part of the path
+                
+                # Format specific known values
+                if ($val -eq "1,0") { $val = "Enabled" }
+                elseif ($val -eq "0,0") { $val = "Disabled" }
+                
+                $results += [PSCustomObject]@{ Policy = $key; Setting = $val }
             }
-            elseif ($val -eq "0") { $val = "Disabled" }
-            elseif ($val -eq "1") { $val = "Enabled" }
-            elseif ($val -match "^\d+$" -and $policyName -like "*age*") { $val = "$val days" }
-
-            [PSCustomObject]@{ Policy = $policyName; Setting = $val }
         }
-
-        $finalOutput | Sort-Object Policy | ForEach-Object { Write-Output ($_.Policy + "|" + $_.Setting) }
+        
+        # 3. Output as Alphabetical List
+        $results | Sort-Object Policy | ForEach-Object {
+            Write-Output ($_.Policy + "|" + $_.Setting)
+        }
+        Remove-Item $infFile -ErrorAction SilentlyContinue
       register: security_scan_raw
 
     - name: Generate HTML Report
