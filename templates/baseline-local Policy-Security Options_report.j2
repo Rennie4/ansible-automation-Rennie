@@ -2,23 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Windows Server 2025 Security Audit</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #ffffff; color: #333; }
-        .container { width: 98%; margin: 10px auto; padding: 10px; }
-        .header-box { border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px; }
-        h1 { font-size: 14px; font-weight: normal; color: #000; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #fff; color: #000; }
+        .container { width: 98%; margin: 10px auto; border: 1px solid #ccc; padding: 10px; }
+        h1 { font-size: 14px; font-weight: normal; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
         table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 6px 10px; font-size: 12px; font-weight: normal; border: 1px solid #ddd; background-color: #fcfcfc; }
+        th { text-align: left; padding: 6px 10px; font-size: 12px; background-color: #f9f9f9; border: 1px solid #ddd; }
         td { padding: 4px 10px; border: 1px solid #eee; font-size: 11px; }
-        tr:nth-child(even) { background-color: #fafafa; }
+        .not-defined { color: #888; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header-box">
-            <h1>Local Computer Policy > Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options</h1>
-        </div>
+        <h1>Local Policies > Security Options</h1>
         <table>
             <thead>
                 <tr>
@@ -27,26 +23,26 @@
                 </tr>
             </thead>
             <tbody>
-                {% set current_vals = {} %}
+                {% set scan_results = {} %}
                 {% for line in security_scan_raw.stdout_lines %}
                     {% set parts = line.split('|') %}
                     {% if parts | length > 1 %}
                         {% set key = parts[0] %}
                         {% set val = parts[1] | default('') | replace('"', '') %}
                         {% set clean_val = val.split(',')[-1] %}
-                        
                         {% if clean_val == "1" %}{% set d_val = "Enabled" %}
                         {% elif clean_val == "0" %}{% set d_val = "Disabled" %}
                         {% else %}{% set d_val = clean_val %}{% endif %}
-                        
-                        {% set _ = current_vals.update({key: d_val}) %}
+                        {% set _ = scan_results.update({key: d_val}) %}
                     {% endif %}
                 {% endfor %}
 
                 {% for key, friendly in security_options_map.items() | sort(attribute=1) %}
                 <tr>
                     <td>{{ friendly }}</td>
-                    <td>{{ current_vals[key] | default("Not Defined") }}</td>
+                    <td class="{{ 'not-defined' if not scan_results[key] else '' }}">
+                        {{ scan_results[key] | default("Not Defined") }}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
