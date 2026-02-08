@@ -8,38 +8,30 @@
     aws_region: "eu-west-1"
     template_path: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
 
+    # THIS MAPS REGISTRY KEYS TO THE EXACT NAMES IN YOUR SCREENSHOT
     security_options_map:
       # Accounts
       "EnableAdminAccount": "Accounts: Administrator account status"
+      "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
+      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
       
       # Audit
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
+      "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings (Windows Vista or later) to override audit policy category settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
+      
+      # DCOM
+      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions in Security Descriptor Definition Language (SDDL) syntax"
+      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions in Security Descriptor Definition Language (SDDL) syntax"
 
       # Devices
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access to locally logged-on user only"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access to locally logged-on user only"
-      
-      # Domain Controller & Member
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain controller: Refuse machine account password changes"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong (Windows 2000 or later) session key"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
-      
-      # Interactive Logon
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Do not display last user name"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\CachedLogonsCount": "Interactive logon: Number of previous logons to cache"
-      
-      # Microsoft Network Client & Server
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign communications (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign communications (always)"
 
   tasks:
     - name: Export Security Options Policy
@@ -57,12 +49,6 @@
         }
       register: security_scan_raw
 
-    - name: Ensure Local Report Directory Exists
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
-
     - name: Generate Security Options HTML Report
       delegate_to: localhost
       ansible.builtin.template:
@@ -73,7 +59,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
         src: "{{ playbook_dir }}/reports/Security_Options_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
