@@ -6,8 +6,8 @@
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
+    remote_map_file: "C:\\temp\\policy_map.json"
 
-    # Full Expanded Policy Map (Targeting 104)
     security_options_map:
       "PasswordHistorySize": "Account Policy: Enforce password history"
       "MaximumPasswordAge": "Account Policy: Maximum password age"
@@ -91,10 +91,14 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
 
   tasks:
+    - name: Create Remote Mapping File
+      ansible.windows.win_copy:
+        content: "{{ security_options_map | to_nice_json }}"
+        dest: "{{ remote_map_file }}"
+
     - name: Execute Security Scan
       ansible.windows.win_shell: |
-        $mapJson = '{{ security_options_map | to_json }}'
-        $map = $mapJson | ConvertFrom-Json
+        $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         
         $configFile = "C:\temp\secedit_audit.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
@@ -172,3 +176,8 @@
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
+
+    - name: Cleanup Remote Map
+      ansible.windows.win_file:
+        path: "{{ remote_map_file }}"
+        state: absent
