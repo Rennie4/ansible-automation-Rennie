@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (Dynamic Discovery)
+- name: Scan Windows 2025 Security Options (Full 104 Settings)
   hosts: all
   gather_facts: yes
   vars:
@@ -16,44 +16,47 @@
         state: directory
         mode: '0755'
 
-    - name: Dynamic Security Scan (Capture All 104+ Settings)
+    - name: Dynamic Security Scan
       ansible.windows.win_shell: |
-        # 1. Export the security policy to a temp file
-        $infFile = "C:\temp\sec_export.inf"
+        {% raw %}
+        $infFile = "C:\temp\full_sec_export.inf"
         secedit /export /areas SECURITYPOLICY /cfg $infFile | Out-Null
         
-        # 2. Parse the INF file for all keys in the [Registry Values] section
-        # This section contains the bulk of the "Security Options"
         $content = Get-Content $infFile -Encoding Unicode
-        $capture = $false
         $results = @()
+        $sectionsToCapture = "Registry Values", "Event Audit", "Privilege Rights", "Account Control"
+        $currentSection = ""
 
         foreach ($line in $content) {
-            if ($line -match '\[Registry Values\]') { $capture = $true; continue }
-            if ($line -match '\[') { $capture = $false } # Stop at next section
+            $line = $line.Trim()
+            if ($line -match '^\[(.+)\]') {
+                $currentSection = $matches[1]
+                continue
+            }
             
-            if ($capture -and $line -match '=') {
+            if ($line -match '=') {
                 $parts = $line.Split('=', 2)
-                $key = $parts[0].Trim()
+                $name = $parts[0].Trim()
                 $val = $parts[1].Trim().Trim('"')
 
-                # Logic to clean up Windows internal naming to match UI
-                # We use a helper to match the technical key to the Friendly Name
-                $friendlyName = $key.Split('\')[-1] # Default to the last part of the path
+                # Clean up values to match Windows UI
+                if ($val -eq "1,0" -or $val -eq "1") { $val = "Enabled" }
+                elseif ($val -eq "0,0" -or $val -eq "0") { $val = "Disabled" }
+                elseif ($val -match "^4,") { $val = "Enabled" } # Handles special audit flags
+
+                # Filter out technical prefix for cleaner report
+                $cleanName = $name -replace "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\", ""
+                $cleanName = $cleanName -replace "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\", ""
                 
-                # Format specific known values
-                if ($val -eq "1,0") { $val = "Enabled" }
-                elseif ($val -eq "0,0") { $val = "Disabled" }
-                
-                $results += [PSCustomObject]@{ Policy = $key; Setting = $val }
+                $results += [PSCustomObject]@{ Policy = $cleanName; Setting = $val }
             }
         }
         
-        # 3. Output as Alphabetical List
         $results | Sort-Object Policy | ForEach-Object {
             Write-Output ($_.Policy + "|" + $_.Setting)
         }
         Remove-Item $infFile -ErrorAction SilentlyContinue
+        {% endraw %}
       register: security_scan_raw
 
     - name: Generate HTML Report
