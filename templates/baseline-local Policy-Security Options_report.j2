@@ -4,30 +4,41 @@
     <meta charset="UTF-8">
     <title>Security Audit - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f8f9fa; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f4f7f9; color: #333; }
+        .report-box { background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
         h2 { color: #232f3e; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
+        .info-bar { margin: 15px 0; padding: 10px; background: #e9ecef; border-radius: 5px; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #232f3e; color: white; padding: 12px; text-align: left; }
-        td { padding: 8px 12px; border-bottom: 1px solid #ddd; font-size: 0.85em; }
+        th { background-color: #232f3e; color: #fff; padding: 12px; text-align: left; position: sticky; top: 0; }
+        td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
+        tr:hover { background-color: #f1f1f1; }
         .Enabled { color: #28a745; font-weight: bold; }
         .Disabled { color: #dc3545; font-weight: bold; }
+        .Not.Defined { color: #888; font-style: italic; }
+        .Require { color: #007bff; font-weight: bold; } /* For 128-bit encryption */
     </style>
 </head>
 <body>
-    <div class="box">
-        <h2>Security Audit Report: {{ inventory_hostname }}</h2>
-        <p><strong>Total Policies in Scan:</strong> {{ security_scan_raw.stdout_lines | length }}</p>
+    <div class="report-box">
+        <h2>Windows Server 2025: Security Options Audit</h2>
+        <div class="info-bar">
+            Server: {{ inventory_hostname }} | 
+            Policies Scanned: {{ security_scan_raw.stdout_lines | length }} | 
+            Date: {{ ansible_date_time.date }}
+        </div>
         <table>
             <thead>
-                <tr><th>Policy Name</th><th>Current Setting</th></tr>
+                <tr>
+                    <th>Security Policy Name</th>
+                    <th>Configured Setting</th>
+                </tr>
             </thead>
             <tbody>
                 {% for line in security_scan_raw.stdout_lines %}
                 {% set parts = line.split('|') %}
                 <tr>
                     <td>{{ parts[0] }}</td>
-                    <td class="{{ parts[1] }}">{{ parts[1] }}</td>
+                    <td class="{{ parts[1].split(' ')[0] }}">{{ parts[1] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
