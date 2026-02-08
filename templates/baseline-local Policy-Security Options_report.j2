@@ -5,14 +5,13 @@
     <title>Windows Server 2025 Security Audit</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #ffffff; color: #333; }
-        .container { width: 98%; margin: 10px auto; padding: 10px; border: 1px solid #ccc; }
+        .container { width: 98%; margin: 10px auto; padding: 10px; }
         .header-box { border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px; }
-        h1 { font-size: 16px; font-weight: normal; color: #000; }
-        .section-header { background-color: #f4f4f4; padding: 4px 12px; font-size: 12px; font-weight: bold; border: 1px solid #ddd; border-bottom: none; }
-        table { width: 100%; border-collapse: collapse; border: 1px solid #ddd; }
-        th { background-color: #fff; color: #333; padding: 6px 10px; text-align: left; font-size: 12px; font-weight: normal; border-bottom: 1px solid #ddd; border-right: 1px solid #ddd; }
-        td { padding: 4px 10px; border-bottom: 1px solid #f2f2f2; font-size: 11px; border-right: 1px solid #f2f2f2; }
-        tr:hover { background-color: #fcfcfc; }
+        h1 { font-size: 14px; font-weight: normal; color: #000; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 6px 10px; font-size: 12px; font-weight: normal; border: 1px solid #ddd; background-color: #fcfcfc; }
+        td { padding: 4px 10px; border: 1px solid #eee; font-size: 11px; }
+        tr:nth-child(even) { background-color: #fafafa; }
     </style>
 </head>
 <body>
@@ -20,7 +19,6 @@
         <div class="header-box">
             <h1>Local Computer Policy > Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options</h1>
         </div>
-        <div class="section-header">Security Options</div>
         <table>
             <thead>
                 <tr>
@@ -29,41 +27,27 @@
                 </tr>
             </thead>
             <tbody>
-                {% set results = [] %}
-                {% set found_keys = [] %}
+                {% set current_vals = {} %}
                 {% for line in security_scan_raw.stdout_lines %}
                     {% set parts = line.split('|') %}
                     {% if parts | length > 1 %}
                         {% set key = parts[0] %}
-                        {% set val = parts[1] | default('') %}
-                        {% set friendly = security_options_map[key] | default(key) %}
-                        {% set _ = found_keys.append(key) %}
+                        {% set val = parts[1] | default('') | replace('"', '') %}
+                        {% set clean_val = val.split(',')[-1] %}
                         
-                        {% set clean_val = val.split(',')[-1] | replace('"', '') %}
-                        {% if clean_val == "1" %}{% set display_val = "Enabled" %}
-                        {% elif clean_val == "0" %}{% set display_val = "Disabled" %}
-                        {% elif clean_val == "" %}{% set display_val = "Not Defined" %}
-                        {% else %}{% set display_val = clean_val %}{% endif %}
+                        {% if clean_val == "1" %}{% set d_val = "Enabled" %}
+                        {% elif clean_val == "0" %}{% set d_val = "Disabled" %}
+                        {% else %}{% set d_val = clean_val %}{% endif %}
                         
-                        {% set _ = results.append({'name': friendly, 'value': display_val}) %}
+                        {% set _ = current_vals.update({key: d_val}) %}
                     {% endif %}
                 {% endfor %}
 
-                {# Add missing items from our map as "Not Defined" #}
-                {% for key, name in security_options_map.items() %}
-                    {% if key not in found_keys %}
-                        {% set _ = results.append({'name': name, 'value': "Not Defined"}) %}
-                    {% endif %}
-                {% endfor %}
-
-                {% for item in results | sort(attribute='name') | unique(attribute='name') %}
-                {# Only display friendly names, skip any remaining raw MACHINE keys #}
-                {% if "MACHINE\\" not in item.name %}
+                {% for key, friendly in security_options_map.items() | sort(attribute=1) %}
                 <tr>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.value }}</td>
+                    <td>{{ friendly }}</td>
+                    <td>{{ current_vals[key] | default("Not Defined") }}</td>
                 </tr>
-                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
