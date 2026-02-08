@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; background-color: #fff; color: #000; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #fff; margin: 0; }
         .container { width: 98%; margin: 10px auto; border: 1px solid #ccc; padding: 10px; }
         h1 { font-size: 14px; font-weight: normal; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
         table { width: 100%; border-collapse: collapse; }
@@ -14,7 +14,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Local Policies > Security Options</h1>
+        <h1>Local Policies > Security Options Audit</h1>
         <table>
             <thead>
                 <tr>
@@ -30,18 +30,21 @@
                         {% set key = parts[0] %}
                         {% set val = parts[1] | default('') | replace('"', '') %}
                         {% set clean_val = val.split(',')[-1] %}
+                        
                         {% if clean_val == "1" %}{% set d_val = "Enabled" %}
                         {% elif clean_val == "0" %}{% set d_val = "Disabled" %}
                         {% else %}{% set d_val = clean_val %}{% endif %}
+                        
                         {% set _ = scan_results.update({key: d_val}) %}
                     {% endif %}
                 {% endfor %}
 
+                {# Alphabetical loop through the Master Map #}
                 {% for key, friendly in security_options_map.items() | sort(attribute=1) %}
                 <tr>
                     <td>{{ friendly }}</td>
-                    <td class="{{ 'not-defined' if not scan_results[key] else '' }}">
-                        {{ scan_results[key] | default("Not Defined") }}
+                    <td class="{{ 'not-defined' if not scan_results.get(key) else '' }}">
+                        {{ scan_results.get(key, "Not Defined") }}
                     </td>
                 </tr>
                 {% endfor %}
