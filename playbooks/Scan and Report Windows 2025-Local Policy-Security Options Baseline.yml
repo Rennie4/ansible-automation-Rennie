@@ -1,13 +1,13 @@
-- name: Scan Windows 2025 Security Options (Completed 104 List)
+- name: Scan Windows 2025 Security Options (Target 104 Settings)
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Updated to the specific filename; Ansible will search in /templates/ by default
-    template_name: "baseline-local Policy-Security Options_report.j2"
-    report_dir: "{{ playbook_dir }}/reports"
+    # Ensure this file exists in your playbooks directory
+    template_path: "baseline-local Policy-Security Options_report.j2"
+    report_file: "/runner/project/playbooks/Security_Options_Report.html"
 
     security_options_map:
       "EnableAdminAccount": "Accounts: Administrator account status"
@@ -82,14 +82,7 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms for encryption, hashing, and signing"
 
   tasks:
-    - name: Create Reports Directory on Runner
-      delegate_to: localhost
-      ansible.builtin.file:
-        path: "{{ report_dir }}"
-        state: directory
-        mode: '0755'
-
-    - name: Execute Security Options Scan
+    - name: Execute Comprehensive Scan
       ansible.windows.win_shell: |
         $map = @{
             {% for key, value in security_options_map.items() %}
@@ -103,7 +96,7 @@
         if (Test-Path $configFile) {
             Get-Content $configFile -Encoding Unicode | ForEach-Object {
                 if ($_ -match '=') {
-                    $parts = $_.Split('=', 2); $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
+                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
                 }
             }
             Remove-Item $configFile
@@ -137,14 +130,14 @@
     - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ template_name }}"
-        dest: "{{ report_dir }}/Security_Options_{{ inventory_hostname }}.html"
+        src: "{{ template_path }}"
+        dest: "{{ report_file }}"
 
-    - name: Upload Report to S3
+    - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
-        src: "{{ report_dir }}/Security_Options_{{ inventory_hostname }}.html"
+        src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
