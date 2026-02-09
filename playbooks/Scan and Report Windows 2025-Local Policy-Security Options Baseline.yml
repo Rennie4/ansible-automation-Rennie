@@ -11,10 +11,16 @@
         dest: /tmp/Security_Options_windows_server_2025.html
         mode: get
       delegate_to: localhost
+      register: s3_download
+      ignore_errors: yes
+
+    - name: Fail with helpful message if S3 download fails
+      fail:
+        msg: "S3 Key not found. Please verify the filename in bucket oml-s3-automation-sandbox/cis-baseline-files/"
+      when: s3_download.failed
 
     - name: Generate Audit Script from Template
       win_template:
-        # Step back one folder level to find the templates directory
         src: ../templates/baseline-local Policy-Security Options_report.j2
         dest: C:\temp\run_security_options_audit.ps1
 
