@@ -4,12 +4,18 @@
   gather_facts: no
 
   tasks:
-    - name: Download security_options_map.json from S3
+    - name: Download mapping file to Controller (Python-based task)
       amazon.aws.s3_object:
         bucket: oml-s3-automation-sandbox
         object: cis-baseline-files/security_options_map.json
-        dest: C:\temp\security_options_map.json
+        dest: /tmp/security_options_map.json
         mode: get
+      delegate_to: localhost
+
+    - name: Push mapping file to Windows Server (PowerShell-based task)
+      win_copy:
+        src: /tmp/security_options_map.json
+        dest: C:\temp\security_options_map.json
 
     - name: Generate Audit Script from Jinja2 Template
       win_template:
