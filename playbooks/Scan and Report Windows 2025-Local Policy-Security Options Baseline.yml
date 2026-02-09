@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (104 Settings)
+- name: Scan Windows 2025 Security Options (Complete CIS Set)
   hosts: all
   gather_facts: yes
   vars:
@@ -8,7 +8,7 @@
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
-    # Strict "Security Options" Mapping
+    # Full set of Security Options (excluding User Rights/Audit)
     security_options_map:
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
@@ -91,62 +91,64 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
 
   tasks:
-    - name: Prepare Workspace
+    - name: Ensure Work Directory Exists
       ansible.windows.win_file:
         path: C:\temp
         state: directory
 
-    - name: Transfer Policy Map
+    - name: Deploy Mapping JSON
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Run Security Options Audit
+    - name: Execute Security Scan
       ansible.windows.win_shell: |
         {% raw %}
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
-        $configFile = "C:\temp\secedit_options.inf"
-        # Only export SecurityPolicy (Security Options folder)
-        secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
+        $secFile = "C:\temp\secedit_audit.inf"
+        secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
         
         $secHash = @{}
-        if (Test-Path $configFile) {
-            Get-Content $configFile -Encoding Unicode | ForEach-Object {
+        if (Test-Path $secFile) {
+            Get-Content $secFile -Encoding Unicode | ForEach-Object {
                 if ($_ -match '=') {
-                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
+                    $parts = $_.Split('=', 2); $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
                 }
             }
-            Remove-Item $configFile
+            Remove-Item $secFile
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
-            $val = "Not Defined"; $policyName = $map.$id
+            $val = "Not Defined"; $friendlyName = $map.$id
             
+            # Check Registry
             if ($id -like "MACHINE\*") {
-                $f = $id.Replace("MACHINE\", "HKLM:\"); $p = Split-Path $f; $n = Split-Path $f -Leaf
-                if (Test-Path $p) {
-                    $rv = Get-ItemProperty -Path $p -Name $n -ErrorAction SilentlyContinue
-                    if ($rv -and $rv.$n -ne $null) { $val = $rv.$n }
+                $path = $id.Replace("MACHINE\", "HKLM:\"); $parent = Split-Path $path; $name = Split-Path $path -Leaf
+                if (Test-Path $parent) {
+                    $regValue = Get-ItemProperty -Path $parent -Name $name -ErrorAction SilentlyContinue
+                    if ($regValue -and $regValue.$name -ne $null) { $val = $regValue.$name }
                 }
             }
             
-            $shortId = Split-Path $id -Leaf
+            # Check Security DB Fallback
+            $shortKey = Split-Path $id -Leaf
             if ($val -eq "Not Defined") {
                 if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
-                elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
+                elseif ($secHash.ContainsKey($shortKey)) { $val = $secHash[$shortKey] }
             }
 
+            # Normalization
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
             
-            [PSCustomObject]@{ Name = $policyName; Value = $val }
+            [PSCustomObject]@{ Policy = $friendlyName; Setting = $val }
         }
-        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
+        $results | Sort-Object Policy | ForEach-Object { "$($_.Policy)|$($_.Setting)" }
         {% endraw %}
-      register: security_scan_raw
+      register: scan_output
 
-    - name: Build Report
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.copy:
         dest: "{{ report_file }}"
@@ -155,36 +157,42 @@
           <html>
           <head>
               <style>
-                  body { font-family: 'Segoe UI', Arial; margin: 30px; background-color: #f4f7f9; }
-                  .report-box { background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
-                  h2 { color: #232f3e; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                  th { background-color: #232f3e; color: #fff; padding: 12px; text-align: left; }
-                  td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
-                  .Enabled { color: #28a745; font-weight: bold; }
-                  .Disabled { color: #dc3545; font-weight: bold; }
-                  .Not { color: #888; font-style: italic; }
+                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f0f2f5; }
+                  .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
+                  h1 { color: #1a2b3c; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
+                  .meta { font-size: 0.9em; color: #666; margin-bottom: 20px; }
+                  table { width: 100%; border-collapse: collapse; }
+                  th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; position: sticky; top: 0; }
+                  td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.95em; }
+                  tr:nth-child(even) { background-color: #f9f9f9; }
+                  .Enabled { color: #2e7d32; font-weight: bold; }
+                  .Disabled { color: #d32f2f; font-weight: bold; }
+                  .Not { color: #757575; font-style: italic; }
               </style>
           </head>
           <body>
-              <div class="report-box">
-                  <h2>Windows Server 2025: Security Options Audit</h2>
-                  <p>Server: {{ inventory_hostname }} | Policies Scanned: {{ security_scan_raw.stdout_lines | length }}</p>
+              <div class="container">
+                  <h1>Windows Server 2025: Security Options Audit</h1>
+                  <div class="meta">Target: {{ inventory_hostname }} | Scan Time: {{ ansible_date_time.iso8601 }}</div>
                   <table>
-                      <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
-                      {% for line in security_scan_raw.stdout_lines %}
-                      {% set parts = line.split('|') %}
-                      <tr>
-                          <td>{{ parts[0] }}</td>
-                          <td class="{{ parts[1].split(' ')[0] }}">{{ parts[1] }}</td>
-                      </tr>
-                      {% endfor %}
+                      <thead>
+                          <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
+                      </thead>
+                      <tbody>
+                          {% for line in scan_output.stdout_lines %}
+                          {% set data = line.split('|') %}
+                          <tr>
+                              <td>{{ data[0] }}</td>
+                              <td class="{{ data[1].split(' ')[0] }}">{{ data[1] }}</td>
+                          </tr>
+                          {% endfor %}
+                      </tbody>
                   </table>
               </div>
           </body>
           </html>
 
-    - name: Push to S3
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
