@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (104+ Settings)
+- name: Comprehensive Windows 2025 Security Options Audit
   hosts: all
   gather_facts: yes
   vars:
@@ -8,26 +8,23 @@
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
+    # Full CIS-aligned mapping including Network Access, MSS, and UAC
     security_options_map:
-      # --- ACCOUNTS ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      # --- AUDIT ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
-      # --- DEVICES ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access"
-      # --- DOMAIN MEMBER ---
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt (when possible)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign (when possible)"
@@ -35,7 +32,6 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
-      # --- INTERACTIVE LOGON ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
@@ -49,7 +45,6 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayUsername": "Interactive logon: Don't display username at sign-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeCaption": "Interactive logon: Message title for users logging on"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeText": "Interactive logon: Message text for users logging on"
-      # --- MICROSOFT NETWORK ---
       "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnablePlainTextPassword": "Microsoft network client: Send unencrypted password"
@@ -58,7 +53,6 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Idle time before suspending"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableForcedLogOff": "Microsoft network server: Disconnect clients when hours expire"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\SmbServerNameHardeningLevel": "Microsoft network server: Server SPN target name validation level"
-      # --- NETWORK ACCESS ---
       "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
       "RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
       "RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
@@ -68,7 +62,6 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionPipes": "Network access: Named Pipes accessed anonymously"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "Network access: Shares accessed anonymously"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\ForceGuest": "Network access: Sharing model for local accounts"
-      # --- NETWORK SECURITY ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoLMHash": "Network security: Do not store LAN Manager hash"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Min session security for NTLM clients"
@@ -80,7 +73,6 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoAdapterLsa": "Network security: Allow LocalSystem NULL session fallback"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NegOption": "Network security: Allow PKU2U auth"
-      # --- UAC ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
@@ -90,7 +82,6 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "UAC: Allow UIAccess apps to prompt"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "UAC: Only elevate secure UIAccess apps"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "UAC: Virtualize file/registry write failures"
-      # --- MSS & OTHERS ---
       "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpMaxConnectResponseRetransmissions": "MSS: SYN Attack Protection"
       "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\EnableICMPRedirect": "MSS: Allow ICMP redirects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
@@ -113,7 +104,7 @@
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Run Audit
+    - name: Run Comprehensive Audit
       ansible.windows.win_shell: |
         {% raw %}
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
@@ -135,7 +126,6 @@
             $val = "Not Defined"
             $pName = $map.$id
             
-            # 1. Registry Lookup
             if ($id -like "MACHINE\*") {
                 $f = $id.Replace("MACHINE\", "HKLM:\")
                 $p = Split-Path $f
@@ -146,17 +136,14 @@
                 }
             }
             
-            # 2. Secedit Backup Lookup
             if ($val -eq "Not Defined") {
-                if ($secHash.ContainsKey($id)) { 
-                    $val = $secHash[$id] 
-                } else {
+                if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
+                else {
                     $sk = Split-Path $id -Leaf
                     if ($secHash.ContainsKey($sk)) { $val = $secHash[$sk] }
                 }
             }
 
-            # 3. Formatting
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
