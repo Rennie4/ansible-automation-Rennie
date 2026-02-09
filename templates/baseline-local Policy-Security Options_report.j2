@@ -13,12 +13,14 @@ Get-Content $secFile -Encoding Unicode | ForEach-Object {
     if ($line -match '^([^=]+)=(.*)$') {
         $key = $matches[1].Trim()
         $val = $matches[2].Trim().Trim('"')
+        
+        # Normalize registry format (e.g., '4,1' to '1') [cite: 2026-02-09]
         if ($val -match '^\d+,(.*)$') { $val = $matches[1].Trim() }
         $policyStore[$key] = $val
     }
 }
 
-# Process results and map to the format requested [cite: 2026-02-09]
+# Iterate through identified security options [cite: 2026-02-09]
 $results = foreach ($opt in $policyStore.Keys) {
     $val = $policyStore[$opt]
     
@@ -27,6 +29,7 @@ $results = foreach ($opt in $policyStore.Keys) {
         "1" { "Enabled" }
         "4" { "Enabled" }
         "536870912" { "Require 128-bit encryption" }
+        "Not Defined" { "Not Defined" }
         default { $val }
     }
 
@@ -36,7 +39,7 @@ $results = foreach ($opt in $policyStore.Keys) {
     }
 }
 
-# Final Header with exact counts [cite: 2026-02-09]
+# Formatting for the final 82-item report header [cite: 2026-02-09]
 $totalTargeted = 82
 $successfullyPulled = $results.Count
 
