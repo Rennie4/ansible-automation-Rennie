@@ -9,20 +9,21 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
 
     security_options_map:
-      # --- ACCOUNTS (Corrected Keys for Database Lookup) ---
-      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
-      "NewAdminName": "Accounts: Rename administrator account"
+      # ACCOUNTS
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
+      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
+      "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      # --- AUDIT & DEVICES ---
+      # AUDIT
+      "AuditBaseObjects": "Audit: Audit the access of global system objects"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
+      "CrashOnAuditFail": "Audit: Shut down system immediately if unable to log security audits"
+      # DEVICES
       "AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      # --- REGISTRY BASED (Using full paths as you had them) ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access to locally logged-on user only"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
-      # ... [Keep your other 90+ keys here] ...
+      # ... [Keep all other 90+ entries here exactly as they were in your working version]
 
   tasks:
     - name: Prepare Workspace
@@ -35,11 +36,10 @@
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Run Security Audit
+    - name: Run Security Audit (Final Logic Fix)
       ansible.windows.win_shell: |
         $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $configFile = "C:\temp\secedit_options.inf"
-        # Export the Security Database
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         
         $secHash = @{}
@@ -53,25 +53,30 @@
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
-            $val = "Not Defined"; $policyName = $map.$id
+            $val = "Not Defined"
+            $policyName = $map.$id
             
-            # PRIORITY 1: Check the Security Database (SAM/LSA) first
-            # This fixes "NewAdminName" and "LimitBlankPasswordUse"
-            if ($secHash.ContainsKey($id)) { 
-                $val = $secHash[$id] 
-            }
-            # PRIORITY 2: Fallback to Registry if not in database
-            elseif ($id -like "MACHINE\*") {
-                $f = $id.Replace("MACHINE\", "HKLM:\"); $p = Split-Path $f; $n = Split-Path $f -Leaf
+            # 1. Try finding by Short Name in Secedit (e.g. "NewAdminName")
+            $shortId = if ($id -match "\\") { Split-Path $id -Leaf } else { $id }
+            
+            if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
+            elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
+            
+            # 2. Try finding by Registry Path if still Not Defined
+            if ($val -eq "Not Defined" -and $id -like "MACHINE\*") {
+                $f = $id.Replace("MACHINE\", "HKLM:\")
+                $p = Split-Path $f; $n = Split-Path $f -Leaf
                 if (Test-Path $p) {
                     $rv = Get-ItemProperty -Path $p -Name $n -ErrorAction SilentlyContinue
                     if ($rv -and $rv.$n -ne $null) { $val = $rv.$n }
                 }
             }
 
-            # DATA NORMALIZATION
-            if ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
-            elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
+            # 3. Clean up raw numbers and specific strings
+            if ($val -match '^0(,0)?$') { $val = "Disabled" }
+            elseif ($val -match '^1(,0)?$') { $val = "Enabled" }
+            elseif ($val -eq "4,0") { $val = "Disabled" }
+            elseif ($val -eq "4,1") { $val = "Enabled" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             
             [PSCustomObject]@{ Name = $policyName; Value = $val }
@@ -79,7 +84,7 @@
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
       register: security_scan_raw
 
-    - name: Build Report (Inline Template)
+    - name: Build Report
       delegate_to: localhost
       ansible.builtin.copy:
         dest: "{{ report_file }}"
@@ -88,21 +93,20 @@
           <html>
           <head>
             <style>
-              body { font-family: 'Segoe UI', sans-serif; margin: 30px; background: #f4f7f9; }
-              .box { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              body { font-family: sans-serif; padding: 20px; background: #f4f7f9; }
+              .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
               table { width: 100%; border-collapse: collapse; }
-              th { background: #232f3e; color: white; padding: 12px; text-align: left; }
-              td { padding: 10px; border-bottom: 1px solid #eee; font-size: 14px; }
-              .Enabled { color: green; font-weight: bold; }
-              .Disabled { color: red; font-weight: bold; }
-              .Administrator { color: #007bff; font-weight: bold; }
+              th { text-align: left; background: #232f3e; color: white; padding: 10px; }
+              td { padding: 8px; border-bottom: 1px solid #eee; }
+              .Enabled, .Administrator { color: green; font-weight: bold; }
+              .Disabled { color: red; }
             </style>
           </head>
           <body>
-            <div class="box">
-              <h2>Security Options Report: {{ inventory_hostname }}</h2>
+            <div class="card">
+              <h2>Security Options: {{ inventory_hostname }}</h2>
               <table>
-                <tr><th>Policy</th><th>Value</th></tr>
+                <tr><th>Policy Name</th><th>Configured Setting</th></tr>
                 {% for line in security_scan_raw.stdout_lines %}
                 {% set p = line.split('|') %}
                 <tr><td>{{ p[0] }}</td><td class="{{ p[1] }}">{{ p[1] }}</td></tr>
