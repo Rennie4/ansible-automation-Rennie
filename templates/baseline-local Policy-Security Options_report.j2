@@ -18,9 +18,7 @@ Get-Content $secFile -Encoding Unicode | ForEach-Object {
     }
 }
 
-# This captures the 104 potential security options found in image_5afe59.jpg
-$allOptions = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" | Get-Member -MemberType NoteProperty
-
+# Logic to identify the 82 targeted settings
 $results = foreach ($opt in $policyStore.Keys) {
     $val = $policyStore[$opt]
     
@@ -38,7 +36,7 @@ $results = foreach ($opt in $policyStore.Keys) {
     }
 }
 
-# Report Formatting for S3
+# Formatting for the final S3-ready report
 $totalTargeted = 82
 $successfullyPulled = $results.Count
 
