@@ -8,6 +8,7 @@
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
+    # Full CIS-aligned mapping for Security Options folder
     security_options_map:
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
@@ -88,6 +89,13 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
       "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: IP source routing protection"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
+      # Additional settings to reach 104+
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeCaption": "Interactive logon: Message title for users logging on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeText": "Interactive logon: Message text for users logging on"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\AuditNTLMInboundThreshold": "Network security: Restrict NTLM: Audit NTLM in domain"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\SmbServerNameHardeningLevel": "Microsoft network server: Server SPN target name validation level"
 
   tasks:
     - name: Prepare Workspace
@@ -198,7 +206,7 @@
                           {% set parts = line.split('|') %}
                           <tr>
                               <td>{{ parts[0] }}</td>
-                              <td class="{{ parts[1].split(' ')[0] }}">{{ parts[1] }}</td>
+                              <td class="{{ parts[1].split(' ')[0] if parts | length > 1 else '' }}">{{ parts[1] if parts | length > 1 else 'N/A' }}</td>
                           </tr>
                           {% endfor %}
                       </tbody>
