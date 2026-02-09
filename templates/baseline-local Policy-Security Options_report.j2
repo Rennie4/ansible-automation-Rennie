@@ -1,35 +1,29 @@
 {% raw %}
 # PowerShell Audit Script - No Python Required
-# Targeted at Windows 2025 Security Options
-
 $mapPath = "C:\temp\security_options_map.json"
 $secFile = "C:\temp\secedit_export.inf"
 $reportPath = "C:\temp\security_audit_results.csv"
 
 if (-not (Test-Path $mapPath)) { throw "Mapping file missing." }
 $map = Get-Content $mapPath | ConvertFrom-Json
+$idList = $map.psobject.Properties.Name
 
-# Export live security policy to a temporary INF file
+# Export live security policy
 secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
-
 $policyStore = @{}
 
-# Parse INF using UTF-16 Encoding (Default for secedit)
 Get-Content $secFile -Encoding Unicode | ForEach-Object {
     $line = $_.Trim()
     if ($line -match '^([^=]+)=(.*)$') {
         $key = $matches[1].Trim()
         $val = $matches[2].Trim().Trim('"')
-        
-        # Clean up registry format (e.g., '4,1' becomes '1')
         if ($val -match '^\d+,(.*)$') { $val = $matches[1].Trim() }
         $policyStore[$key] = $val
     }
 }
 
-# Match against the 104 settings from your JSON map
-$results = foreach ($id in $map.psobject.Properties.Name) {
-    $policyName = $map.$id
+$results = foreach ($id in $idList) {
+    $displayName = $map.$id
     $currentVal = "Not Defined"
 
     if ($policyStore.ContainsKey($id)) {
@@ -46,20 +40,33 @@ $results = foreach ($id in $map.psobject.Properties.Name) {
     }
 
     $status = switch ($currentVal) {
-        "0" { "Disabled (0)" }
-        "1" { "Enabled (1)" }
+        "0" { "Disabled" }
+        "1" { "Enabled" }
+        "4" { "Enabled" }
+        "536870912" { "Require 128-bit encryption" }
         "Not Defined" { "Not Defined" }
         default { $currentVal }
     }
 
     [PSCustomObject]@{
-        "Setting_ID"    = $id
-        "Policy_Option" = $policyName
-        "Current_State" = $status
+        "Security Policy Name" = $displayName
+        "Configured Setting"   = $status
     }
 }
 
-$results | Sort-Object Policy_Option | Export-Csv -Path $reportPath -NoTypeInformation
+# Calculate Totals for Header
+$totalTargeted = $idList.Count
+$successfullyPulled = ($results | Where-Object { $_."Configured Setting" -ne "Not Defined" }).Count
+
+# Build the formatted report as requested
+$reportHeader = @"
+Windows Server 2025: Security Options Audit
+Total Targeted,$totalTargeted
+Successfully Pulled,$successfullyPulled
+"@
+
+$reportHeader | Out-File -FilePath $reportPath -Encoding utf8
+$results | Sort-Object "Security Policy Name" | Export-Csv -Path $reportPath -Append -NoTypeInformation
 
 if (Test-Path $secFile) { Remove-Item $secFile -Force }
 {% endraw %}
