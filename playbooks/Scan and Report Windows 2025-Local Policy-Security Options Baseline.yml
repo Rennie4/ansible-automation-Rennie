@@ -1,6 +1,6 @@
 ---
 - name: Scan and Report Windows Local Policy - Security Options Baseline
-  hosts: windows
+  hosts: windows_server_2025
   gather_facts: no
 
   tasks:
@@ -27,41 +27,25 @@
         function Parse-SeceditFile {
           param([string]$Path)
           if (-not (Test-Path $Path)) { return }
-
           $current = ""
           Get-Content -Path $Path -Encoding Unicode | ForEach-Object {
             $line = $_.Trim()
             if (-not $line) { return }
-
-            if ($line -match '^\[(.+)\]$') {
-              $current = $matches[1]
-              return
-            }
-
+            if ($line -match '^\[(.+)\]$') { $current = $matches[1]; return }
             if ($line -notmatch '=') { return }
-
             $kv = $line.Split('=', 2)
             $k  = $kv[0].Trim()
             $v  = $kv[1].Trim()
-
             switch ($current) {
               'Registry Values' {
-                $type = $null
-                $data = $v
+                $type = $null; $data = $v
                 if ($v -match '^\s*(\d+)\s*,\s*(.*)$') {
-                  $type = $matches[1]
-                  $data = $matches[2].Trim()
+                  $type = $matches[1]; $data = $matches[2].Trim()
                 }
                 $data = $data.Trim('"')
-                $sec.RegistryValues[$k] = [pscustomobject]@{
-                  Type = $type
-                  Data = $data
-                }
+                $sec.RegistryValues[$k] = [pscustomobject]@{ Type = $type; Data = $data }
               }
-              'System Access' {
-                $sec.SystemAccess[$k] = $v.Trim('"')
-              }
-              default { }
+              'System Access' { $sec.SystemAccess[$k] = $v.Trim('"') }
             }
           }
         }
@@ -85,16 +69,11 @@
             $val = (Get-ItemProperty -Path $p.Path -Name $p.Name -ErrorAction Stop).($p.Name)
             if ($val -is [array]) { return ($val -join '; ') }
             return $val
-          } catch {
-            return $null
-          }
+          } catch { return $null }
         }
 
         function Normalize-Value {
-          param(
-            [string]$policyName,
-            [string]$raw
-          )
+          param([string]$policyName,[string]$raw)
           if ($null -eq $raw -or $raw -eq '') { return 'Not Defined' }
           if ($raw -eq '0') { return 'Disabled (0)' }
           if ($raw -eq '1') { return 'Enabled (1)' }
@@ -103,42 +82,32 @@
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
-          $display = $map.$id
-          $val = $null
-
+          $display = $map.$id; $val = $null
           if ($id -like 'MACHINE\*') {
-            if ($sec.RegistryValues.ContainsKey($id)) {
-              $entry = $sec.RegistryValues[$id]
-              $val = $entry.Data
-            }
+            if ($sec.RegistryValues.ContainsKey($id)) { $val = $sec.RegistryValues[$id].Data }
             if (-not $val) {
               $val = Try-GetRegistry -machineKey $id
               if ($val -is [int]) { $val = [string]$val }
               elseif ($val -is [bool]) { $val = if ($val) {'1'} else {'0'} }
-              elseif ($val -is [string]) { $val = $val }
             }
           } else {
-            if ($sec.SystemAccess.ContainsKey($id)) {
-              $val = $sec.SystemAccess[$id]
-            } else {
+            if ($sec.SystemAccess.ContainsKey($id)) { $val = $sec.SystemAccess[$id] }
+            else {
               $leaf = Split-Path $id -Leaf
               $maybe = $sec.RegistryValues.Keys | Where-Object { $_ -match "\\$leaf$" }
-              if ($maybe) {
-                $val = $sec.RegistryValues[$maybe[0]].Data
-              }
+              if ($maybe) { $val = $sec.RegistryValues[$maybe[0]].Data }
             }
           }
-
           if (-not $val) { $val = 'Not Defined' }
-
           $shown = Normalize-Value -policyName $display -raw ([string]$val)
-
-          [PSCustomObject]@{
-            Name  = $display
-            Value = $shown
-          }
+          [PSCustomObject]@{ Name = $display; Value = $shown }
         }
 
-        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
+        # Save results to CSV
+        $results | Sort-Object Name | Export-Csv -Path "C:\temp\security_audit_results.csv" -NoTypeInformation
         {% endraw %}
       register: scan_output
+
+    - name: Show audit results path
+      debug:
+        msg: "Audit results saved to C:\\temp\\security_audit_results.csv"
