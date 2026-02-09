@@ -4,22 +4,18 @@
   gather_facts: no
 
   tasks:
-    - name: Download mapping file to Controller
+    - name: Download Baseline Reference from S3
       amazon.aws.s3_object:
         bucket: oml-s3-automation-sandbox
-        # Double-check this path in your S3 bucket console
-        object: cis-baseline-files/security_options_map.json
-        dest: /tmp/security_options_map.json
+        # Updated to match the filename seen in image_5be6f5.png
+        object: cis-baseline-files/Security_Options_windows_server_2025.html
+        dest: /tmp/Security_Options_windows_server_2025.html
         mode: get
       delegate_to: localhost
 
-    - name: Push mapping file to Windows Server
-      win_copy:
-        src: /tmp/security_options_map.json
-        dest: C:\temp\security_options_map.json
-
-    - name: Generate Audit Script from Jinja2 Template
+    - name: Generate Audit Script from Template
       win_template:
+        # Matches the path in image_5b1938.png
         src: templates/baseline-local Policy-Security Options_report.j2
         dest: C:\temp\run_security_options_audit.ps1
 
