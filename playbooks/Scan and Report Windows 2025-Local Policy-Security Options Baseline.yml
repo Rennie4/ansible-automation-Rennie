@@ -14,9 +14,23 @@
       register: s3_download
       ignore_errors: yes
 
-    - name: Fail with helpful message if S3 download fails
+    - name: List S3 Objects if download fails (Troubleshooting)
+      amazon.aws.s3_object:
+        bucket: oml-s3-automation-sandbox
+        prefix: cis-baseline-files/
+        mode: list
+      delegate_to: localhost
+      register: s3_list
+      when: s3_download.failed
+
+    - name: Display available files in S3
+      debug:
+        var: s3_list.s3_keys
+      when: s3_download.failed
+
+    - name: Stop if S3 file is missing
       fail:
-        msg: "S3 Key not found. Please verify the filename in bucket oml-s3-automation-sandbox/cis-baseline-files/"
+        msg: "The file was not found. Check the debug output above for the correct filename."
       when: s3_download.failed
 
     - name: Generate Audit Script from Template
