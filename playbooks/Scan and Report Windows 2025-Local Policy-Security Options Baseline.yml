@@ -4,15 +4,16 @@
   gather_facts: no
 
   tasks:
-    - name: Download mapping file to Controller (Python-based task)
+    - name: Download mapping file to Controller
       amazon.aws.s3_object:
         bucket: oml-s3-automation-sandbox
+        # Double-check this path in your S3 bucket console
         object: cis-baseline-files/security_options_map.json
         dest: /tmp/security_options_map.json
         mode: get
       delegate_to: localhost
 
-    - name: Push mapping file to Windows Server (PowerShell-based task)
+    - name: Push mapping file to Windows Server
       win_copy:
         src: /tmp/security_options_map.json
         dest: C:\temp\security_options_map.json
