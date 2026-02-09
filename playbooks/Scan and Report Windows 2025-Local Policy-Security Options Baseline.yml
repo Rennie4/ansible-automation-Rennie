@@ -120,7 +120,6 @@
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $policyName = $map.$id
             
-            # Step 1: Check Registry
             if ($id -like "MACHINE\*") {
                 $f = $id.Replace("MACHINE\", "HKLM:\"); $p = Split-Path $f; $n = Split-Path $f -Leaf
                 if (Test-Path $p) {
@@ -129,14 +128,12 @@
                 }
             }
             
-            # Step 2: Fallback to Security Database (Uses Short Names/Keys)
             $shortId = Split-Path $id -Leaf
             if ($val -eq "Not Defined") {
                 if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
                 elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
             }
 
-            # Step 3: Cleanup Values
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
@@ -149,15 +146,58 @@
 
     - name: Build Report
       delegate_to: localhost
-      ansible.builtin.template:
-        src: audit_template.j2
+      ansible.builtin.copy:
         dest: "{{ report_file }}"
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <title>Security Audit - {{ inventory_hostname }}</title>
+              <style>
+                  body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f4f7f9; color: #333; }
+                  .report-box { background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
+                  h2 { color: #232f3e; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
+                  .info-bar { margin: 15px 0; padding: 10px; background: #e9ecef; border-radius: 5px; font-weight: bold; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                  th { background-color: #232f3e; color: #fff; padding: 12px; text-align: left; }
+                  td { padding: 10px 12px; border-bottom: 1px solid #ddd; font-size: 0.9em; }
+                  tr:hover { background-color: #f1f1f1; }
+                  .Enabled, .Administrator { color: #28a745; font-weight: bold; }
+                  .Disabled { color: #dc3545; font-weight: bold; }
+                  .Not { color: #888; font-style: italic; }
+              </style>
+          </head>
+          <body>
+              <div class="report-box">
+                  <h2>Windows Server 2025: Security Options Audit</h2>
+                  <div class="info-bar">
+                      Server: {{ inventory_hostname }} | 
+                      Policies Scanned: {{ security_scan_raw.stdout_lines | length }}
+                  </div>
+                  <table>
+                      <thead>
+                          <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
+                      </thead>
+                      <tbody>
+                          {% for line in security_scan_raw.stdout_lines %}
+                          {% set parts = line.split('|') %}
+                          <tr>
+                              <td>{{ parts[0] }}</td>
+                              <td class="{{ parts[1].split(' ')[0] }}">{{ parts[1] }}</td>
+                          </tr>
+                          {% endfor %}
+                      </tbody>
+                  </table>
+              </div>
+          </body>
+          </html>
 
     - name: Push to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname.split('.')[0] }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
