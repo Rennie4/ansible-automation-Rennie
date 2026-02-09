@@ -9,15 +9,15 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
 
     security_options_map:
-      # --- CRITICAL SETTINGS (Prioritized) ---
-      "NewAdminName": "Accounts: Rename administrator account"
+      # --- THESE KEYS FIX YOUR "NOT DEFINED" ISSUES ---
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
+      "NewAdminName": "Accounts: Rename administrator account"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      # --- REGISTRY PATHS ---
+      # --- YOUR EXISTING REGISTRY KEYS ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      # ... [Keep your full list of 104 here]
+      # ... [Keep your full list of 104 exactly as you had them]
 
   tasks:
     - name: Prepare Workspace
@@ -32,53 +32,45 @@
 
     - name: Run Security Audit
       ansible.windows.win_shell: |
-        # We use 'raw' tags to prevent Ansible from misinterpreting the script braces
-        $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
+        {% raw %}
+        $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
         $configFile = "C:\temp\secedit_options.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
         
         $secHash = @{}
         if (Test-Path $configFile) {
-            $lines = Get-Content $configFile -Encoding Unicode
-            foreach ($line in $lines) {
-                if ($line -contains '=') {
-                    $parts = $line.Split('=', 2)
-                    $key = $parts[0].Trim()
-                    $val = $parts[1].Trim().Trim('"')
-                    $secHash[$key] = $val
+            Get-Content $configFile -Encoding Unicode | ForEach-Object {
+                if ($_ -match '=') {
+                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
                 }
             }
             Remove-Item $configFile
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
-            $val = "Not Defined"
-            $policyName = $map.$id
+            $val = "Not Defined"; $policyName = $map.$id
             
-            # Priority 1: Check Security DB (SAM/LSA)
-            $shortId = if ($id -match "\\") { Split-Path $id -Leaf } else { $id }
-            if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
-            elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
-            
-            # Priority 2: Registry Fallback
-            if ($val -eq "Not Defined" -and $id -like "MACHINE\*") {
-                $regPath = $id.Replace("MACHINE\", "HKLM:\")
-                $keyPath = Split-Path $regPath
-                $valName = Split-Path $regPath -Leaf
-                if (Test-Path $keyPath) {
-                    $regVal = Get-ItemProperty -Path $keyPath -Name $valName -ErrorAction SilentlyContinue
-                    if ($regVal -and $regVal.$valName -ne $null) { $val = $regVal.$valName }
+            # Check Registry First (Your original logic)
+            if ($id -like "MACHINE\*") {
+                $f = $id.Replace("MACHINE\", "HKLM:\"); $p = Split-Path $f; $n = Split-Path $f -Leaf
+                if (Test-Path $p) {
+                    $rv = Get-ItemProperty -Path $p -Name $n -ErrorAction SilentlyContinue
+                    if ($rv -and $rv.$n -ne $null) { $val = $rv.$n }
                 }
             }
+            
+            # Fallback to Security DB (Fixes the 4 missing settings)
+            if (($val -eq "Not Defined") -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
 
-            # Normalize Values (Handles 0,0 1,0 4,0 4,1 etc)
-            if ($val -match '^0(,0)?$' -or $val -eq "4,0") { $val = "Disabled" }
-            elseif ($val -match '^1(,0)?$' -or $val -eq "4,1") { $val = "Enabled" }
+            # Basic Cleanup
+            if ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
+            elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             
             [PSCustomObject]@{ Name = $policyName; Value = $val }
         }
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
+        {% endraw %}
       register: security_scan_raw
 
     - name: Build Report
@@ -90,27 +82,23 @@
           <html>
           <head>
               <style>
-                  body { font-family: 'Segoe UI', sans-serif; margin: 30px; background: #f4f7f9; }
-                  .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-                  h2 { color: #232f3e; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                  th { background: #232f3e; color: white; padding: 12px; text-align: left; }
-                  td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 14px; }
-                  .Enabled, .Administrator { color: #28a745; font-weight: bold; }
-                  .Disabled { color: #dc3545; }
+                  body { font-family: 'Segoe UI', sans-serif; margin: 30px; }
+                  table { width: 100%; border-collapse: collapse; }
+                  th { background: #232f3e; color: white; padding: 10px; text-align: left; }
+                  td { padding: 8px; border-bottom: 1px solid #eee; }
+                  .Enabled { color: green; font-weight: bold; }
+                  .Disabled { color: red; }
               </style>
           </head>
           <body>
-              <div class="card">
-                  <h2>Security Audit: {{ inventory_hostname }}</h2>
-                  <table>
-                      <tr><th>Policy Name</th><th>Configured Setting</th></tr>
-                      {% for line in security_scan_raw.stdout_lines %}
-                      {% set parts = line.split('|') %}
-                      <tr><td>{{ parts[0] }}</td><td class="{{ parts[1] }}">{{ parts[1] }}</td></tr>
-                      {% endfor %}
-                  </table>
-              </div>
+              <h2>Security Audit: {{ inventory_hostname }}</h2>
+              <table>
+                  <tr><th>Policy Name</th><th>Configured Setting</th></tr>
+                  {% for line in security_scan_raw.stdout_lines %}
+                  {% set parts = line.split('|') %}
+                  <tr><td>{{ parts[0] }}</td><td class="{{ parts[1] }}">{{ parts[1] }}</td></tr>
+                  {% endfor %}
+              </table>
           </body>
           </html>
 
@@ -118,7 +106,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Audit_{{ inventory_hostname }}.html"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
