@@ -14,10 +14,9 @@
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      # --- REGISTRY & OTHER ---
+      # --- REGISTRY EXAMPLES (USE YOUR FULL LIST OF 104 BELOW) ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      # ... [Keep your full list of 104 here]
 
   tasks:
     - name: Prepare Workspace
@@ -31,6 +30,7 @@
         dest: "{{ remote_map_file }}"
 
     - name: Run Security Audit
+      # Using '|' below is critical to avoid the "splitting arguments" error
       ansible.windows.win_shell: |
         $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $configFile = "C:\temp\secedit_options.inf"
@@ -54,12 +54,12 @@
             $val = "Not Defined"
             $policyName = $map.$id
             
-            # Check Security DB (Handles short names and special accounts)
+            # Priority 1: Security Database (Handles Admin Name & Blank Passwords)
             $shortId = if ($id -match "\\") { Split-Path $id -Leaf } else { $id }
             if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
             elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
             
-            # Fallback to Registry
+            # Priority 2: Registry Fallback
             if ($val -eq "Not Defined" -and $id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $keyPath = Split-Path $regPath
@@ -70,7 +70,7 @@
                 }
             }
 
-            # Final Cleanup
+            # Normalization
             if ($val -match '^0(,0)?$' -or $val -eq "4,0") { $val = "Disabled" }
             elseif ($val -match '^1(,0)?$' -or $val -eq "4,1") { $val = "Enabled" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
