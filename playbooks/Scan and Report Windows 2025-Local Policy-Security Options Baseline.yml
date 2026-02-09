@@ -7,7 +7,6 @@
     - name: Download Baseline Reference from S3
       amazon.aws.s3_object:
         bucket: oml-s3-automation-sandbox
-        # Updated to match the filename seen in image_5be6f5.png
         object: cis-baseline-files/Security_Options_windows_server_2025.html
         dest: /tmp/Security_Options_windows_server_2025.html
         mode: get
@@ -15,8 +14,8 @@
 
     - name: Generate Audit Script from Template
       win_template:
-        # Matches the path in image_5b1938.png
-        src: templates/baseline-local Policy-Security Options_report.j2
+        # Step back one folder level to find the templates directory
+        src: ../templates/baseline-local Policy-Security Options_report.j2
         dest: C:\temp\run_security_options_audit.ps1
 
     - name: Execute Security Audit
