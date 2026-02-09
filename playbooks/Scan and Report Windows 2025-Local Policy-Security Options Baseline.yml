@@ -9,14 +9,15 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
 
     security_options_map:
-      # --- SPECIFIC TARGETS ---
+      # --- CRITICAL SETTINGS (Prioritized) ---
       "NewAdminName": "Accounts: Rename administrator account"
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      # --- REGISTRY EXAMPLES (USE YOUR FULL LIST OF 104 BELOW) ---
+      # --- REGISTRY PATHS ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      # ... [Keep your full list of 104 here]
 
   tasks:
     - name: Prepare Workspace
@@ -30,8 +31,8 @@
         dest: "{{ remote_map_file }}"
 
     - name: Run Security Audit
-      # Using '|' below is critical to avoid the "splitting arguments" error
       ansible.windows.win_shell: |
+        # We use 'raw' tags to prevent Ansible from misinterpreting the script braces
         $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $configFile = "C:\temp\secedit_options.inf"
         secedit /export /areas SECURITYPOLICY /cfg $configFile | Out-Null
@@ -40,7 +41,7 @@
         if (Test-Path $configFile) {
             $lines = Get-Content $configFile -Encoding Unicode
             foreach ($line in $lines) {
-                if ($line -match '=') {
+                if ($line -contains '=') {
                     $parts = $line.Split('=', 2)
                     $key = $parts[0].Trim()
                     $val = $parts[1].Trim().Trim('"')
@@ -54,7 +55,7 @@
             $val = "Not Defined"
             $policyName = $map.$id
             
-            # Priority 1: Security Database (Handles Admin Name & Blank Passwords)
+            # Priority 1: Check Security DB (SAM/LSA)
             $shortId = if ($id -match "\\") { Split-Path $id -Leaf } else { $id }
             if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
             elseif ($secHash.ContainsKey($shortId)) { $val = $secHash[$shortId] }
@@ -70,7 +71,7 @@
                 }
             }
 
-            # Normalization
+            # Normalize Values (Handles 0,0 1,0 4,0 4,1 etc)
             if ($val -match '^0(,0)?$' -or $val -eq "4,0") { $val = "Disabled" }
             elseif ($val -match '^1(,0)?$' -or $val -eq "4,1") { $val = "Enabled" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
@@ -89,8 +90,8 @@
           <html>
           <head>
               <style>
-                  body { font-family: 'Segoe UI', sans-serif; margin: 30px; background: #f8f9fa; }
-                  .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+                  body { font-family: 'Segoe UI', sans-serif; margin: 30px; background: #f4f7f9; }
+                  .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
                   h2 { color: #232f3e; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
                   table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                   th { background: #232f3e; color: white; padding: 12px; text-align: left; }
@@ -100,7 +101,7 @@
               </style>
           </head>
           <body>
-              <div class="container">
+              <div class="card">
                   <h2>Security Audit: {{ inventory_hostname }}</h2>
                   <table>
                       <tr><th>Policy Name</th><th>Configured Setting</th></tr>
