@@ -5,7 +5,7 @@
 
   tasks:
     - name: Download security_options_map.json from S3
-      aws_s3:
+      amazon.aws.s3_object:
         bucket: oml-s3-automation-sandbox
         object: cis-baseline-files/security_options_map.json
         dest: C:\temp\security_options_map.json
@@ -19,10 +19,7 @@
         $secFile = "C:\temp\secedit_audit.inf"
         secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
 
-        $sec = [ordered]@{
-          RegistryValues = @{}
-          SystemAccess   = @{}
-        }
+        $sec = [ordered]@{ RegistryValues = @{}; SystemAccess = @{} }
 
         function Parse-SeceditFile {
           param([string]$Path)
@@ -33,9 +30,7 @@
             if (-not $line) { return }
             if ($line -match '^\[(.+)\]$') { $current = $matches[1]; return }
             if ($line -notmatch '=') { return }
-            $kv = $line.Split('=', 2)
-            $k  = $kv[0].Trim()
-            $v  = $kv[1].Trim()
+            $kv = $line.Split('=', 2); $k = $kv[0].Trim(); $v = $kv[1].Trim()
             switch ($current) {
               'Registry Values' {
                 $type = $null; $data = $v
@@ -103,7 +98,6 @@
           [PSCustomObject]@{ Name = $display; Value = $shown }
         }
 
-        # Save results to CSV
         $results | Sort-Object Name | Export-Csv -Path "C:\temp\security_audit_results.csv" -NoTypeInformation
         {% endraw %}
       register: scan_output
