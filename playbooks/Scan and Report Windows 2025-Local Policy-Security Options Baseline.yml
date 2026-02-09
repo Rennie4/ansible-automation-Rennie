@@ -1,4 +1,4 @@
-- name: Scan Windows 2025 Security Options (Complete CIS Set)
+- name: Scan Windows 2025 Security Options (104 Settings)
   hosts: all
   gather_facts: yes
   vars:
@@ -8,7 +8,7 @@
     report_file: "/runner/project/playbooks/Security_Options_Report.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
-    # Full set of Security Options (excluding User Rights/Audit)
+    # Full set of Security Options mapping
     security_options_map:
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
@@ -91,17 +91,17 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
 
   tasks:
-    - name: Ensure Work Directory Exists
+    - name: Prepare Workspace
       ansible.windows.win_file:
         path: C:\temp
         state: directory
 
-    - name: Deploy Mapping JSON
+    - name: Transfer Policy Map
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Execute Security Scan
+    - name: Run Audit
       ansible.windows.win_shell: |
         {% raw %}
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
@@ -112,43 +112,36 @@
         if (Test-Path $secFile) {
             Get-Content $secFile -Encoding Unicode | ForEach-Object {
                 if ($_ -match '=') {
-                    $parts = $_.Split('=', 2); $secHash[$parts[0].Trim()] = $parts[1].Trim().Trim('"')
+                    $p = $_.Split('=', 2); $secHash[$p[0].Trim()] = $p[1].Trim().Trim('"')
                 }
             }
             Remove-Item $secFile
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
-            $val = "Not Defined"; $friendlyName = $map.$id
-            
-            # Check Registry
+            $val = "Not Defined"; $pName = $map.$id
             if ($id -like "MACHINE\*") {
-                $path = $id.Replace("MACHINE\", "HKLM:\"); $parent = Split-Path $path; $name = Split-Path $path -Leaf
-                if (Test-Path $parent) {
-                    $regValue = Get-ItemProperty -Path $parent -Name $name -ErrorAction SilentlyContinue
-                    if ($regValue -and $regValue.$name -ne $null) { $val = $regValue.$name }
+                $f = $id.Replace("MACHINE\", "HKLM:\"); $p = Split-Path $f; $n = Split-Path $f -Leaf
+                if (Test-Path $p) {
+                    $rv = Get-ItemProperty -Path $p -Name $n -ErrorAction SilentlyContinue
+                    if ($rv -and $rv.$n -ne $null) { $val = $rv.$n }
                 }
             }
-            
-            # Check Security DB Fallback
-            $shortKey = Split-Path $id -Leaf
             if ($val -eq "Not Defined") {
                 if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
-                elseif ($secHash.ContainsKey($shortKey)) { $val = $secHash[$shortKey] }
+                elseif ($secHash.ContainsKey(Split-Path $id -Leaf)) { $val = $secHash[Split-Path $id -Leaf] }
             }
-
-            # Normalization
             if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "0" -or $val -eq "0,0") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "1,0") { $val = "Enabled" }
             
-            [PSCustomObject]@{ Policy = $friendlyName; Setting = $val }
+            [PSCustomObject]@{ Name = $pName; Value = $val }
         }
-        $results | Sort-Object Policy | ForEach-Object { "$($_.Policy)|$($_.Setting)" }
+        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
         {% endraw %}
       register: scan_output
 
-    - name: Generate HTML Report
+    - name: Generate Report with Summary
       delegate_to: localhost
       ansible.builtin.copy:
         dest: "{{ report_file }}"
@@ -157,33 +150,51 @@
           <html>
           <head>
               <style>
-                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f0f2f5; }
-                  .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
-                  h1 { color: #1a2b3c; border-bottom: 2px solid #0056b3; padding-bottom: 10px; }
-                  .meta { font-size: 0.9em; color: #666; margin-bottom: 20px; }
-                  table { width: 100%; border-collapse: collapse; }
+                  body { font-family: 'Segoe UI', Arial; margin: 30px; background-color: #f4f7f9; color: #333; }
+                  .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1150px; margin: auto; }
+                  h1 { color: #1a2b3c; border-bottom: 3px solid #007bff; padding-bottom: 12px; margin-top: 0; }
+                  .summary-box { display: flex; gap: 20px; margin-bottom: 25px; }
+                  .card { flex: 1; padding: 15px; border-radius: 8px; background: #f8f9fa; border-left: 5px solid #007bff; }
+                  .card h3 { margin: 0; font-size: 0.85em; text-transform: uppercase; color: #666; }
+                  .card p { margin: 5px 0 0; font-size: 1.8em; font-weight: bold; color: #1a2b3c; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                   th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; position: sticky; top: 0; }
-                  td { padding: 10px; border-bottom: 1px solid #eee; font-size: 0.95em; }
-                  tr:nth-child(even) { background-color: #f9f9f9; }
-                  .Enabled { color: #2e7d32; font-weight: bold; }
-                  .Disabled { color: #d32f2f; font-weight: bold; }
-                  .Not { color: #757575; font-style: italic; }
+                  td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.92em; }
+                  tr:hover { background-color: #f1f4f8; }
+                  .Enabled { color: #28a745; font-weight: bold; }
+                  .Disabled { color: #dc3545; font-weight: bold; }
+                  .Not { color: #95a5a6; font-style: italic; }
               </style>
           </head>
           <body>
               <div class="container">
                   <h1>Windows Server 2025: Security Options Audit</h1>
-                  <div class="meta">Target: {{ inventory_hostname }} | Scan Time: {{ ansible_date_time.iso8601 }}</div>
+                  
+                  <div class="summary-box">
+                      <div class="card">
+                          <h3>Total Policies Targeted</h3>
+                          <p>{{ security_options_map.keys() | length }}</p>
+                      </div>
+                      <div class="card" style="border-left-color: #28a745;">
+                          <h3>Policies Successfully Pulled</h3>
+                          <p>{{ scan_output.stdout_lines | length }}</p>
+                      </div>
+                      <div class="card" style="border-left-color: #ffc107;">
+                          <h3>Server Identity</h3>
+                          <p style="font-size: 1.2em;">{{ inventory_hostname }}</p>
+                      </div>
+                  </div>
+
                   <table>
                       <thead>
                           <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
                       </thead>
                       <tbody>
                           {% for line in scan_output.stdout_lines %}
-                          {% set data = line.split('|') %}
+                          {% set parts = line.split('|') %}
                           <tr>
-                              <td>{{ data[0] }}</td>
-                              <td class="{{ data[1].split(' ')[0] }}">{{ data[1] }}</td>
+                              <td>{{ parts[0] }}</td>
+                              <td class="{{ parts[1].split(' ')[0] }}">{{ parts[1] }}</td>
                           </tr>
                           {% endfor %}
                       </tbody>
@@ -192,7 +203,7 @@
           </body>
           </html>
 
-    - name: Upload Report to S3
+    - name: Push to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
