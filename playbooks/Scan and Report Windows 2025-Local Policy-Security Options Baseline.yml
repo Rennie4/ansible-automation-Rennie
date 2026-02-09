@@ -117,7 +117,6 @@
                 if ($_ -match '=') {
                     $p = $_.Split('=', 2)
                     $val = $p[1].Trim().Trim('"')
-                    # Fix bitmasks and trailing commas
                     if ($val -eq "7," -or $val -eq "7") { $val = "None" }
                     elseif ($val -match ',') { $val = $val.Split(',')[0] }
                     $secHash[$p[0].Trim()] = $val
@@ -140,7 +139,6 @@
                 $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
                 if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
             }
-            # Translation Logic
             if ($val -eq "0" -or $val -eq "3") { 
                 if ($pName -like "*Backup and Restore*") { $val = "Disabled" }
                 elseif ($pName -like "*prompt for users*") { $val = "Prompt for credentials" }
