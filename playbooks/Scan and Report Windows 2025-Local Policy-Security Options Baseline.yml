@@ -6,6 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # This creates a folder in your current directory
     local_report_dir: "{{ playbook_dir }}/reports"
     report_file: "{{ local_report_dir }}/Security_Options_{{ inventory_hostname }}.html"
     
@@ -55,6 +56,7 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "UAC: Switch to secure desktop for elevation"
+      # Mapping contains 82 items total to match your previous report
 
   tasks:
     - name: Create Local Report Directory
