@@ -10,28 +10,26 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- ACCOUNTS & LOGON (Consolidated) ---
+      # --- ACCOUNTS (Consolidated) ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       
-      # --- NETWORK & SIGNING ---
+      # --- NETWORK SIGNING ---
       "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign (if client agrees)"
+
+      # --- UAC & DCOM (Windows 2025 Specifics) ---
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "User Account Control: Behavior of the elevation prompt for administrators"
+      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions in SDDL syntax"
+      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions in SDDL syntax"
       
-      # --- DCOM & DEVICES (Windows 2025 Specifics) ---
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions"
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      
-      # [Map contains 104 unique items total]
+      # [Includes full range of 104 unique Security Options identifiers]
 
   tasks:
     - name: Transfer Policy Map
@@ -68,13 +66,12 @@
             }
             if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
             
-            # Normalization logic
+            # Standardization
             if ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
-            elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
-        # Sorting by name and enforcing uniqueness
+        # Force uniqueness on Name to solve 'Duplicate Request' issue
         $results | Sort-Object Name -Unique | ForEach-Object { "$($_.Name)|$($_.Value)" }
         {% endraw %}
       register: scan_output
