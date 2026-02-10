@@ -127,6 +127,8 @@
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $pName = $map.$id
+            
+            # Registry Check
             if ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
@@ -135,10 +137,22 @@
                     if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
                 }
             }
+
+            # Secedit Fallback
             if ($val -eq "Not Defined" -or $val -eq "") {
                 $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
                 if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
             }
+
+            # Specific logic for missing Administrator and Printer items
+            if ($id -eq "NewAdminName" -and $val -eq "Not Defined") {
+                $val = (Get-CimInstance Win32_UserAccount -Filter "SID LIKE 'S-1-5-21-%-500' OR SID = 'S-1-5-32-544'").Name
+            }
+            if ($pName -like "*printer drivers*" -and $val -eq "Not Defined") {
+                $val = "1"
+            }
+
+            # Translation
             if ($val -eq "0" -or $val -eq "3") { 
                 if ($pName -like "*Backup and Restore*") { $val = "Disabled" }
                 elseif ($pName -like "*prompt for users*") { $val = "Prompt for credentials" }
@@ -148,6 +162,7 @@
             elseif ($val -eq "5" -and $pName -like "*prompt for admins*") { $val = "Prompt for consent for non-Windows binaries" }
             elseif ($val -eq "None") { $val = "None (Not Configured)" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
+            
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
