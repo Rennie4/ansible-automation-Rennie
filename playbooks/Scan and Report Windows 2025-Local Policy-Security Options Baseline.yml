@@ -6,11 +6,13 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    report_file: "{{ playbook_dir }}/reports/Security_Options_Report_{{ inventory_hostname }}.html"
+    # Local path on the Ansible runner
+    local_report_dir: "{{ playbook_dir }}/reports"
+    report_file: "{{ local_report_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- ACCOUNT POLICIES (Password & Lockout) ---
+      # --- ACCOUNT POLICIES ---
       "MinimumPasswordAge": "Password: Minimum password age"
       "MaximumPasswordAge": "Password: Maximum password age"
       "MinimumPasswordLength": "Password: Minimum password length"
@@ -30,7 +32,7 @@
       "NewGuestName": "Accounts: Rename guest account"
       "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
       
-      # Registry-based Security Options (From your log)
+      # Registry-based Security Options
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
@@ -56,10 +58,16 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing requirements"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign (always)"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
-      # ... [Additional 60+ mappings added internally to reach 104] ...
 
   tasks:
-    - name: Prepare Workspace
+    - name: Create Local Reports Directory
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ local_report_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Prepare Remote Workspace
       ansible.windows.win_file:
         path: C:\temp
         state: directory
@@ -106,7 +114,6 @@
                 if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
             }
 
-            # Human-readable formatting
             if ($val -eq "0") { $val = "Disabled" }
             elseif ($val -eq "1") { $val = "Enabled" }
             
