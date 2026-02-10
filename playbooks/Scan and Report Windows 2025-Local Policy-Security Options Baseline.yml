@@ -6,11 +6,12 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # RESTORED TO YOUR WORKING PATH
     report_file: "{{ playbook_dir }}/reports/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- ACCOUNTS & AUDIT ---
+      # --- YOUR ORIGINAL 71 SETTINGS ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
@@ -21,8 +22,6 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
-      
-      # --- DEVICES & DOMAIN ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
       "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
@@ -35,23 +34,6 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
       "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
-
-      # --- MICROSOFT NETWORK CLIENT/SERVER (Added for 82-count) ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnablePlaintextPassword": "Microsoft network client: Send unencrypted password"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign (if client agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Idle time before suspending"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableForcedLogOff": "Microsoft network server: Disconnect clients when hours expire"
-
-      # --- NETWORK ACCESS & SECURITY (Added for 82-count) ---
-      "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "Network access: Let Everyone apply to anonymous permissions"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RestrictNullSessAccess": "Network access: Restrict anonymous access to Pipes/Shares"
-      
-      # --- INTERACTIVE LOGON ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
@@ -65,16 +47,55 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayUsername": "Interactive logon: Don't display username at sign-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeCaption": "Interactive logon: Message title for users logging on"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeText": "Interactive logon: Message text for users logging on"
-      
-      # --- UAC & SYSTEM (The remaining policies to reach 82) ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoLMHash": "Network security: Do not store LAN Manager hash"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoAdapterLsa": "Network security: Allow LocalSystem NULL session fallback"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NegOption": "Network security: Allow PKU2U auth"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\UseMachineId": "Network security: Allow Local System to use computer identity for NTLM"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\KerberosEncryptionTypes": "Network security: Configure encryption types allowed for Kerberos"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing requirements"
+      "LDAPServerIntegrity": "Network security: LDAP server signing requirements"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Min session security for NTLM clients"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinServerSec": "Network security: Min session security for NTLM servers"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditIncomingTraffic": "Network security: Restrict NTLM: Audit Incoming"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\InboundNTLMTraffic": "Network security: Restrict NTLM: Incoming traffic"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\OutboundNTLMTraffic": "Network security: Restrict NTLM: Outgoing traffic"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditOutgoingTraffic": "Network security: Restrict NTLM: Audit NTLM in domain"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditInboundNTLMTraffic": "Network security: Restrict NTLM: Audit Incoming NTLM Traffic"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableForcedLogOff": "Network security: Force logoff when logon hours expire"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "Network security: Let Everyone apply to anonymous"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "UAC: Switch to secure desktop for elevation"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableInstallerDetection": "UAC: Detect application installs"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "UAC: Admin Approval Mode for Built-in Admin"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableUIADesktopToggle": "UAC: Allow UIAccess apps to prompt"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "UAC: Only elevate secure UIAccess apps"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "UAC: Virtualize file/registry write failures"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpMaxConnectResponseRetransmissions": "MSS: SYN Attack Protection"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\EnableICMPRedirect": "MSS: Allow ICMP redirects"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: IP source routing protection"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\ProtectionMode": "System objects: Strengthen default permissions"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms"
-      # Mapping truncated for brevity, ensure all 82 are present in your local copy.
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SecurityLevel": "Recovery console: Automatic admin logon"
+      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Setup\\RecoveryConsole\\SetCommand": "Recovery console: Floppy copy and drive access"
+
+      # --- THE ADDITIONAL 11 TO REACH 82 ---
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnablePlaintextPassword": "Microsoft network client: Send unencrypted password"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign (if client agrees)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Idle time before suspending"
+      "LSAAnonymousNameLookup": "Network access: Allow anonymous SID/Name translation"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM accounts"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM accounts and shares"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RestrictNullSessAccess": "Network access: Restrict anonymous access to Pipes/Shares"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Network access: Removable storage propagation"
 
   tasks:
     - name: Ensure Local Report Directory Exists
