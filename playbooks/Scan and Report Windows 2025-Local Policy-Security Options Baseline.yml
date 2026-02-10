@@ -6,6 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # Keeping your original path logic since it worked before
     report_file: "{{ playbook_dir }}/reports/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
     
@@ -73,6 +74,13 @@
       "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoAdapterLsa": "Network security: Allow LocalSystem NULL session fallback"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NegOption": "Network security: Allow PKU2U auth"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NtlmMinClientSec": "Network security: Minimum session security for NTLM SSP based (including secure RPC) clients"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NtlmMinServerSec": "Network security: Minimum session security for NTLM SSP based (including secure RPC) servers"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\UseMachineId": "Network security: Allow Local System to use computer identity for NTLM"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\KerberosEncryptionTypes": "Network security: Configure encryption types allowed for Kerberos"
+      "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "Network security: LDAP client signing requirements"
+      "LDAPServerIntegrity": "Network security: LDAP server signing requirements"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditInboundNTLMTraffic": "Network security: Restrict NTLM: Audit Incoming NTLM Traffic"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
@@ -128,7 +136,6 @@
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $pName = $map.$id
             
-            # Registry Check
             if ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
@@ -138,21 +145,16 @@
                 }
             }
 
-            # Secedit Fallback
             if ($val -eq "Not Defined" -or $val -eq "") {
                 $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
                 if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
             }
 
-            # Specific logic for missing Administrator and Printer items
             if ($id -eq "NewAdminName" -and $val -eq "Not Defined") {
                 $val = (Get-CimInstance Win32_UserAccount -Filter "SID LIKE 'S-1-5-21-%-500' OR SID = 'S-1-5-32-544'").Name
             }
-            if ($pName -like "*printer drivers*" -and $val -eq "Not Defined") {
-                $val = "1"
-            }
+            if ($pName -like "*printer drivers*" -and $val -eq "Not Defined") { $val = "1" }
 
-            # Translation
             if ($val -eq "0" -or $val -eq "3") { 
                 if ($pName -like "*Backup and Restore*") { $val = "Disabled" }
                 elseif ($pName -like "*prompt for users*") { $val = "Prompt for credentials" }
@@ -180,6 +182,14 @@
       ansible.builtin.template:
         src: "../templates/baseline-local Policy-Security Options_report.j2"
         dest: "{{ report_file }}"
+
+    - name: DEBUG - Show Paths
+      delegate_to: localhost
+      ansible.builtin.debug:
+        msg: 
+          - "Local Report Path: {{ report_file }}"
+          - "S3 Destination Bucket: {{ s3_bucket }}"
+          - "S3 Destination Key: {{ s3_path }}/Security_Options_{{ inventory_hostname.split('.')[0] }}.html"
 
     - name: Push to S3
       delegate_to: localhost
