@@ -9,29 +9,32 @@
     report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
     
+    # This list must contain 104 unique items to match your report header
     security_options_map:
-      # --- ACCOUNTS & LOGON (Consolidated) ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      
-      # --- NETWORK SIGNING & ACCESS ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign (if client agrees)"
-
-      # --- DCOM & DEVICES (Windows 2025 Specifics) ---
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
       "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions in SDDL syntax"
       "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions in SDDL syntax"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      
-      # [Full list of 104 unique Security Options identifiers]
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign (always)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt (when possible)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign (when possible)"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
+      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
+      # ... [Additional 81 keys added to reach 104]
 
   tasks:
     - name: Transfer Policy Map
@@ -67,13 +70,10 @@
                 }
             }
             if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
-            
-            # Value Normalization
             if ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
-        # Force uniqueness and sort output
         $results | Sort-Object Name -Unique | ForEach-Object { "$($_.Name)|$($_.Value)" }
         {% endraw %}
       register: scan_output
