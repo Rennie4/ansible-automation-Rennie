@@ -14,12 +14,13 @@
         td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
         .Enabled { color: #28a745; font-weight: bold; }
         .Disabled { color: #dc3545; font-weight: bold; }
+        .Require { color: #fd7e14; font-weight: bold; }
         .Not-Defined { color: #999; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Windows Server 2025: Security Options (Local Policies)</h1>
+        <h1>Windows Server 2025: Security Options Audit</h1>
         <div class="summary-box">
             <div class="card"><h3>Security Options Target</h3><p>104</p></div>
             <div class="card" style="border-left-color: #28a745;"><h3>Successfully Audited</h3><p>{{ scan_output.stdout_lines | length }}</p></div>
@@ -34,7 +35,7 @@
                     {% set parts = line.split('|') %}
                     <tr>
                         <td>{{ parts[0] }}</td>
-                        <td class="{{ parts[1] if parts[1] in ['Enabled', 'Disabled'] else 'Not-Defined' }}">
+                        <td class="{{ 'Enabled' if 'Enabled' in parts[1] else ('Disabled' if 'Disabled' in parts[1] else ('Require' if 'Require' in parts[1] else 'Not-Defined')) }}">
                             {{ parts[1] }}
                         </td>
                     </tr>
