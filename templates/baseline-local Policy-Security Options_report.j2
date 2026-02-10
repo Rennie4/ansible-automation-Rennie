@@ -12,9 +12,8 @@
         table { width: 100%; border-collapse: collapse; }
         th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; position: sticky; top: 0; }
         td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
-        .Enabled { color: #28a745; font-weight: bold; }
-        .Disabled { color: #dc3545; font-weight: bold; }
-        .Require { color: #fd7e14; font-weight: bold; }
+        .Enabled { color: #28a745; font-weight: 600; }
+        .Disabled { color: #dc3545; font-weight: 600; }
         .Not-Defined { color: #999; font-style: italic; }
     </style>
 </head>
@@ -22,20 +21,18 @@
     <div class="container">
         <h1>Windows Server 2025: Security Options Audit</h1>
         <div class="summary-box">
-            <div class="card"><h3>Security Options Target</h3><p>104</p></div>
-            <div class="card" style="border-left-color: #28a745;"><h3>Successfully Audited</h3><p>{{ scan_output.stdout_lines | length }}</p></div>
-            <div class="card" style="border-left-color: #17a2b8;"><h3>Host</h3><p>{{ inventory_hostname }}</p></div>
+            <div class="card"><h3>Total Targeted</h3><p>82</p></div>
+            <div class="card" style="border-left-color: #28a745;"><h3>Successfully Pulled</h3><p>{{ scan_output.stdout_lines | length }}</p></div>
+            <div class="card" style="border-left-color: #17a2b8;"><h3>Server Hostname</h3><p>{{ inventory_hostname }}</p></div>
         </div>
         <table>
-            <thead>
-                <tr><th>Policy Setting</th><th>Current State</th></tr>
-            </thead>
+            <thead><tr><th>Security Policy Name</th><th>Configured Setting</th></tr></thead>
             <tbody>
                 {% for line in scan_output.stdout_lines %}
                     {% set parts = line.split('|') %}
                     <tr>
                         <td>{{ parts[0] }}</td>
-                        <td class="{{ 'Enabled' if 'Enabled' in parts[1] else ('Disabled' if 'Disabled' in parts[1] else ('Require' if 'Require' in parts[1] else 'Not-Defined')) }}">
+                        <td class="{{ 'Enabled' if 'Enabled' in parts[1] else ('Disabled' if 'Disabled' in parts[1] else 'Not-Defined') }}">
                             {{ parts[1] }}
                         </td>
                     </tr>
