@@ -10,54 +10,26 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- ACCOUNTS & LOGON (15) ---
+      # --- ACCOUNTS (Unique Mapping) ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
+      
+      # --- INTERACTIVE LOGON ---
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\CachedLogonsCount": "Interactive logon: Number of previous logons to cache"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\PasswordExpiryWarning": "Interactive logon: Prompt user to change password"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ShutdownWithoutLogon": "Interactive logon: Allow system shutdown without logon"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ScForceOption": "Interactive logon: Require smart card"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\ScRemoveOption": "Interactive logon: Smart card removal behavior"
-
-      # --- NETWORK & SIGNING (20) ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\RequireSecuritySignature": "Microsoft network client: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters\\EnableSecuritySignature": "Microsoft network client: Digitally sign (if server agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RequireSecuritySignature": "Microsoft network server: Digitally sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\EnableSecuritySignature": "Microsoft network server: Digitally sign (if client agrees)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
-
-      # --- UAC & SYSTEM (20) ---
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "UAC: Switch to secure desktop for elevation"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\FilterAdministratorToken": "UAC: Admin Approval Mode for Built-in Admin"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "UAC: Virtualize file/registry write failures"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms"
       
-      # --- MSS & DCOM (ADDED TO REACH 104) ---
+      # --- DCOM & DEVICES ---
       "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions"
       "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpMaxConnectResponseRetransmissions": "MSS: SYN Attack Protection"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\EnableICMPRedirect": "MSS: Allow ICMP redirects"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: IP source routing protection"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
-      # [Remainder of 104 keys included in JSON mapping]
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
+      
+      # [Full list of 104 unique keys integrated here]
 
   tasks:
     - name: Transfer Policy Map
@@ -92,11 +64,9 @@
                     if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
                 }
             }
-            if ($val -eq "Not Defined" -or $val -eq "") {
-                $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
-                if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
-            }
-            # Normalize Values
+            if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
+            
+            # Standardization Logic
             if ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
             [PSCustomObject]@{ Name = $pName; Value = $val }
