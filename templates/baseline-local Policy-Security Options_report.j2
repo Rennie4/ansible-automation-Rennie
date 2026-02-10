@@ -23,17 +23,36 @@
     <div class="container">
         <h1>Windows Server 2025: Security Options Audit</h1>
         <div class="summary-box">
-            <div class="card"><h3>Total Targeted</h3><p>{{ security_options_map.keys() | length }}</p></div>
-            <div class="card" style="border-left-color: #28a745;"><h3>Successfully Pulled</h3><p>{{ scan_output.stdout_lines | length }}</p></div>
-            <div class="card" style="border-left-color: #17a2b8;"><h3>Server</h3><p>{{ inventory_hostname }}</p></div>
+            <div class="card">
+                <h3>Total Targeted</h3>
+                <p>{{ security_options_map.keys() | length }}</p>
+            </div>
+            <div class="card" style="border-left-color: #28a745;">
+                <h3>Successfully Pulled</h3>
+                <p>{{ scan_output.stdout_lines | length }}</p>
+            </div>
+            <div class="card" style="border-left-color: #17a2b8;">
+                <h3>Server Hostname</h3>
+                <p>{{ inventory_hostname }}</p>
+            </div>
         </div>
         <table>
-            <thead><tr><th>Security Policy Name</th><th>Configured Setting</th></tr></thead>
+            <thead>
+                <tr>
+                    <th>Security Policy Name</th>
+                    <th>Configured Setting</th>
+                </tr>
+            </thead>
             <tbody>
                 {% for line in scan_output.stdout_lines %}
-                {% set parts = line.split('|') %}
-                {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
-                <tr><td>{{ parts[0] }}</td><td class="{{ val.split(' ')[0] if val != 'Not Defined' else 'Not-Defined' }}">{{ val }}</td></tr>
+                    {% set parts = line.split('|') %}
+                    {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
+                    <tr>
+                        <td>{{ parts[0] }}</td>
+                        <td class="{{ val.split(' ')[0] if val != 'Not Defined' else 'Not-Defined' }}">
+                            {{ val }}
+                        </td>
+                    </tr>
                 {% endfor %}
             </tbody>
         </table>
