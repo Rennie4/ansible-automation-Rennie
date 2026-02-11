@@ -4,22 +4,23 @@
 <meta charset="UTF-8">
 <title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
 <style>
-body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
+body { font-family: Arial; background: #f7f7f7; padding: 20px; }
 .section {
   background: #fff; padding: 15px; margin-bottom: 20px;
-  border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.15);
+  border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.2);
 }
 table { width: 100%; border-collapse: collapse; }
-th, td { border: 1px solid #ccc; padding: 6px; }
-th { background: #eaeaea; }
+td, th { border: 1px solid #ccc; padding: 6px; }
+th { background: #efefef; }
 </style>
 </head>
 
 <body>
+
 <h1>Windows Security Baseline Report</h1>
 
-<p><strong>Hostname:</strong> {{ inventory_hostname }}<br>
-<strong>Collected at:</strong> {{ json_report_data.CollectedAtUTC }}</p>
+<p><strong>Host:</strong> {{ inventory_hostname }}<br>
+<strong>Collected At:</strong> {{ json_report_data.CollectedAtUTC }}</p>
 
 {% set lsp = json_report_data.LocalSecurityPolicy %}
 
