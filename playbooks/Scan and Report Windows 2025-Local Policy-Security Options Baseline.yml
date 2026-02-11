@@ -11,7 +11,7 @@
     security_options_map:
       # --- Accounts ---
       "EnableAdminAccount": "Accounts: Administrator account status"
-      "BlockConsumerMicrosoftAccounts": "Accounts: Block Microsoft accounts"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
       "EnableGuestAccount": "Accounts: Guest account status"
       "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
@@ -76,11 +76,6 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableSecureUIAPaths": "UAC: Only elevate secure UIAccess apps"
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableVirtualization": "UAC: Virtualize file/registry write failures"
       # --- MSS & Others ---
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpMaxConnectResponseRetransmissions": "MSS: SYN Attack Protection"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\EnableICMPRedirect": "MSS: Allow ICMP redirects"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\SafeDllSearchMode": "MSS: Enable Safe DLL search mode"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Tcpip\\Parameters\\DisableIPSourceRouting": "MSS: IP source routing protection"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netbt\\Parameters\\NoNameReleaseOnDemand": "MSS: Ignore NetBIOS name release"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\ClearPageFileAtShutdown": "Shutdown: Clear virtual memory pagefile"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\ProtectionMode": "System objects: Strengthen default permissions"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FipsAlgorithmPolicy\\Enabled": "System settings: Use FIPS compliant algorithms"
@@ -96,13 +91,7 @@
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymousSAM": "Network access: Do not allow anonymous enumeration of SAM"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictAnonymous": "Network access: Do not allow anonymous enumeration of SAM/Shares"
       "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\RestrictNullSessAccess": "Network access: Restrict anonymous access to Pipes/Shares"
-      # --- DCOM & Cryptography ---
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions"
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions"
-      "MACHINE\\Software\\Policies\\Microsoft\\Cryptography\\ForceStrongKeyProtection": "System cryptography: Force strong key protection"
       "MACHINE\\System\\CurrentControlSet\\Control\\Session Manager\\Kernel\\ObCaseInsensitive": "System objects: Require case insensitivity"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\AuditNTLMInboundThreshold": "Network security: Restrict NTLM: Audit Inbound"
 
   tasks:
     - name: Transfer Policy Map
@@ -131,10 +120,9 @@
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = ""; $pName = $map.$id
             
-            # Priority 1: Direct Secedit Lookup
+            # Lookup Logic
             if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
             
-            # Priority 2: Registry Lookup for MACHINE keys
             if (($val -eq "" -or $val -eq $null) -and $id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\"); $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
                 if (Test-Path $key) {
@@ -143,18 +131,20 @@
                 }
             }
             
-            # Priority 3: Leaf Name Fallback for Secedit
             if ($val -eq "" -or $val -eq $null) {
                 $leaf = Split-Path $id -Leaf
                 if ($secHash.ContainsKey($leaf)) { $val = $secHash[$leaf] }
             }
 
-            # Normalization Logic
+            # Extended Normalization
             if ($val -eq "" -or $val -eq $null) { $val = "Not Defined" }
-            elseif ($val -match "^(1|4|4,1|7)$") { $val = "Enabled" }
-            elseif ($val -match "^(0|3|4,0)$") { $val = "Disabled" }
             elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             elseif ($val -eq "Administrator") { $val = "Default (Unchanged)" }
+            elseif ($val -eq "Guest") { $val = "Default (Unchanged)" }
+            elseif ($val -match "^(1|4|4,1|7)$") { $val = "Enabled" }
+            elseif ($val -match "^(0|3|4,0)$") { $val = "Disabled" }
+            elseif ($id -like "*ConsentPromptBehaviorAdmin" -and $val -eq "5") { $val = "Prompt for consent" }
+            elseif ($id -like "*ConsentPromptBehaviorUser" -and $val -eq "3") { $val = "Prompt for credentials" }
             elseif ($val -match ",") { $val = $val.Split(',')[1].Trim('"') }
 
             [PSCustomObject]@{ Name = $pName; Value = $val }
