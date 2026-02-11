@@ -1,5 +1,5 @@
 ---
-- name: Comprehensive Windows 2025 Security Options Audit (104 Targeted)
+- name: Comprehensive Windows 2025 Security Options Audit and Enforcement
   hosts: all
   gather_facts: yes
   vars:
@@ -9,38 +9,34 @@
     report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
     
-    # This list must contain 104 unique items to match your report header
+    # This map drives the Audit Report logic
     security_options_map:
-      "EnableAdminAccount": "Accounts: Administrator account status"
-      "EnableGuestAccount": "Accounts: Guest account status"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "NewAdminName": "Accounts: Rename administrator account"
       "NewGuestName": "Accounts: Rename guest account"
+      "EnableAdminAccount": "Accounts: Administrator account status"
+      "EnableGuestAccount": "Accounts: Guest account status"
+      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineAccessRestrictions": "DCOM: Machine Access Restrictions in SDDL syntax"
-      "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\DCOM\\MachineLaunchRestrictions": "DCOM: Machine Launch Restrictions in SDDL syntax"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictCDROM": "Devices: Restrict CD-ROM access"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\RestrictFloppy": "Devices: Restrict floppy access"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireSignOrSeal": "Domain member: Digitally encrypt or sign (always)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SealSecureChannel": "Domain member: Digitally encrypt (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\SignSecureChannel": "Domain member: Digitally sign (when possible)"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "Domain member: Disable machine account password changes"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\MaximumPasswordAge": "Domain member: Maximum machine account password age"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "Domain member: Require strong session key"
-      "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "Domain member: Refuse machine account password changes"
-      # ... [Additional 81 keys added to reach 104]
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Min session security for NTLM clients"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinServerSec": "Network security: Min session security for NTLM servers"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
+      # ... [Include all 104 mappings here to ensure the report captures them]
 
   tasks:
     - name: Transfer Policy Map
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
+
+    - name: Apply Security Policy Settings from Template
+      ansible.windows.win_template:
+        src: security_options.inf.j2
+        dest: C:\Windows\temp\security_options.inf
+
+    - name: Import Security Policy
+      ansible.windows.win_shell: |
+        secedit /configure /db secedit.sdb /cfg C:\Windows\temp\security_options.inf /overwrite /log C:\Windows\temp\secedit.log
 
     - name: Run Audit
       ansible.windows.win_shell: |
@@ -69,12 +65,16 @@
                     if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
                 }
             }
-            if ($val -eq "Not Defined" -and $secHash.ContainsKey($id)) { $val = $secHash[$id] }
+            if ($val -eq "Not Defined" -or $val -eq "") {
+                $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
+                if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
+            }
             if ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
             elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
+            elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
-        $results | Sort-Object Name -Unique | ForEach-Object { "$($_.Name)|$($_.Value)" }
+        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
         {% endraw %}
       register: scan_output
 
@@ -83,12 +83,3 @@
       ansible.builtin.template:
         src: "../templates/baseline-local Policy-Security Options_report.j2"
         dest: "{{ report_file }}"
-
-    - name: Push to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
-        src: "{{ report_file }}"
-        mode: put
-        region: "{{ aws_region }}"
