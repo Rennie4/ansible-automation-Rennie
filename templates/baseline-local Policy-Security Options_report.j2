@@ -5,10 +5,8 @@
 <title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
 <style>
 body { font-family: Arial; background: #f7f7f7; padding: 20px; }
-.section {
-  background: #fff; padding: 15px; margin-bottom: 20px;
-  border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.2);
-}
+.section { background: white; padding: 15px; margin-bottom: 20px; border-radius: 6px; 
+           box-shadow: 0 0 5px rgba(0,0,0,0.2); }
 table { width: 100%; border-collapse: collapse; }
 td, th { border: 1px solid #ccc; padding: 6px; }
 th { background: #efefef; }
@@ -18,14 +16,13 @@ th { background: #efefef; }
 <body>
 
 <h1>Windows Security Baseline Report</h1>
-
-<p><strong>Host:</strong> {{ inventory_hostname }}<br>
+<p><strong>Hostname:</strong> {{ inventory_hostname }}<br>
 <strong>Collected At:</strong> {{ json_report_data.CollectedAtUTC }}</p>
 
 {% set lsp = json_report_data.LocalSecurityPolicy %}
 
 <div class="section">
-<h2>Account Policies (System Access)</h2>
+<h2>Account Policies</h2>
 <table>
 <tr><th>Setting</th><th>Value</th></tr>
 {% for k,v in lsp.SystemAccess.items() %}
@@ -35,7 +32,7 @@ th { background: #efefef; }
 </div>
 
 <div class="section">
-<h2>Security Options (Registry Values)</h2>
+<h2>Security Options</h2>
 <table>
 <tr><th>Setting</th><th>Value</th></tr>
 {% for k,v in lsp.RegistryValues.items() %}
@@ -47,7 +44,7 @@ th { background: #efefef; }
 <div class="section">
 <h2>User Rights Assignment</h2>
 <table>
-<tr><th>Right</th><th>Assignment</th></tr>
+<tr><th>Right</th><th>Assigned To</th></tr>
 {% for k,v in lsp.PrivilegeRights.items() %}
 <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
 {% endfor %}
@@ -74,16 +71,6 @@ th { background: #efefef; }
 <td>{{ row.Subcategory }}</td>
 <td>{{ row.Setting }}</td>
 </tr>
-{% endfor %}
-</table>
-</div>
-
-<div class="section">
-<h2>Service Security Settings</h2>
-<table>
-<tr><th>Service</th><th>Value</th></tr>
-{% for k,v in lsp.Services.items() %}
-<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
 {% endfor %}
 </table>
 </div>
