@@ -1,58 +1,34 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background-color: #f8f9fa; }
-        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
-        h1 { color: #2c3e50; border-bottom: 3px solid #007bff; padding-bottom: 10px; margin-bottom: 30px; }
-        .summary-box { display: flex; gap: 20px; margin-bottom: 40px; }
-        .card { flex: 1; padding: 25px; border-radius: 10px; background: #fff; border: 1px solid #dee2e6; border-top: 5px solid #007bff; text-align: center; }
-        .card h3 { margin: 0; font-size: 0.9em; text-transform: uppercase; color: #6c757d; }
-        .card p { margin: 10px 0 0; font-size: 2.2em; font-weight: 700; color: #212529; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background-color: #343a40; color: #fff; padding: 15px; text-align: left; }
-        td { padding: 12px 15px; border-bottom: 1px solid #e9ecef; font-size: 0.95em; }
-        .Enabled { color: #28a745; font-weight: 600; }
-        .Disabled { color: #dc3545; font-weight: 600; }
-        .Not-Defined { color: #6c757d; font-style: italic; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Windows Server 2025: Security Options Audit</h1>
-        <div class="summary-box">
-            <div class="card">
-                <h3>Total Targeted</h3>
-                <p>104</p>
-            </div>
-            <div class="card" style="border-top-color: #28a745;">
-                <h3>Successfully Pulled</h3>
-                <p>{{ scan_output.stdout_lines | length }}</p>
-            </div>
-            <div class="card" style="border-top-color: #17a2b8;">
-                <h3>Server Hostname</h3>
-                <p>{{ inventory_hostname }}</p>
-            </div>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Security Policy Name</th>
-                    <th>Configured Setting</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for line in scan_output.stdout_lines %}
-                    {% set parts = line.split('|') %}
-                    <tr>
-                        <td>{{ parts[0] }}</td>
-                        <td class="{{ parts[1] if parts[1] in ['Enabled', 'Disabled'] else 'Not-Defined' }}">
-                            {{ parts[1] }}
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+[Unicode]
+Unicode=yes
+
+[System Access]
+; Accounts: Rename administrator account
+NewAdministratorName = "Administrator"
+; Accounts: Rename guest account
+NewGuestName = "Guest"
+; Accounts: Administrator account status (1=Enabled)
+EnableAdminAccount = 1
+; Accounts: Guest account status (0=Disabled)
+EnableGuestAccount = 0
+; Accounts: Limit local account use of blank passwords
+LimitBlankPasswordUse = 1
+
+[Registry Values]
+; Network security: Min session security for NTLM clients (128-bit)
+MACHINE\System\CurrentControlSet\Control\Lsa\MSV1_0\NTLMMinClientSec=4,134217728
+; Network security: Min session security for NTLM servers (128-bit)
+MACHINE\System\CurrentControlSet\Control\Lsa\MSV1_0\NTLMMinServerSec=4,134217728
+; UAC: Run admins in Admin Approval Mode
+MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA=4,1
+; UAC: Switch to secure desktop for elevation
+MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\PromptOnSecureDesktop=4,1
+; UAC: Virtualize file/registry write failures
+MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableVirtualization=4,1
+; Audit: Audit the access of global system objects
+MACHINE\System\CurrentControlSet\Control\Lsa\AuditBaseObjects=4,0
+; Audit: Audit the use of Backup and Restore privilege
+MACHINE\System\CurrentControlSet\Control\Lsa\FullPrivilegeAuditing=4,0
+
+[Version]
+signature="$CHICAGO$"
+Revision=1
