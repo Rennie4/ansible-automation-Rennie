@@ -2,15 +2,17 @@
 <html>
 <head>
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background-color: #f4f7f9; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background-color: #f4f7f9; }
         .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1200px; margin: auto; }
-        h1 { color: #1a2b3c; border-bottom: 3px solid #007bff; padding-bottom: 12px; margin-bottom: 25px; }
+        h1 { color: #1a2b3c; border-bottom: 3px solid #007bff; padding-bottom: 12px; margin-bottom: 25px; font-size: 24px; }
         table { width: 100%; border-collapse: collapse; }
-        th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; }
-        td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
+        th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; font-size: 0.95em; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 0.9em; vertical-align: middle; }
         .Enabled { color: #28a745; font-weight: 600; }
         .Disabled { color: #dc3545; font-weight: 600; }
-        .Not-Defined { color: #999; font-style: italic; }
+        .Warning { color: #fd7e14; font-weight: 600; }
+        .Not-Defined { color: #6c757d; font-style: italic; }
+        tr:hover { background-color: #fcfcfc; }
     </style>
 </head>
 <body>
@@ -26,10 +28,11 @@
             <tbody>
                 {% for line in scan_output.stdout_lines %}
                     {% set parts = line.split('|') %}
+                    {% set name = parts[0] %}
                     {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
                     <tr>
-                        <td>{{ parts[0] }}</td>
-                        <td class="{{ val if val in ['Enabled', 'Disabled'] else 'Not-Defined' }}">
+                        <td>{{ name }}</td>
+                        <td class="{% if val == 'Enabled' %}Enabled{% elif val == 'Disabled' %}Disabled{% elif 'Default' in val %}Warning{% else %}Not-Defined{% endif %}">
                             {{ val }}
                         </td>
                     </tr>
