@@ -4,17 +4,14 @@
   gather_facts: false
 
   vars:
-    # ===== S3 DESTINATION =====
     s3_bucket: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     s3_prefix: "cis-baseline-files/"
 
-    # ===== AWS AUTH (FROM VAULT OR ENV) =====
     aws_access_key: "{{ vault_aws_access_key | default(omit) }}"
     aws_secret_key: "{{ vault_aws_secret_key | default(omit) }}"
     aws_session_token: "{{ vault_aws_session_token | default(omit) }}"
 
-    # ===== WORKING PATHS ON WINDOWS HOSTS =====
     work_root: "C:\\Temp\\ws-audit"
     artifacts_dir_name: "artifacts"
     artifacts_dir: "{{ work_root }}\\{{ artifacts_dir_name }}"
@@ -30,6 +27,7 @@
         - "{{ artifacts_dir }}"
 
   tasks:
+
     ####################################################################
     # 1) EXPORT LOCAL SECURITY POLICY
     ####################################################################
@@ -38,8 +36,6 @@
         secedit /export
         /cfg "{{ artifacts_dir }}\\local_secpol.inf"
         /areas SECURITYPOLICY USER_RIGHTS SERVICES
-      args:
-        creates: "{{ artifacts_dir }}\\local_secpol.inf"
 
     ####################################################################
     # 2) EXPORT ADVANCED AUDIT POLICY
@@ -47,11 +43,9 @@
     - name: "Export Advanced Audit Policy"
       ansible.windows.win_shell: >
         auditpol /get /category:* /r > "{{ artifacts_dir }}\\advanced_audit.csv"
-      args:
-        creates: "{{ artifacts_dir }}\\advanced_audit.csv"
 
     ####################################################################
-    # 3) BUILD STRUCTURED JSON REPORT (FIXED: NO $Host variable!)
+    # 3) BUILD STRUCTURED JSON REPORT
     ####################################################################
     - name: "Build JSON report and output file path"
       ansible.windows.win_powershell:
@@ -71,7 +65,8 @@
               if ($line -match '^\[(.+)\]$') {
                 $section = $matches[1]
                 $result[$section] = @{}
-              } elseif ($section -and $line -match '^(.*)=(.*)$') {
+              }
+              elseif ($section -and $line -match '^(.*)=(.*)$') {
                 $result[$section][$matches[1].Trim()] = $matches[2].Trim()
               }
             }
@@ -99,12 +94,12 @@
       register: json_report_path
 
     ####################################################################
-    # 4) LOAD JSON INTO ANSIBLE FACT FOR J2 TEMPLATE
+    # 4) LOAD JSON CONTENT AS FACT FOR THE J2 TEMPLATE
     ####################################################################
     - name: "Read JSON content"
       ansible.windows.win_powershell:
         script: |
-          Get-Content -Raw -Path "{{ json_report_path.stdout_lines[-1] }}"
+          Get-Content -Raw -Path "{{ json_report_path.stdout }}"
       register: json_raw
 
     - name: "Set fact json_report_data"
@@ -130,7 +125,7 @@
           $ts=(Get-Date).ToString("yyyyMMdd_HHmmss")
           $zip="{{ work_root }}\\{{ report_basename }}_${computerName}_$ts.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
-          [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}",$zip)
+          [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}", $zip)
           Write-Output $zip
       register: zip_file
 
@@ -141,8 +136,8 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ (json_report_path.stdout_lines[-1] | basename) }}"
-        src: "{{ json_report_path.stdout_lines[-1] }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout | basename }}"
+        src: "{{ json_report_path.stdout }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
@@ -152,8 +147,8 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout_lines[-1] | basename }}"
-        src: "{{ zip_file.stdout_lines[-1] }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout | basename }}"
+        src: "{{ zip_file.stdout }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
