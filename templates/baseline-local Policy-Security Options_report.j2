@@ -1,40 +1,95 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background-color: #f4f7f9; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1200px; margin: auto; }
-        h1 { color: #1a2b3c; border-bottom: 3px solid #007bff; padding-bottom: 12px; margin-bottom: 25px; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background-color: #1a2b3c; color: white; padding: 12px; text-align: left; }
-        td { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 0.9em; }
-        .Enabled { color: #28a745; font-weight: 600; }
-        .Disabled { color: #dc3545; font-weight: 600; }
-        .Warning { color: #fd7e14; font-weight: 600; }
-        .Not-Defined { color: #999; font-style: italic; }
+        body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
+        h1, h2, h3 { color: #333; }
+        .section { background: #ffffff; padding: 15px; margin-bottom: 20px; border-radius: 6px;
+                   box-shadow: 0 0 6px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        table, th, td { border: 1px solid #ccc; }
+        th { background: #ececec; padding: 8px; }
+        td { padding: 6px; }
     </style>
 </head>
+
 <body>
-    <div class="container">
-        <h1>Windows Server 2025: Security Options Audit</h1>
-        <table>
-            <thead>
-                <tr><th>Security Policy Name</th><th>Configured Setting</th></tr>
-            </thead>
-            <tbody>
-                {% for line in scan_output.stdout_lines %}
-                    {% set parts = line.split('|') %}
-                    {% set name = parts[0] %}
-                    {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
-                    <tr>
-                        <td>{{ name }}</td>
-                        <td class="{% if val == 'Enabled' %}Enabled{% elif val == 'Disabled' %}Disabled{% elif 'Default' in val or val == 'Not Defined' %}Not-Defined{% else %}Warning{% endif %}">
-                            {{ val }}
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+
+<h1>Windows Security Baseline Report</h1>
+<h2>Host: {{ inventory_hostname }}</h2>
+<p><strong>Generated:</strong> {{ lookup('pipe','date') }}</p>
+
+<!-- ================== SYSTEM ACCESS ================== -->
+<div class="section">
+    <h2>Account Policies (System Access)</h2>
+    <table>
+        <tr><th>Setting</th><th>Value</th></tr>
+        {% for k,v in hostvars[inventory_hostname].json_report_data.LocalSecurityPolicy.SystemAccess.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- ================== SECURITY OPTIONS ================== -->
+<div class="section">
+    <h2>Security Options (Registry Values)</h2>
+    <table>
+        <tr><th>Setting</th><th>Value</th></tr>
+        {% for k,v in hostvars[inventory_hostname].json_report_data.LocalSecurityPolicy.RegistryValues.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- ================== PRIVILEGE RIGHTS ================== -->
+<div class="section">
+    <h2>User Rights Assignment (Privilege Rights)</h2>
+    <table>
+        <tr><th>Right</th><th>Assigned To</th></tr>
+        {% for k,v in hostvars[inventory_hostname].json_report_data.LocalSecurityPolicy.PrivilegeRights.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- ================== LEGACY AUDIT ================== -->
+<div class="section">
+    <h2>Legacy Audit Policy</h2>
+    <table>
+        <tr><th>Setting</th><th>Value</th></tr>
+        {% for k,v in hostvars[inventory_hostname].json_report_data.LocalSecurityPolicy.EventAuditLegacy.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- ================== ADVANCED AUDIT POLICY ================== -->
+<div class="section">
+    <h2>Advanced Audit Policy</h2>
+    <table>
+        <tr><th>Category</th><th>Subcategory</th><th>Setting</th></tr>
+        {% for row in hostvars[inventory_hostname].json_report_data.AdvancedAuditPolicy %}
+        <tr>
+            <td>{{ row.Category }}</td>
+            <td>{{ row.Subcategory }}</td>
+            <td>{{ row.Setting }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+<!-- ================== SERVICES ================== -->
+<div class="section">
+    <h2>Service Security Settings</h2>
+    <table>
+        <tr><th>Service</th><th>Value</th></tr>
+        {% for k,v in hostvars[inventory_hostname].json_report_data.LocalSecurityPolicy.Services.items() %}
+        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+        {% endfor %}
+    </table>
+</div>
+
 </body>
 </html>
