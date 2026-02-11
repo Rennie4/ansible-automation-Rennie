@@ -1,6 +1,6 @@
 ---
 - name: Comprehensive Windows 2025 Security Options Audit
-  hosts: all
+  hosts: windows_server_2025
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
@@ -10,15 +10,20 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- CORRECTED MAPPINGS FOR YOUR REQUEST ---
+      # --- THE 4 SPECIFIC FIXED SETTINGS ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdministratorName": "Accounts: Rename administrator account"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Print\\Providers\\LanMan Print Provider\\Servers\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Print\\Providers\\LanMan Print Services\\Servers\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       
-      # --- OTHER ESSENTIAL MAPPINGS ---
+      # --- ADDITIONAL SETTINGS MATCHED TO YOUR EXPORT ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
+      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
+      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
 
   tasks:
     - name: Ensure Temp Directory Exists
@@ -31,7 +36,7 @@
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Run Audit
+    - name: Run Precision Audit
       win_shell: |
         $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $secFile = "C:\temp\secedit_audit.inf"
@@ -48,12 +53,17 @@
                     $secHash[$k] = $v
                 }
             }
-            Remove-Item $secFile
         }
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $pName = $map.$id
-            if ($id -like "MACHINE\*") {
+            
+            # Match against the Security Export first
+            if ($secHash.ContainsKey($id)) { 
+                $val = $secHash[$id] 
+            }
+            # Fallback to Registry if not in Security Export
+            elseif ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
                 if (Test-Path $key) {
@@ -61,11 +71,12 @@
                     if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
                 }
             }
-            if ($val -eq "Not Defined" -or $val -eq "") {
-                if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
-            }
-            if ($val -eq "0") { $val = "Disabled" }
-            elseif ($val -eq "1") { $val = "Enabled" }
+
+            # Standardize Values
+            if ($val -match "4,1" -or $val -eq "1") { $val = "Enabled" }
+            elseif ($val -match "4,0" -or $val -eq "0" -or $val -match "3,0") { $val = "Disabled" }
+            elseif ($val -match "1,") { $val = $val.Split(',')[1].Trim('"') }
+
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
