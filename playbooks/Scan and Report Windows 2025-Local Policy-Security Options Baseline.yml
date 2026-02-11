@@ -1,28 +1,27 @@
 ---
-- name: Windows Security Baseline Collection + HTML Report + S3 Upload
+- name: "Windows Security Baseline Collection + HTML Report + S3 Upload"
   hosts: windows_hosts
   gather_facts: false
 
   vars:
-    # ===== S3 TARGET =====
+    # ===== S3 DESTINATION =====
     s3_bucket: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"               # change if needed
+    s3_region: "eu-west-1"
     s3_prefix: "cis-baseline-files/"
 
-    # ===== AWS AUTH (use Vault or profile) =====
+    # ===== AWS AUTH (FROM VAULT OR ENV) =====
     aws_access_key: "{{ vault_aws_access_key | default(omit) }}"
     aws_secret_key: "{{ vault_aws_secret_key | default(omit) }}"
     aws_session_token: "{{ vault_aws_session_token | default(omit) }}"
-    # Alternatively, set 'profile' on the s3_object tasks if you use awscli profiles.
 
-    # ===== WORKING PATHS (on Windows hosts) =====
+    # ===== WORKING PATHS ON WINDOWS HOSTS =====
     work_root: "C:\\Temp\\ws-audit"
     artifacts_dir_name: "artifacts"
     artifacts_dir: "{{ work_root }}\\{{ artifacts_dir_name }}"
     report_basename: "ws_security"
 
   pre_tasks:
-    - name: Ensure working directories exist
+    - name: "Ensure working directories exist"
       ansible.windows.win_file:
         path: "{{ item }}"
         state: directory
@@ -32,9 +31,9 @@
 
   tasks:
     ####################################################################
-    # 1) EXPORT LOCAL SECURITY POLICY (INF)
+    # 1) EXPORT LOCAL SECURITY POLICY
     ####################################################################
-    - name: Export Local Security Policy
+    - name: "Export Local Security Policy"
       ansible.windows.win_shell: >
         secedit /export
         /cfg "{{ artifacts_dir }}\\local_secpol.inf"
@@ -43,18 +42,18 @@
         creates: "{{ artifacts_dir }}\\local_secpol.inf"
 
     ####################################################################
-    # 2) EXPORT ADVANCED AUDIT POLICY (CSV)
+    # 2) EXPORT ADVANCED AUDIT POLICY
     ####################################################################
-    - name: Export Advanced Audit Policy
+    - name: "Export Advanced Audit Policy"
       ansible.windows.win_shell: >
         auditpol /get /category:* /r > "{{ artifacts_dir }}\\advanced_audit.csv"
       args:
         creates: "{{ artifacts_dir }}\\advanced_audit.csv"
 
     ####################################################################
-    # 3) BUILD STRUCTURED JSON (FIX: avoid $Host; use $computerName)
+    # 3) BUILD STRUCTURED JSON REPORT (FIXED: NO $Host variable!)
     ####################################################################
-    - name: Build JSON report (write to file and echo file path)
+    - name: "Build JSON report and output file path"
       ansible.windows.win_powershell:
         script: |
           $ErrorActionPreference = "Stop"
@@ -79,11 +78,8 @@
             return $result
           }
 
-          $inf   = Parse-Inf (Join-Path $art 'local_secpol.inf')
-          $audit = @()
-          if (Test-Path (Join-Path $art 'advanced_audit.csv')) {
-            $audit = Import-Csv (Join-Path $art 'advanced_audit.csv')
-          }
+          $inf = Parse-Inf "$art\\local_secpol.inf"
+          $audit = Import-Csv "$art\\advanced_audit.csv"
 
           $obj = [ordered]@{
             ComputerName      = $computerName
@@ -99,35 +95,34 @@
           }
 
           $obj | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonOut -Encoding UTF8
-          # Output the file path so Ansible can capture it
           Write-Output $jsonOut
       register: json_report_path
 
     ####################################################################
-    # 4) LOAD JSON CONTENT AS ANSIBLE FACT FOR J2 TEMPLATE
+    # 4) LOAD JSON INTO ANSIBLE FACT FOR J2 TEMPLATE
     ####################################################################
-    - name: Read JSON content
+    - name: "Read JSON content"
       ansible.windows.win_powershell:
         script: |
           Get-Content -Raw -Path "{{ json_report_path.stdout_lines[-1] }}"
       register: json_raw
 
-    - name: Set fact: json_report_data (used by the J2 template)
+    - name: "Set fact json_report_data"
       set_fact:
         json_report_data: "{{ json_raw.stdout | from_json }}"
 
     ####################################################################
-    # 5) RENDER HUMAN-READABLE HTML REPORT FROM J2
+    # 5) RENDER HTML REPORT
     ####################################################################
-    - name: Render HTML Security Report
+    - name: "Render HTML Security Report"
       template:
         src: "templates/security_report.j2"
         dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
 
     ####################################################################
-    # 6) ZIP ALL ARTIFACTS
+    # 6) ZIP ARTIFACTS
     ####################################################################
-    - name: ZIP all artifacts
+    - name: "ZIP all artifacts"
       ansible.windows.win_powershell:
         script: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -142,7 +137,7 @@
     ####################################################################
     # 7) UPLOAD TO S3
     ####################################################################
-    - name: Upload JSON to S3
+    - name: "Upload JSON to S3"
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
@@ -153,7 +148,7 @@
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
         security_token: "{{ aws_session_token | default(omit) }}"
 
-    - name: Upload ZIP to S3
+    - name: "Upload ZIP to S3"
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
@@ -163,4 +158,3 @@
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
         security_token: "{{ aws_session_token | default(omit) }}"
-``
