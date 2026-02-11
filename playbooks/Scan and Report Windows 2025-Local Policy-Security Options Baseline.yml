@@ -33,8 +33,7 @@
     ####################################################################
     - name: "Export Local Security Policy"
       ansible.windows.win_shell: >
-        secedit /export
-        /cfg "{{ artifacts_dir }}\\local_secpol.inf"
+        secedit /export /cfg "{{ artifacts_dir }}\\local_secpol.inf"
         /areas SECURITYPOLICY USER_RIGHTS SERVICES
 
     ####################################################################
@@ -45,63 +44,60 @@
         auditpol /get /category:* /r > "{{ artifacts_dir }}\\advanced_audit.csv"
 
     ####################################################################
-    # 3) BUILD STRUCTURED JSON REPORT
+    # 3) Build JSON report (via win_shell for stability)
     ####################################################################
-    - name: "Build JSON report and output file path"
-      ansible.windows.win_powershell:
-        script: |
-          $ErrorActionPreference = "Stop"
-          $art = "{{ artifacts_dir }}"
-          $computerName = $env:COMPUTERNAME
-          $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
-          $jsonOut = Join-Path $art "{{ report_basename }}_${computerName}_$ts.json"
+    - name: "Build JSON report and return file path"
+      ansible.windows.win_shell: |
+        $ErrorActionPreference = "Stop"
+        $art = "{{ artifacts_dir }}"
+        $computer = $env:COMPUTERNAME
+        $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+        $jsonOut = "$art\\{{ report_basename }}_${computer}_$ts.json"
 
-          function Parse-Inf {
-            param($Path)
-            $result = @{}
-            $section = $null
-            Get-Content -Path $Path | ForEach-Object {
-              $line = $_.Trim()
-              if ($line -match '^\[(.+)\]$') {
-                $section = $matches[1]
-                $result[$section] = @{}
-              }
-              elseif ($section -and $line -match '^(.*)=(.*)$') {
-                $result[$section][$matches[1].Trim()] = $matches[2].Trim()
-              }
+        function Parse-Inf {
+          param($Path)
+          $result = @{}
+          $section = $null
+          foreach ($line in Get-Content -Path $Path) {
+            $l = $line.Trim()
+            if ($l -match '^\[(.+)\]$') {
+              $section = $matches[1]
+              $result[$section] = @{}
             }
-            return $result
-          }
-
-          $inf = Parse-Inf "$art\\local_secpol.inf"
-          $audit = Import-Csv "$art\\advanced_audit.csv"
-
-          $obj = [ordered]@{
-            ComputerName      = $computerName
-            CollectedAtUTC    = (Get-Date).ToUniversalTime().ToString("o")
-            LocalSecurityPolicy = @{
-              SystemAccess      = $inf['System Access']
-              EventAuditLegacy  = $inf['Event Audit']
-              PrivilegeRights   = $inf['Privilege Rights']
-              RegistryValues    = $inf['Registry Values']
-              Services          = $inf['Service General Setting']
+            elseif ($section -and $l -match '^(.*)=(.*)$') {
+              $result[$section][$matches[1].Trim()] = $matches[2].Trim()
             }
-            AdvancedAuditPolicy = $audit
           }
+          return $result
+        }
 
-          $obj | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonOut -Encoding UTF8
+        $inf = Parse-Inf "$art\\local_secpol.inf"
+        $audit = Import-Csv "$art\\advanced_audit.csv"
 
-          # MUST RETURN FILE PATH ON STDOUT FOR ANSIBLE
-          Write-Output $jsonOut
+        $obj = [ordered]@{
+          ComputerName = $computer
+          CollectedAtUTC = (Get-Date).ToUniversalTime().ToString("o")
+          LocalSecurityPolicy = @{
+            SystemAccess = $inf['System Access']
+            EventAuditLegacy = $inf['Event Audit']
+            PrivilegeRights = $inf['Privilege Rights']
+            RegistryValues = $inf['Registry Values']
+            Services = $inf['Service General Setting']
+          }
+          AdvancedAuditPolicy = $audit
+        }
+
+        $obj | ConvertTo-Json -Depth 8 | Out-File -FilePath $jsonOut -Encoding UTF8
+        Write-Output $jsonOut
+
       register: json_report_path
 
     ####################################################################
-    # 4) LOAD JSON CONTENT
+    # 4) Load JSON
     ####################################################################
     - name: "Read JSON content"
-      ansible.windows.win_powershell:
-        script: |
-          Get-Content -Raw -Path "{{ json_report_path.stdout_lines[-1] }}"
+      ansible.windows.win_shell: >
+        type "{{ json_report_path.stdout }}"
       register: json_raw
 
     - name: "Set fact json_report_data"
@@ -109,7 +105,7 @@
         json_report_data: "{{ json_raw.stdout | from_json }}"
 
     ####################################################################
-    # 5) GENERATE HTML REPORT VIA J2
+    # 5) Render HTML Report
     ####################################################################
     - name: "Render HTML Security Report"
       template:
@@ -117,29 +113,28 @@
         dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
 
     ####################################################################
-    # 6) ZIP ALL ARTIFACTS
+    # 6) ZIP
     ####################################################################
     - name: "ZIP all artifacts"
-      ansible.windows.win_powershell:
-        script: |
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $computerName = $env:COMPUTERNAME
-          $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
-          $zip = "{{ work_root }}\\{{ report_basename }}_${computerName}_$ts.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}", $zip)
-          Write-Output $zip
+      ansible.windows.win_shell: |
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $computer=$env:COMPUTERNAME
+        $ts=(Get-Date).ToString("yyyyMMdd_HHmmss")
+        $zip="{{ work_root }}\\{{ report_basename }}_${computer}_$ts.zip"
+        if (Test-Path $zip) { Remove-Item $zip -Force }
+        [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}",$zip)
+        Write-Output $zip
       register: zip_file
 
     ####################################################################
-    # 7) UPLOAD TO S3
+    # 7) S3 Upload
     ####################################################################
     - name: "Upload JSON to S3"
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout_lines[-1] | basename }}"
-        src: "{{ json_report_path.stdout_lines[-1] }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout | basename }}"
+        src: "{{ json_report_path.stdout }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
@@ -149,8 +144,8 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout_lines[-1] | basename }}"
-        src: "{{ zip_file.stdout_lines[-1] }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout | basename }}"
+        src: "{{ zip_file.stdout }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
