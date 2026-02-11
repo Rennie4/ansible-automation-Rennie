@@ -49,7 +49,7 @@
                     {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
                     <tr>
                         <td>{{ name }}</td>
-                        <td class="{% if val == 'Enabled' %}Enabled{% elif val == 'Disabled' %}Disabled{% elif 'Default' in val %}Warning{% else %}Not-Defined{% endif %}">
+                        <td class="{% if val == 'Enabled' %}Enabled{% elif val == 'Disabled' %}Disabled{% elif 'Default' in val or val == 'Not Defined' %}Not-Defined{% else %}Warning{% endif %}">
                             {{ val }}
                         </td>
                     </tr>
