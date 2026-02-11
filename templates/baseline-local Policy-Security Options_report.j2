@@ -1,94 +1,90 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
-        h1, h2 { color: #333; }
-        .section {
-            background: #fff;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 6px;
-            box-shadow: 0 0 6px rgba(0,0,0,0.1);
-        }
-        table { width: 100%; border-collapse: collapse; }
-        table, th, td { border: 1px solid #ccc; }
-        th { background: #ececec; padding: 8px; }
-        td { padding: 6px; }
-    </style>
+<meta charset="UTF-8">
+<title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
+<style>
+body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; }
+.section {
+  background: #fff; padding: 15px; margin-bottom: 20px;
+  border-radius: 8px; box-shadow: 0 0 5px rgba(0,0,0,0.15);
+}
+table { width: 100%; border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: 6px; }
+th { background: #eaeaea; }
+</style>
 </head>
 
 <body>
 <h1>Windows Security Baseline Report</h1>
-<p><strong>Host:</strong> {{ inventory_hostname }}<br>
-<strong>Generated:</strong> {{ json_report_data.CollectedAtUTC }}</p>
+
+<p><strong>Hostname:</strong> {{ inventory_hostname }}<br>
+<strong>Collected at:</strong> {{ json_report_data.CollectedAtUTC }}</p>
 
 {% set lsp = json_report_data.LocalSecurityPolicy %}
 
 <div class="section">
-    <h2>Account Policies (System Access)</h2>
-    <table>
-        <tr><th>Setting</th><th>Value</th></tr>
-        {% for k,v in lsp.SystemAccess.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-    </table>
+<h2>Account Policies (System Access)</h2>
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+{% for k,v in lsp.SystemAccess.items() %}
+<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+{% endfor %}
+</table>
 </div>
 
 <div class="section">
-    <h2>Security Options (Registry Values)</h2>
-    <table>
-        <tr><th>Setting</th><th>Value</th></tr>
-        {% for k,v in lsp.RegistryValues.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-    </table>
+<h2>Security Options (Registry Values)</h2>
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+{% for k,v in lsp.RegistryValues.items() %}
+<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+{% endfor %}
+</table>
 </div>
 
 <div class="section">
-    <h2>User Rights Assignment (Privilege Rights)</h2>
-    <table>
-        <tr><th>Right</th><th>Assignments</th></tr>
-        {% for k,v in lsp.PrivilegeRights.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-    </table>
+<h2>User Rights Assignment (Privilege Rights)</h2>
+<table>
+<tr><th>Right</th><th>Assigned To</th></tr>
+{% for k,v in lsp.PrivilegeRights.items() %}
+<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+{% endfor %}
+</table>
 </div>
 
 <div class="section">
-    <h2>Legacy Audit Policy</h2>
-    <table>
-        <tr><th>Setting</th><th>Value</th></tr>
-        {% for k,v in lsp.EventAuditLegacy.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-    </table>
+<h2>Legacy Audit Policy</h2>
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+{% for k,v in lsp.EventAuditLegacy.items() %}
+<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+{% endfor %}
+</table>
 </div>
 
 <div class="section">
-    <h2>Advanced Audit Policy</h2>
-    <table>
-        <tr><th>Category</th><th>Subcategory</th><th>Setting</th></tr>
-        {% for row in json_report_data.AdvancedAuditPolicy %}
-        <tr>
-            <td>{{ row.Category }}</td>
-            <td>{{ row.Subcategory }}</td>
-            <td>{{ row.Setting }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<h2>Advanced Audit Policy</h2>
+<table>
+<tr><th>Category</th><th>Subcategory</th><th>Setting</th></tr>
+{% for row in json_report_data.AdvancedAuditPolicy %}
+<tr>
+<td>{{ row.Category }}</td>
+<td>{{ row.Subcategory }}</td>
+<td>{{ row.Setting }}</td>
+</tr>
+{% endfor %}
+</table>
 </div>
 
 <div class="section">
-    <h2>Service Permissions</h2>
-    <table>
-        <tr><th>Service</th><th>Value</th></tr>
-        {% for k,v in lsp.Services.items() %}
-        <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-        {% endfor %}
-    </table>
+<h2>Service Security Settings</h2>
+<table>
+<tr><th>Service</th><th>Value</th></tr>
+{% for k,v in lsp.Services.items() %}
+<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+{% endfor %}
+</table>
 </div>
 
 </body>
