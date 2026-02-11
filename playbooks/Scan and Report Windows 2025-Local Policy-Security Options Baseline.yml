@@ -1,127 +1,147 @@
-- name: Comprehensive Windows 2025 Security Options Audit (104 Targeted)
-  hosts: all
-  gather_facts: yes
+---
+- name: Windows Security Baseline Collection + HTML Report + S3 Upload
+  hosts: windows_hosts
+  gather_facts: false
+
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
-    s3_path: "cis-baseline-files"
-    aws_region: "eu-west-1"
-    report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
-    remote_map_file: "C:\\temp\\security_options_map.json"
-    
-    security_options_map:
-      # --- Accounts ---
-      "EnableAdminAccount": "Accounts: Administrator account status"
-      "EnableGuestAccount": "Accounts: Guest account status"
-      "LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords"
-      "NewAdminName": "Accounts: Rename administrator account"
-      "NewGuestName": "Accounts: Rename guest account"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
-      # --- Audit ---
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\AuditBaseObjects": "Audit: Audit the access of global system objects"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
-      "ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings": "Audit: Force audit policy subcategory settings"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\CrashOnAuditFail": "Audit: Shut down system immediately if unable to log audits"
-      # --- Devices ---
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\UndockWithoutLogon": "Devices: Allow undock without having to log on"
-      "AllowedToFormatAndEjectRemovableMedia": "Devices: Allowed to format and eject removable media"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
-      # --- Interactive Logon ---
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DontDisplayLastUserName": "Interactive logon: Don't display last signed-in"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\DisableCAD": "Interactive logon: Do not require CTRL+ALT+DEL"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\InactivityTimeoutSecs": "Interactive logon: Machine inactivity limit"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\MaxDevicePasswordFailedAttempts": "Interactive logon: Machine account lockout threshold"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\CachedLogonsCount": "Interactive logon: Number of previous logons to cache"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\PasswordExpiryWarning": "Interactive logon: Prompt user to change password"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ScForceOption": "Interactive logon: Require smart card"
-      "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\ScRemoveOption": "Interactive logon: Smart card removal behavior"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeCaption": "Interactive logon: Message title"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\LegalNoticeText": "Interactive logon: Message text"
-      # --- Network Security ---
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinClientSec": "Network security: Min session security for NTLM clients"
-      "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\NTLMMinServerSec": "Network security: Min session security for NTLM servers"
-      "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\AutoDisconnect": "Microsoft network server: Idle time before suspending"
-      # --- UAC ---
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorUser": "UAC: Elevation prompt for users"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "UAC: Switch to secure desktop"
+    s3_region: "eu-west-1"
+    s3_prefix: "cis-baseline-files/"
+
+    aws_access_key: "{{ vault_aws_access_key | default(omit) }}"
+    aws_secret_key: "{{ vault_aws_secret_key | default(omit) }}"
+    aws_session_token: "{{ vault_aws_session_token | default(omit) }}"
+
+    work_root: "C:\\Temp\\ws-audit"
+    artifacts_dir_name: "artifacts"
+    artifacts_dir: "{{ work_root }}\\{{ artifacts_dir_name }}"
+    report_basename: "ws_security"
+
+  pre_tasks:
+    - name: Ensure working directories exist
+      ansible.windows.win_file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ work_root }}"
+        - "{{ artifacts_dir }}"
 
   tasks:
-    - name: Transfer Policy Map
-      ansible.windows.win_copy:
-        content: "{{ security_options_map | to_nice_json }}"
-        dest: "{{ remote_map_file }}"
 
-    - name: Run Audit
-      ansible.windows.win_shell: |
-        {% raw %}
-        $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
-        $secFile = "C:\temp\secedit_audit.inf"
-        secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
-        
-        $secHash = @{}
-        if (Test-Path $secFile) {
-            Get-Content $secFile -Encoding Unicode | ForEach-Object {
-                if ($_ -match '=') {
-                    $p = $_.Split('=', 2); $k = $p[0].Trim(); $v = $p[1].Trim().Trim('"')
-                    $secHash[$k] = $v
-                }
+    #######################################################
+    # 1. EXPORT LOCAL SECURITY POLICY (INF)
+    #######################################################
+    - name: Export Local Security Policy
+      ansible.windows.win_shell: >
+        secedit /export
+        /cfg "{{ artifacts_dir }}\\local_secpol.inf"
+        /areas SECURITYPOLICY USER_RIGHTS SERVICES
+      args:
+        creates: "{{ artifacts_dir }}\\local_secpol.inf"
+
+    #######################################################
+    # 2. EXPORT ADVANCED AUDIT POLICY
+    #######################################################
+    - name: Export Advanced Audit Policy
+      ansible.windows.win_shell: >
+        auditpol /get /category:* /r > "{{ artifacts_dir }}\\advanced_audit.csv"
+      args:
+        creates: "{{ artifacts_dir }}\\advanced_audit.csv"
+
+    #######################################################
+    # 3. BUILD STRUCTURED JSON REPORT
+    #######################################################
+    - name: Build JSON report
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+          $art = "{{ artifacts_dir }}"
+          $host = $env:COMPUTERNAME
+          $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+          $jsonOut = Join-Path $art "{{ report_basename }}_${host}_$ts.json"
+
+          # Parse INF
+          function Parse-Inf {
+            param($Path)
+            $result = @{}
+            $section = $null
+            Get-Content -Path $Path | ForEach-Object {
+              $line = $_.Trim()
+              if ($line -match '^\[(.+)\]$') {
+                $section = $matches[1]
+                $result[$section] = @{}
+              } elseif ($section -and $line -match '^(.*)=(.*)$') {
+                $result[$section][$matches[1].Trim()] = $matches[2].Trim()
+              }
             }
-            Remove-Item $secFile
-        }
+            return $result
+          }
 
-        $results = foreach ($id in $map.psobject.Properties.Name) {
-            $pName = $map.$id
-            $val = "Not Defined"
+          $inf = Parse-Inf "$art\\local_secpol.inf"
+          $audit = Import-Csv "$art\\advanced_audit.csv"
 
-            # 1. Check direct ID in Secedit (for local policy strings)
-            if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
-            
-            # 2. Check Registry for MACHINE keys (for DWORDS)
-            if (($val -eq "Not Defined") -and $id -like "MACHINE\*") {
-                $regPath = $id.Replace("MACHINE\", "HKLM:\"); $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
-                if (Test-Path $key) {
-                    $rv = Get-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
-                    if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
-                }
+          $obj = [ordered]@{
+            ComputerName = $host
+            CollectedAtUTC = (Get-Date).ToUniversalTime().ToString("o")
+
+            LocalSecurityPolicy = @{
+              SystemAccess      = $inf['System Access']
+              EventAuditLegacy  = $inf['Event Audit']
+              PrivilegeRights   = $inf['Privilege Rights']
+              RegistryValues    = $inf['Registry Values']
+              Services          = $inf['Service General Setting']
             }
 
-            # 3. Final Fallback: Check Leaf Name in Secedit
-            if ($val -eq "Not Defined") {
-                $leaf = Split-Path $id -Leaf
-                if ($secHash.ContainsKey($leaf)) { $val = $secHash[$leaf] }
-            }
+            AdvancedAuditPolicy = $audit
+          }
 
-            # --- HARD NORMALIZATION ---
-            if ($val -eq "536870912") { $val = "Require 128-bit encryption" }
-            elseif ($val -eq "Administrator" -or $val -eq "Guest") { $val = "Default (Unchanged)" }
-            elseif ($val -eq "4,0") { $val = "Disabled" }
-            elseif ($val -eq "4,1") { $val = "Enabled" }
-            elseif ($id -like "*ConsentPromptBehaviorAdmin" -and $val -eq "5") { $val = "Prompt for consent" }
-            elseif ($id -like "*ConsentPromptBehaviorUser" -and $val -eq "3") { $val = "Prompt for credentials" }
-            elseif ($id -like "*ScRemoveOption" -and $val -eq "0") { $val = "No Action" }
-            elseif ($val -eq "1") { $val = "Enabled" }
-            elseif ($val -eq "0") { $val = "Disabled" }
-            elseif ($val -match ",") { $val = $val.Split(',')[1].Trim('"') }
+          $obj | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonOut -Encoding UTF8
+          Write-Output $jsonOut
+      register: json_report
 
-            [PSCustomObject]@{ Name = $pName; Value = $val }
-        }
-        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
-        {% endraw %}
-      register: scan_output
+    #######################################################
+    # 4. RENDER HUMAN‑READABLE HTML REPORT USING .J2 TEMPLATE
+    #######################################################
+    - name: Render HTML Security Report
+      template:
+        src: "templates/security_report.j2"
+        dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
 
-    - name: Generate HTML Report
-      delegate_to: localhost
-      ansible.builtin.template:
-        src: "../templates/baseline-local Policy-Security Options_report.j2"
-        dest: "{{ report_file }}"
+    #######################################################
+    # 5. ZIP ARTIFACTS
+    #######################################################
+    - name: ZIP all artifacts
+      ansible.windows.win_powershell:
+        script: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $host=$env:COMPUTERNAME
+          $ts=(Get-Date).ToString("yyyyMMdd_HHmmss")
+          $zip="{{ work_root }}\\{{ report_basename }}_${host}_$ts.zip"
+          [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}",$zip)
+          Write-Output $zip
+      register: zip_file
 
-    - name: Push to S3
-      delegate_to: localhost
+    #######################################################
+    # 6. UPLOAD TO S3
+    #######################################################
+    - name: Upload JSON to S3
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
-        src: "{{ report_file }}"
+        region: "{{ s3_region }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report.stdout_lines[-1] | basename }}"
+        src: "{{ json_report.stdout_lines[-1] }}"
         mode: put
-        region: "{{ aws_region }}"
+        aws_access_key: "{{ aws_access_key | default(omit) }}"
+        aws_secret_key: "{{ aws_secret_key | default(omit) }}"
+        security_token: "{{ aws_session_token | default(omit) }}"
+
+    - name: Upload ZIP to S3
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        region: "{{ s3_region }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout_lines[-1] | basename }}"
+        src: "{{ zip_file.stdout_lines[-1] }}"
+        mode: put
+        aws_access_key: "{{ aws_access_key | default(omit) }}"
+        aws_secret_key: "{{ aws_secret_key | default(omit) }}"
+        security_token: "{{ aws_session_token | default(omit) }}"
