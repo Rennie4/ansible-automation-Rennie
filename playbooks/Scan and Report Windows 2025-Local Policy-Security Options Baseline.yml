@@ -47,7 +47,6 @@
         
         $secHash = @{}
         if (Test-Path $secFile) {
-            # Use Unicode encoding to match secedit output
             $content = Get-Content $secFile -Encoding Unicode
             foreach ($line in $content) {
                 if ($line -match '=') {
@@ -62,11 +61,9 @@
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $pName = $map.$id
             
-            # Check the Security Export first
             if ($secHash.ContainsKey($id)) { 
                 $val = $secHash[$id] 
             }
-            # Registry Fallback for MACHINE keys not found in export
             elseif ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
@@ -76,7 +73,7 @@
                 }
             }
 
-            # Standardize based on your secedit export values
+            # Standardizing Values based on secedit output
             if ($id -eq "NewAdministratorName") {
                 if ($val -eq "Administrator") { $val = "Default (Unchanged)" }
             }
