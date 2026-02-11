@@ -90,16 +90,18 @@
           }
 
           $obj | ConvertTo-Json -Depth 8 | Set-Content -Path $jsonOut -Encoding UTF8
+
+          # MUST RETURN FILE PATH ON STDOUT FOR ANSIBLE
           Write-Output $jsonOut
       register: json_report_path
 
     ####################################################################
-    # 4) LOAD JSON CONTENT AS FACT FOR THE J2 TEMPLATE
+    # 4) LOAD JSON CONTENT
     ####################################################################
     - name: "Read JSON content"
       ansible.windows.win_powershell:
         script: |
-          Get-Content -Raw -Path "{{ json_report_path.stdout }}"
+          Get-Content -Raw -Path "{{ json_report_path.stdout_lines[-1] }}"
       register: json_raw
 
     - name: "Set fact json_report_data"
@@ -107,7 +109,7 @@
         json_report_data: "{{ json_raw.stdout | from_json }}"
 
     ####################################################################
-    # 5) RENDER HTML REPORT
+    # 5) GENERATE HTML REPORT VIA J2
     ####################################################################
     - name: "Render HTML Security Report"
       template:
@@ -115,15 +117,15 @@
         dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
 
     ####################################################################
-    # 6) ZIP ARTIFACTS
+    # 6) ZIP ALL ARTIFACTS
     ####################################################################
     - name: "ZIP all artifacts"
       ansible.windows.win_powershell:
         script: |
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $computerName=$env:COMPUTERNAME
-          $ts=(Get-Date).ToString("yyyyMMdd_HHmmss")
-          $zip="{{ work_root }}\\{{ report_basename }}_${computerName}_$ts.zip"
+          $computerName = $env:COMPUTERNAME
+          $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+          $zip = "{{ work_root }}\\{{ report_basename }}_${computerName}_$ts.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}", $zip)
           Write-Output $zip
@@ -136,8 +138,8 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout | basename }}"
-        src: "{{ json_report_path.stdout }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout_lines[-1] | basename }}"
+        src: "{{ json_report_path.stdout_lines[-1] }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
@@ -147,8 +149,8 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout | basename }}"
-        src: "{{ zip_file.stdout }}"
+        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout_lines[-1] | basename }}"
+        src: "{{ zip_file.stdout_lines[-1] }}"
         mode: put
         aws_access_key: "{{ aws_access_key | default(omit) }}"
         aws_secret_key: "{{ aws_secret_key | default(omit) }}"
