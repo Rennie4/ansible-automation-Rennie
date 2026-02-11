@@ -10,18 +10,15 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
     
     security_options_map:
-      # --- CORRECTED KEYS FOR YOUR REQUEST ---
+      # --- CORRECTED MAPPINGS FOR YOUR REQUEST ---
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LimitBlankPasswordUse": "Accounts: Limit local account use of blank passwords to console logon only"
       "NewAdministratorName": "Accounts: Rename administrator account"
       "FullPrivilegeAuditing": "Audit: Audit the use of Backup and Restore privilege"
       "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Print\\Providers\\LanMan Print Provider\\Servers\\AddPrinterDrivers": "Devices: Prevent users from installing printer drivers"
       
-      # --- ADDITIONAL STANDARD MAPPINGS ---
+      # --- OTHER ESSENTIAL MAPPINGS ---
       "EnableAdminAccount": "Accounts: Administrator account status"
       "EnableGuestAccount": "Accounts: Guest account status"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\EnableLUA": "UAC: Run admins in Admin Approval Mode"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\ConsentPromptBehaviorAdmin": "UAC: Elevation prompt for admins"
-      "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\PromptOnSecureDesktop": "UAC: Switch to secure desktop for elevation"
 
   tasks:
     - name: Ensure Temp Directory Exists
@@ -35,21 +32,18 @@
         dest: "{{ remote_map_file }}"
 
     - name: Run Audit
-      ansible.windows.win_shell: |
-        {% raw %}
-        $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
+      win_shell: |
+        $map = Get-Content "{{ remote_map_file }}" | ConvertFrom-Json
         $secFile = "C:\temp\secedit_audit.inf"
-        # Exporting to a fresh file
         secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
         
         $secHash = @{}
         if (Test-Path $secFile) {
-            # Use Unicode encoding to read the secedit export correctly
             $content = Get-Content $secFile -Encoding Unicode
             foreach ($line in $content) {
                 if ($line -match '=') {
-                    $p = $line.Split('=', 2); 
-                    $k = $p[0].Trim(); 
+                    $p = $line.Split('=', 2)
+                    $k = $p[0].Trim()
                     $v = $p[1].Trim().Trim('"')
                     $secHash[$k] = $v
                 }
@@ -59,37 +53,27 @@
 
         $results = foreach ($id in $map.psobject.Properties.Name) {
             $val = "Not Defined"; $pName = $map.$id
-            
-            # 1. Check Registry first (for MACHINE\ keys)
             if ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
-                $key = Split-Path $regPath
-                $name = Split-Path $regPath -Leaf
+                $key = Split-Path $regPath; $name = Split-Path $regPath -Leaf
                 if (Test-Path $key) {
                     $rv = Get-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
                     if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
                 }
             }
-            
-            # 2. Check Security Database (secedit) if Registry didn't have it
             if ($val -eq "Not Defined" -or $val -eq "") {
                 if ($secHash.ContainsKey($id)) { $val = $secHash[$id] }
             }
-
-            # 3. Clean up display values
             if ($val -eq "0") { $val = "Disabled" }
             elseif ($val -eq "1") { $val = "Enabled" }
-            elseif ($val -match "Administrator") { $val = "Administrator" }
-            
             [PSCustomObject]@{ Name = $pName; Value = $val }
         }
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
-        {% endraw %}
       register: scan_output
 
     - name: Generate HTML Report
       delegate_to: localhost
-      ansible.builtin.template:
+      template:
         src: "../templates/baseline-local Policy-Security Options_report.j2"
         dest: "{{ report_file }}"
 
