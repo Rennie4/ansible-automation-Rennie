@@ -21,139 +21,143 @@
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
+    # ===========================
+    # UPDATED: use win_powershell
+    # ===========================
     - name: Run Audit (adds +3 UAC entries and iterates a deterministic list)
-      ansible.windows.win_shell: |
-        # Load your existing 89-map
-        $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
+      ansible.windows.win_powershell:
+        script: |
+          # Load your existing 89-map
+          $map = Get-Content "C:\temp\security_options_map.json" -Raw | ConvertFrom-Json
 
-        # Build a deterministic list we will iterate (prevents missing late-added props)
-        $mapList = @()
-        foreach ($p in $map.PSObject.Properties) {
-          $mapList += [PSCustomObject]@{ Id = $p.Name; Name = $p.Value }
-        }
-
-        # --------------------------------------------------------------------
-        # ADD ONLY THESE 3 MISSING UAC SETTINGS (synthetic IDs → friendly names)
-        # --------------------------------------------------------------------
-        $extra = @(
-          [PSCustomObject]@{
-            Id   = 'UAC_INSTALL_DETECTION'
-            Name = 'UAC: Detect application installations and prompt for elevation'
-          },
-          [PSCustomObject]@{
-            Id   = 'UAC_STD_PROMPT_BEHAVIOR'
-            Name = 'UAC: Behavior of the elevation prompt for standard users'
-          },
-          [PSCustomObject]@{
-            Id   = 'UAC_ADMIN_PROMPT_BEHAVIOR'
-            Name = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
+          # Build a deterministic list to iterate (prevents missing late-added props)
+          $mapList = @()
+          foreach ($p in $map.PSObject.Properties) {
+            $mapList += [PSCustomObject]@{ Id = $p.Name; Name = $p.Value }
           }
-        )
 
-        # Append the extras if they don't already exist
-        foreach ($e in $extra) {
-          if (-not ($mapList | Where-Object { $_.Id -eq $e.Id })) {
-            $mapList += $e
-          }
-        }
+          # --------------------------------------------------------------------
+          # ADD ONLY THESE 3 MISSING UAC SETTINGS (synthetic IDs -> friendly names)
+          # --------------------------------------------------------------------
+          $extra = @(
+            [PSCustomObject]@{
+              Id   = 'UAC_INSTALL_DETECTION'
+              Name = 'UAC: Detect application installations and prompt for elevation'
+            },
+            [PSCustomObject]@{
+              Id   = 'UAC_STD_PROMPT_BEHAVIOR'
+              Name = 'UAC: Behavior of the elevation prompt for standard users'
+            },
+            [PSCustomObject]@{
+              Id   = 'UAC_ADMIN_PROMPT_BEHAVIOR'
+              Name = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
+            }
+          )
 
-        # Export local security policy for fallbacks
-        $secFile = "C:\temp\secedit_audit.inf"
-        secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
-
-        $secHash = @{}
-        if (Test-Path $secFile) {
-          Get-Content $secFile -Encoding Unicode | ForEach-Object {
-            if ($_ -match '=') {
-              $p = $_.Split('=', 2)
-              $k = $p[0].Trim()
-              $v = $p[1].Trim().Trim('"')
-              if ($v -eq "7," -or $v -eq "7") { $v = "Enabled" }
-              elseif ($v -match ',') { $v = $v.Split(',')[0] }
-              $secHash[$k] = $v
+          # Append the extras if they don't already exist
+          foreach ($e in $extra) {
+            if (-not ($mapList | Where-Object { $_.Id -eq $e.Id })) {
+              $mapList += $e
             }
           }
-          Remove-Item $secFile -Force -ErrorAction SilentlyContinue
-        }
 
-        # Built-in Administrator rename detection (prior fix)
-        $adminSID = "S-1-5-21-*-500"
-        $adminAcct = Get-CimInstance Win32_UserAccount | Where-Object { $_.SID -like $adminSID -and $_.LocalAccount -eq $true }
-        $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
-        $AdminRenameStatus = if ($actualAdminName -ne "Administrator") { "Renamed$" } else { "Default (Administrator)" }
+          # Export local security policy for fallbacks
+          $secFile = "C:\temp\secedit_audit.inf"
+          secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
 
-        # UAC special cases (3 items)
-        $polKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
-
-        # 1) Detect application installs and prompt for elevation
-        $EnableInstallerDetection = (Get-ItemProperty -Path $polKey -Name "EnableInstallerDetection" -ErrorAction SilentlyContinue)."EnableInstallerDetection"
-        if     ($EnableInstallerDetection -eq 1) { $UACInstall = "Enabled" }
-        elseif ($EnableInstallerDetection -eq 0) { $UACInstall = "Disabled" }
-        else { $UACInstall = "Not Defined" }
-
-        # 2) Elevation prompt for standard users
-        $UACStd = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorUser" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorUser"
-        switch ($UACStd) {
-          0 { $UACStdOut = "Automatically deny elevation requests (0)" }
-          1 { $UACStdOut = "Prompt for credentials on secure desktop (1)" }
-          3 { $UACStdOut = "Prompt for credentials (3)" }
-          default { $UACStdOut = "Not Defined" }
-        }
-
-        # 3) Elevation prompt for administrators in Admin Approval Mode
-        $UACAdmin = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorAdmin" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorAdmin"
-        switch ($UACAdmin) {
-          0 { $UACAdminOut = "Elevate without prompting (0)" }
-          1 { $UACAdminOut = "Prompt for credentials on secure desktop (1)" }
-          2 { $UACAdminOut = "Prompt for consent on the secure desktop (2)" }
-          3 { $UACAdminOut = "Prompt for credentials (3)" }
-          4 { $UACAdminOut = "Prompt for consent (4)" }
-          5 { $UACAdminOut = "Prompt for consent for non-Windows binaries (5)" }
-          default { $UACAdminOut = "Not Defined" }
-        }
-
-        # Compose results from the deterministic list
-        $results = foreach ($entry in $mapList) {
-          $id   = $entry.Id
-          $pName = $entry.Name
-          $val  = "Not Defined"
-
-          if ($pName -eq "Accounts: Rename administrator account") {
-            $val = $AdminRenameStatus
-          }
-          elseif ($id -eq 'UAC_INSTALL_DETECTION') {
-            $val = $UACInstall
-          }
-          elseif ($id -eq 'UAC_STD_PROMPT_BEHAVIOR') {
-            $val = $UACStdOut
-          }
-          elseif ($id -eq 'UAC_ADMIN_PROMPT_BEHAVIOR') {
-            $val = $UACAdminOut
-          }
-          else {
-            # Default Registry → SecEdit fallback (unchanged)
-            if ($id -like "MACHINE\*") {
-              $regPath = $id.Replace("MACHINE\", "HKLM:\")
-              $key  = Split-Path $regPath
-              $name = Split-Path $regPath -Leaf
-              if (Test-Path $key) {
-                $rv = Get-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
-                if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
+          $secHash = @{}
+          if (Test-Path $secFile) {
+            Get-Content $secFile -Encoding Unicode | ForEach-Object {
+              if ($_ -match '=') {
+                $p = $_.Split('=', 2)
+                $k = $p[0].Trim()
+                $v = $p[1].Trim().Trim('"')
+                if ($v -eq "7," -or $v -eq "7") { $v = "Enabled" }
+                elseif ($v -match ',') { $v = $v.Split(',')[0] }
+                $secHash[$k] = $v
               }
             }
-            if ($val -eq "Not Defined" -or $val -eq "") {
-              $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
-              if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
-            }
-            if     ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
-            elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
-            elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
+            Remove-Item $secFile -Force -ErrorAction SilentlyContinue
           }
 
-          [PSCustomObject]@{ Name = $pName; Value = $val }
-        }
+          # Built-in Administrator rename detection (prior fix)
+          $adminSID = "S-1-5-21-*-500"
+          $adminAcct = Get-CimInstance Win32_UserAccount | Where-Object { $_.SID -like $adminSID -and $_.LocalAccount -eq $true }
+          $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
+          $AdminRenameStatus = if ($actualAdminName -ne "Administrator") { "Renamed$" } else { "Default (Administrator)" }
 
-        $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
+          # UAC special cases (3 items)
+          $polKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+
+          # 1) Detect application installs and prompt for elevation
+          $EnableInstallerDetection = (Get-ItemProperty -Path $polKey -Name "EnableInstallerDetection" -ErrorAction SilentlyContinue)."EnableInstallerDetection"
+          if     ($EnableInstallerDetection -eq 1) { $UACInstall = "Enabled" }
+          elseif ($EnableInstallerDetection -eq 0) { $UACInstall = "Disabled" }
+          else { $UACInstall = "Not Defined" }
+
+          # 2) Elevation prompt for standard users
+          $UACStd = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorUser" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorUser"
+          switch ($UACStd) {
+            0 { $UACStdOut = "Automatically deny elevation requests (0)" }
+            1 { $UACStdOut = "Prompt for credentials on secure desktop (1)" }
+            3 { $UACStdOut = "Prompt for credentials (3)" }
+            default { $UACStdOut = "Not Defined" }
+          }
+
+          # 3) Elevation prompt for administrators in Admin Approval Mode
+          $UACAdmin = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorAdmin" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorAdmin"
+          switch ($UACAdmin) {
+            0 { $UACAdminOut = "Elevate without prompting (0)" }
+            1 { $UACAdminOut = "Prompt for credentials on secure desktop (1)" }
+            2 { $UACAdminOut = "Prompt for consent on the secure desktop (2)" }
+            3 { $UACAdminOut = "Prompt for credentials (3)" }
+            4 { $UACAdminOut = "Prompt for consent (4)" }
+            5 { $UACAdminOut = "Prompt for consent for non-Windows binaries (5)" }
+            default { $UACAdminOut = "Not Defined" }
+          }
+
+          # Compose results from the deterministic list
+          $results = foreach ($entry in $mapList) {
+            $id    = $entry.Id
+            $pName = $entry.Name
+            $val   = "Not Defined"
+
+            if ($pName -eq "Accounts: Rename administrator account") {
+              $val = $AdminRenameStatus
+            }
+            elseif ($id -eq 'UAC_INSTALL_DETECTION') {
+              $val = $UACInstall
+            }
+            elseif ($id -eq 'UAC_STD_PROMPT_BEHAVIOR') {
+              $val = $UACStdOut
+            }
+            elseif ($id -eq 'UAC_ADMIN_PROMPT_BEHAVIOR') {
+              $val = $UACAdminOut
+            }
+            else {
+              # Default Registry → SecEdit fallback (unchanged)
+              if ($id -like "MACHINE\*") {
+                $regPath = $id.Replace("MACHINE\", "HKLM:\")
+                $key  = Split-Path $regPath
+                $name = Split-Path $regPath -Leaf
+                if (Test-Path $key) {
+                  $rv = Get-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
+                  if ($rv -and $rv.$name -ne $null) { $val = $rv.$name.ToString() }
+                }
+              }
+              if ($val -eq "Not Defined" -or $val -eq "") {
+                $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
+                if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
+              }
+              if     ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
+              elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
+              elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
+            }
+
+            [PSCustomObject]@{ Name = $pName; Value = $val }
+          }
+
+          $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
       register: scan_output
 
     - name: Generate HTML Report
