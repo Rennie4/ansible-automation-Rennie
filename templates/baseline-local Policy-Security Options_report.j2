@@ -2,77 +2,69 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Windows Security Baseline Report - {{ inventory_hostname }}</title>
+<title>Security Options Baseline - {{ inventory_hostname }}</title>
 <style>
-body { font-family: Arial; background: #f7f7f7; padding: 20px; }
-.section { background: white; padding: 15px; margin-bottom: 20px; border-radius: 6px; 
-           box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+body { font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px; color:#222; }
+h1, h2 { margin: 0.2em 0; }
+.section {
+  background: #fff; padding: 16px; margin: 18px 0; border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
 table { width: 100%; border-collapse: collapse; }
-td, th { border: 1px solid #ccc; padding: 6px; }
-th { background: #efefef; }
+th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+th { background: #f0f0f0; text-align: left; }
+.small { color:#666; font-size: 0.9em; }
 </style>
 </head>
-
 <body>
 
-<h1>Windows Security Baseline Report</h1>
-<p><strong>Hostname:</strong> {{ inventory_hostname }}<br>
-<strong>Collected At:</strong> {{ json_report_data.CollectedAtUTC }}</p>
+<h1>Windows Security Options Baseline</h1>
+<p class="small">
+  Host: <strong>{{ inventory_hostname }}</strong><br/>
+  Collected: <strong>{{ json_report_data.CollectedAtUTC }}</strong>
+</p>
 
+{# Convenience variable #}
 {% set lsp = json_report_data.LocalSecurityPolicy %}
 
 <div class="section">
-<h2>Account Policies</h2>
-<table>
-<tr><th>Setting</th><th>Value</th></tr>
-{% for k,v in lsp.SystemAccess.items() %}
-<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-{% endfor %}
-</table>
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Computer Name</th><td>{{ json_report_data.ComputerName }}</td></tr>
+    <tr><th>Total Security Options</th><td>{{ (lsp.RegistryValues or {}).|length }}</td></tr>
+    <tr><th>Total User Rights</th><td>{{ (lsp.PrivilegeRights or {}).|length }}</td></tr>
+  </table>
 </div>
 
 <div class="section">
-<h2>Security Options</h2>
-<table>
-<tr><th>Setting</th><th>Value</th></tr>
-{% for k,v in lsp.RegistryValues.items() %}
-<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-{% endfor %}
-</table>
+  <h2>Account Policies (System Access)</h2>
+  <table>
+    <tr><th>Setting</th><th>Value</th></tr>
+    {% for k, v in (lsp.SystemAccess or {}).items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
 </div>
 
 <div class="section">
-<h2>User Rights Assignment</h2>
-<table>
-<tr><th>Right</th><th>Assigned To</th></tr>
-{% for k,v in lsp.PrivilegeRights.items() %}
-<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-{% endfor %}
-</table>
+  <h2>Security Options (Registry Values)</h2>
+  <p class="small">These correspond to <em>Local Policies → Security Options</em> (commonly ~104 settings depending on build/role).</p>
+  <table>
+    <tr><th>Setting (Policy Key)</th><th>Value</th></tr>
+    {% for k, v in (lsp.RegistryValues or {}).items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
 </div>
 
 <div class="section">
-<h2>Legacy Audit Policy</h2>
-<table>
-<tr><th>Setting</th><th>Value</th></tr>
-{% for k,v in lsp.EventAuditLegacy.items() %}
-<tr><td>{{ k }}</td><td>{{ v }}</td></tr>
-{% endfor %}
-</table>
-</div>
-
-<div class="section">
-<h2>Advanced Audit Policy</h2>
-<table>
-<tr><th>Category</th><th>Subcategory</th><th>Setting</th></tr>
-{% for row in json_report_data.AdvancedAuditPolicy %}
-<tr>
-<td>{{ row.Category }}</td>
-<td>{{ row.Subcategory }}</td>
-<td>{{ row.Setting }}</td>
-</tr>
-{% endfor %}
-</table>
+  <h2>User Rights Assignment (Privilege Rights)</h2>
+  <table>
+    <tr><th>Right</th><th>Assigned To</th></tr>
+    {% for k, v in (lsp.PrivilegeRights or {}).items() %}
+      <tr><td>{{ k }}</td><td>{{ v }}</td></tr>
+    {% endfor %}
+  </table>
 </div>
 
 </body>
