@@ -1,126 +1,50 @@
----
-- name: "Windows Security Baseline Collection + HTML Report + S3 Upload"
-  hosts: windows_hosts
-  gather_facts: false
+SSH password:
+1
+[WARNING]: Collection amazon.aws does not support Ansible version 2.16.15
+2
 
-  vars:
-    s3_bucket: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
-    s3_prefix: "cis-baseline-files/"
-    aws_access_key: "{{ vault_aws_access_key | default(omit) }}"
-    aws_secret_key: "{{ vault_aws_secret_key | default(omit) }}"
-    aws_session_token: "{{ vault_aws_session_token | default(omit) }}"
-    work_root: "C:\\Temp\\ws-audit"
-    artifacts_dir_name: "artifacts"
-    artifacts_dir: "{{ work_root }}\\{{ artifacts_dir_name }}"
-    report_basename: "ws_security"
+3
+PLAY [Windows Security Baseline Collection + HTML Report + S3 Upload] **********  
+08:46:53
+4
 
-  pre_tasks:
-    - name: "Ensure working directories exist"
-      ansible.windows.win_file:
-        path: "{{ item }}"
-        state: directory
-      loop:
-        - "{{ work_root }}"
-        - "{{ artifacts_dir }}"
+5
+TASK [Ensure working directories exist] ****************************************  
+08:46:53
+6
+ok: [windows_server_2025] => (item=C:\Temp\ws-audit)
+7
+ok: [windows_server_2025] => (item=C:\Temp\ws-audit\artifacts)
+8
 
-  tasks:
-    - name: "Export Local Security Policy"
-      ansible.windows.win_shell: >
-        secedit /export /cfg "{{ artifacts_dir }}\\local_secpol.inf"
-        /areas SECURITYPOLICY USER_RIGHTS SERVICES
+9
+TASK [Export Local Security Policy] ********************************************  
+08:46:58
+10
+changed: [windows_server_2025]
+11
 
-    - name: "Export Advanced Audit Policy"
-      ansible.windows.win_shell: >
-        auditpol /get /category:* /r > "{{ artifacts_dir }}\\advanced_audit.csv"
+12
+TASK [Export Advanced Audit Policy] ********************************************  
+08:47:02
+13
+changed: [windows_server_2025]
+14
 
-    - name: "Build JSON report and return file path"
-      ansible.windows.win_shell: |
-        $ErrorActionPreference = "Stop"
-        $art = "{{ artifacts_dir }}"
-        $computer = $env:COMPUTERNAME
-        $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+15
+TASK [Build JSON report and return file path] **********************************  
+08:47:04
+16
+changed: [windows_server_2025]
+17
 
-        # FIXED: ensure hostname with '-' is handled
-        $safeName = $computer -replace '[^A-Za-z0-9]', '_'
-
-        $jsonOut = "$art\\{{ report_basename }}_${safeName}_$ts.json"
-
-        function Parse-Inf {
-          param($Path)
-          $result = @{}
-          $section = $null
-          foreach ($line in Get-Content -Path $Path) {
-            $l = $line.Trim()
-            if ($l -match '^\[(.+)\]$') {
-              $section = $matches[1]
-              $result[$section] = @{}
-            }
-            elseif ($section -and $l -match '^(.*)=(.*)$') {
-              $result[$section][$matches[1].Trim()] = $matches[2].Trim()
-            }
-          }
-          return $result
-        }
-
-        $inf = Parse-Inf "$art\\local_secpol.inf"
-        $audit = Import-Csv "$art\\advanced_audit.csv"
-
-        $obj = [ordered]@{
-          ComputerName = $computer
-          CollectedAtUTC = (Get-Date).ToUniversalTime().ToString("o")
-          LocalSecurityPolicy = @{
-            SystemAccess = $inf['System Access']
-            EventAuditLegacy = $inf['Event Audit']
-            PrivilegeRights = $inf['Privilege Rights']
-            RegistryValues = $inf['Registry Values']
-            Services = $inf['Service General Setting']
-          }
-          AdvancedAuditPolicy = $audit
-        }
-
-        $obj | ConvertTo-Json -Depth 8 | Out-File -FilePath $jsonOut -Encoding UTF8
-        Write-Output $jsonOut
-      register: json_report_path
-
-    - name: "Read JSON content"
-      ansible.windows.win_shell: >
-        type "{{ json_report_path.stdout }}"
-      register: json_raw
-
-    - name: "Set fact json_report_data"
-      set_fact:
-        json_report_data: "{{ json_raw.stdout | from_json }}"
-
-    - name: "Render HTML Security Report"
-      template:
-        src: "templates/security_report.j2"
-        dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
-
-    - name: "ZIP all artifacts"
-      ansible.windows.win_shell: |
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $computer=$env:COMPUTERNAME
-        $safeName = $computer -replace '[^A-Za-z0-9]', '_'
-        $ts=(Get-Date).ToString("yyyyMMdd_HHmmss")
-        $zip="{{ work_root }}\\{{ report_basename }}_${safeName}_$ts.zip"
-        if (Test-Path $zip) { Remove-Item $zip -Force }
-        [System.IO.Compression.ZipFile]::CreateFromDirectory("{{ artifacts_dir }}",$zip)
-        Write-Output $zip
-      register: zip_file
-
-    - name: "Upload JSON to S3"
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ json_report_path.stdout | basename }}"
-        src: "{{ json_report_path.stdout }}"
-        mode: put
-
-    - name: "Upload ZIP to S3"
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        region: "{{ s3_region }}"
-        object: "{{ s3_prefix }}{{ inventory_hostname }}/{{ zip_file.stdout | basename }}"
-        src: "{{ zip_file.stdout }}"
-        mode: put
+18
+TASK [Read JSON content] *******************************************************  
+08:47:06
+19
+fatal: [windows_server_2025]: FAILED! => {"changed": true, "cmd": "type \"C:\\Temp\\ws-audit\\artifacts\\\\ws_security_EC2AMAZ_808N0JM_20260212_064706.json\r\n\"", "delta": "0:00:00.743531", "end": "2026-02-12 06:47:09.249817", "msg": "non-zero return code", "rc": 1, "start": "2026-02-12 06:47:08.506286", "stderr": "type : Illegal characters in path.\r\nAt line:1 char:65\r\n+ ... ing $false; type \"C:\\Temp\\ws-audit\\artifacts\\\\ws_security_EC2AMAZ_808 ...\r\n+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n + CategoryInfo : InvalidArgument: (C:\\Temp\\ws-audi...2_064706.json\r\n:String) [Get-Content], ArgumentException\r\n + FullyQualifiedErrorId : ItemExistsArgumentError,Microsoft.PowerShell.Commands.GetContentCommand\r\n \r\ntype : Cannot find path 'C:\\Temp\\ws-audit\\artifacts\\ws_security_EC2AMAZ_808N0JM_20260212_064706.json\r\n' because it does not exist.\r\nAt line:1 char:65\r\n+ ... ing $false; type \"C:\\Temp\\ws-audit\\artifacts\\\\ws_security_EC2AMAZ_808 ...\r\n+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n + CategoryInfo : ObjectNotFound: (C:\\Temp\\ws-audi...2_064706.json\r\n:String) [Get-Content], ItemNotFoundException\r\n + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand", "stderr_lines": ["type : Illegal characters in path.", "At line:1 char:65", "+ ... ing $false; type \"C:\\Temp\\ws-audit\\artifacts\\\\ws_security_EC2AMAZ_808 ...", "+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", " + CategoryInfo : InvalidArgument: (C:\\Temp\\ws-audi...2_064706.json", ":String) [Get-Content], ArgumentException", " + FullyQualifiedErrorId : ItemExistsArgumentError,Microsoft.PowerShell.Commands.GetContentCommand", " ", "type : Cannot find path 'C:\\Temp\\ws-audit\\artifacts\\ws_security_EC2AMAZ_808N0JM_20260212_064706.json", "' because it does not exist.", "At line:1 char:65", "+ ... ing $false; type \"C:\\Temp\\ws-audit\\artifacts\\\\ws_security_EC2AMAZ_808 ...", "+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", " + CategoryInfo : ObjectNotFound: (C:\\Temp\\ws-audi...2_064706.json", ":String) [Get-Content], ItemNotFoundException", " + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetContentCommand"], "stdout": "", "stdout_lines": []}
+20
+21
+PLAY RECAP *********************************************************************
+22
+windows_server_2025 : ok=4 changed=3 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0
