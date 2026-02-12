@@ -10,10 +10,9 @@
     report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
-    # KEEP YOUR EXISTING 89-ITEM MAP EXACTLY AS YOU HAVE IT.
-    # (Do not add the 3 UAC items here; the script appends them dynamically.)
+    # KEEP your existing 89-item map EXACTLY as-is:
     security_options_map:
-      # ... your 89 existing keys exactly as in your working file ...
+      # … your 89 entries here (unchanged) …
 
   tasks:
 
@@ -22,23 +21,40 @@
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
 
-    - name: Run Audit (adds +3 UAC entries dynamically, no path changes)
+    - name: Run Audit (adds +3 UAC entries and iterates a deterministic list)
       ansible.windows.win_shell: |
         {% raw %}
         # Load your existing 89-map
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
 
+        # Build a deterministic list we will iterate (prevents missing late-added props)
+        $mapList = @()
+        foreach ($p in $map.PSObject.Properties) {
+          $mapList += [PSCustomObject]@{ Id = $p.Name; Name = $p.Value }
+        }
+
         # --------------------------------------------------------------------
         # ADD ONLY THESE 3 MISSING UAC SETTINGS (synthetic IDs → friendly names)
         # --------------------------------------------------------------------
-        $extra = [ordered]@{
-          'UAC_INSTALL_DETECTION'      = 'UAC: Detect application installations and prompt for elevation'
-          'UAC_STD_PROMPT_BEHAVIOR'    = 'UAC: Behavior of the elevation prompt for standard users'
-          'UAC_ADMIN_PROMPT_BEHAVIOR'  = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
-        }
-        foreach ($k in $extra.Keys) {
-          if (-not $map.PSObject.Properties.Name -contains $k) {
-            Add-Member -InputObject $map -NotePropertyName $k -NotePropertyValue $extra[$k]
+        $extra = @(
+          [PSCustomObject]@{
+            Id   = 'UAC_INSTALL_DETECTION'
+            Name = 'UAC: Detect application installations and prompt for elevation'
+          },
+          [PSCustomObject]@{
+            Id   = 'UAC_STD_PROMPT_BEHAVIOR'
+            Name = 'UAC: Behavior of the elevation prompt for standard users'
+          },
+          [PSCustomObject]@{
+            Id   = 'UAC_ADMIN_PROMPT_BEHAVIOR'
+            Name = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
+          }
+        )
+
+        # Append the extras if they don't already exist
+        foreach ($e in $extra) {
+          if (-not ($mapList | Where-Object { $_.Id -eq $e.Id })) {
+            $mapList += $e
           }
         }
 
@@ -61,7 +77,7 @@
           Remove-Item $secFile -Force -ErrorAction SilentlyContinue
         }
 
-        # Built-in Administrator rename detection (kept from prior fix)
+        # Built-in Administrator rename detection (prior fix)
         $adminSID = "S-1-5-21-*-500"
         $adminAcct = Get-CimInstance Win32_UserAccount | Where-Object { $_.SID -like $adminSID -and $_.LocalAccount -eq $true }
         $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
@@ -97,10 +113,11 @@
           default { $UACAdminOut = "Not Defined" }
         }
 
-        # Compose results in map order
-        $results = foreach ($id in $map.psobject.Properties.Name) {
-          $pName = $map.$id
-          $val = "Not Defined"
+        # Compose results from the deterministic list
+        $results = foreach ($entry in $mapList) {
+          $id   = $entry.Id
+          $pName = $entry.Name
+          $val  = "Not Defined"
 
           if ($pName -eq "Accounts: Rename administrator account") {
             $val = $AdminRenameStatus
@@ -115,6 +132,7 @@
             $val = $UACAdminOut
           }
           else {
+            # Default Registry → SecEdit fallback (unchanged)
             if ($id -like "MACHINE\*") {
               $regPath = $id.Replace("MACHINE\", "HKLM:\")
               $key  = Split-Path $regPath
