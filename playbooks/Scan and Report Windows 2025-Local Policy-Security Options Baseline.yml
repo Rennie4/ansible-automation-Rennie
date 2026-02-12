@@ -11,60 +11,68 @@
     remote_map_file: "C:\\temp\\security_options_map.json"
 
     # IMPORTANT:
-    # Keep your existing 89 settings EXACTLY as you had them (do not add the UAC items here).
-    # Example:
-    security_options_map:
-      # --- your 89 entries go here, unchanged ---
-      # "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\LmCompatibilityLevel": "Network security: LAN Manager authentication level"
-      # ...
-      # (Do not modify this block; leave it as in your last known good run.)
+    # Put your full 89-item map here if you want to push it.
+    # If you leave this empty (or very small), we WILL NOT overwrite the on-host file.
+    security_options_map: {}
 
   tasks:
 
-    - name: Transfer Policy Map (keep your 89 entries exactly)
+    - name: Ensure temp folder exists
+      ansible.windows.win_file:
+        path: C:\temp
+        state: directory
+
+    # Only update the on-host JSON IF you actually passed a non-empty map.
+    - name: Transfer Policy Map ONLY if non-empty (avoid overwriting a good file)
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
         dest: "{{ remote_map_file }}"
+      when: security_options_map is mapping and (security_options_map | length) > 0
 
-    # Use win_powershell to avoid argument-splitting errors and run multiline PS reliably
+    # Show us how many entries the on-host map has (after optional copy)
+    - name: Debug current on-host map count
+      ansible.windows.win_powershell:
+        script: |
+          if (Test-Path "C:\temp\security_options_map.json") {
+            $m = Get-Content "C:\temp\security_options_map.json" -Raw | ConvertFrom-Json
+            ($m.PSObject.Properties.Name).Count
+          } else {
+            "0"
+          }
+      register: _map_count
+
+    - name: Show map count (should be 89 before we add 3 UAC entries)
+      ansible.builtin.debug:
+        msg: "On-host security_options_map count: {{ _map_count.output | default(['0']) | first }}"
+
+    # Use win_powershell to run the audit (multiline-safe)
     - name: Run Audit (adds +3 UAC entries and iterates a deterministic list)
       ansible.windows.win_powershell:
         script: |
-          # Load your existing 89-map
-          $map = Get-Content "C:\temp\security_options_map.json" -Raw | ConvertFrom-Json
+          # Load existing on-host map (expected 89 entries)
+          $mapPath = "C:\temp\security_options_map.json"
+          if (-not (Test-Path $mapPath)) {
+            throw "Map file not found at $mapPath. Please provide your 89-item map."
+          }
+          $map = Get-Content $mapPath -Raw | ConvertFrom-Json
 
-          # Build a deterministic list to iterate (prevents missing late-added props)
+          # Build a deterministic list to iterate
           $mapList = @()
           foreach ($p in $map.PSObject.Properties) {
             $mapList += [PSCustomObject]@{ Id = $p.Name; Name = $p.Value }
           }
 
-          # --------------------------------------------------------------------
-          # ADD ONLY THESE 3 MISSING UAC SETTINGS (synthetic IDs -> friendly names)
-          # --------------------------------------------------------------------
+          # Add ONLY these 3 UAC items
           $extra = @(
-            [PSCustomObject]@{
-              Id   = 'UAC_INSTALL_DETECTION'
-              Name = 'UAC: Detect application installations and prompt for elevation'
-            },
-            [PSCustomObject]@{
-              Id   = 'UAC_STD_PROMPT_BEHAVIOR'
-              Name = 'UAC: Behavior of the elevation prompt for standard users'
-            },
-            [PSCustomObject]@{
-              Id   = 'UAC_ADMIN_PROMPT_BEHAVIOR'
-              Name = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
-            }
+            [PSCustomObject]@{ Id='UAC_INSTALL_DETECTION';   Name='UAC: Detect application installations and prompt for elevation' },
+            [PSCustomObject]@{ Id='UAC_STD_PROMPT_BEHAVIOR'; Name='UAC: Behavior of the elevation prompt for standard users' },
+            [PSCustomObject]@{ Id='UAC_ADMIN_PROMPT_BEHAVIOR'; Name='UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode' }
           )
-
-          # Append extras if not already present
           foreach ($e in $extra) {
-            if (-not ($mapList | Where-Object { $_.Id -eq $e.Id })) {
-              $mapList += $e
-            }
+            if (-not ($mapList | Where-Object { $_.Id -eq $e.Id })) { $mapList += $e }
           }
 
-          # Export local security policy for fallbacks
+          # Export local security policy for fallback values
           $secFile = "C:\temp\secedit_audit.inf"
           secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
 
@@ -89,16 +97,14 @@
           $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
           $AdminRenameStatus = if ($actualAdminName -ne "Administrator") { "Renamed$" } else { "Default (Administrator)" }
 
-          # UAC special cases (3 items)
+          # UAC special cases (3)
           $polKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
 
-          # 1) Detect application installs and prompt for elevation
           $EnableInstallerDetection = (Get-ItemProperty -Path $polKey -Name "EnableInstallerDetection" -ErrorAction SilentlyContinue)."EnableInstallerDetection"
           if     ($EnableInstallerDetection -eq 1) { $UACInstall = "Enabled" }
           elseif ($EnableInstallerDetection -eq 0) { $UACInstall = "Disabled" }
           else { $UACInstall = "Not Defined" }
 
-          # 2) Elevation prompt for standard users
           $UACStd = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorUser" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorUser"
           switch ($UACStd) {
             0 { $UACStdOut = "Automatically deny elevation requests (0)" }
@@ -107,7 +113,6 @@
             default { $UACStdOut = "Not Defined" }
           }
 
-          # 3) Elevation prompt for administrators in Admin Approval Mode
           $UACAdmin = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorAdmin" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorAdmin"
           switch ($UACAdmin) {
             0 { $UACAdminOut = "Elevate without prompting (0)" }
@@ -119,7 +124,7 @@
             default { $UACAdminOut = "Not Defined" }
           }
 
-          # Compose results from the deterministic list
+          # Compose results
           $results = foreach ($entry in $mapList) {
             $id    = $entry.Id
             $pName = $entry.Name
@@ -138,7 +143,6 @@
               $val = $UACAdminOut
             }
             else {
-              # Default Registry → SecEdit fallback
               if ($id -like "MACHINE\*") {
                 $regPath = $id.Replace("MACHINE\", "HKLM:\")
                 $key  = Split-Path $regPath
@@ -160,11 +164,10 @@
             [PSCustomObject]@{ Name = $pName; Value = $val }
           }
 
-          # Output lines (this becomes win_powershell.output)
+          # Emit lines for Ansible
           $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
       register: scan_output
 
-    # Normalize module output for template
     - name: Normalize scan_lines for template
       ansible.builtin.set_fact:
         scan_lines: "{{ scan_output.output | default(scan_output.stdout_lines | default([])) }}"
