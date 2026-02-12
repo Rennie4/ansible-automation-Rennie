@@ -103,9 +103,9 @@
       "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\NoConnectedUser": "Accounts: Block Microsoft accounts"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\MSV1_0\\AuditNTLMInboundThreshold": "Network security: Restrict NTLM: Audit Inbound NTLM Traffic"
       "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\RestrictNTLM\\AuditInboundNTLM": "Network security: Restrict NTLM: Audit NTLM in domain"
-      # (Truncated for brevity, but all 104 are now mapped in the logic)
 
   tasks:
+
     - name: Transfer Policy Map
       ansible.windows.win_copy:
         content: "{{ security_options_map | to_nice_json }}"
@@ -115,130 +115,96 @@
       ansible.windows.win_shell: |
         {% raw %}
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
-
-        # --- Export SecEdit ---
         $secFile = "C:\temp\secedit_audit.inf"
         secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
-
-        # --- Parse SecEdit robustly: capture only policy sections and decode type,value ---
         $secHash = @{}
+
         if (Test-Path $secFile) {
-          $section = $null
-          foreach ($line in Get-Content $secFile -Encoding Unicode) {
-            $l = $line.Trim()
-            if ($l -match '^\[(.+)\]$') { $section = $matches[1]; continue }
-            if (-not ($l -like '*=*')) { continue }
-            if ($section -notin @('Registry Values','System Access','Privilege Rights','Event Audit')) { continue }
+            Get-Content $secFile -Encoding Unicode | ForEach-Object {
+                if ($_ -match '=') {
+                    $p = $_.Split('=', 2)
+                    $k = $p[0].Trim()
+                    $v = $p[1].Trim().Trim('"')
 
-            $kv = $l.Split('=',2)
-            $k  = $kv[0].Trim()
-            $raw= $kv[1].Trim().Trim('"')
+                    if ($v -eq "7," -or $v -eq "7") { $v = "Enabled" }
+                    elseif ($v -match ',') { $v = $v.Split(',')[0] }
 
-            $type = $null
-            $data = $raw
-            if ($raw -match '^\s*(\d+),(.*)$') {
-              $type = [int]$matches[1]
-              $data = $matches[2].Trim()
+                    $secHash[$k] = $v
+                }
             }
+            Remove-Item $secFile
+        }
 
-            # Decode common registry types (REG_DWORD=4, REG_MULTI_SZ=7)
-            if ($type -eq 4) {
-              if ($data -match '^0x') { $num = [Convert]::ToInt32($data,16) } else { $num = [int]$data }
-              $secHash[$k] = $num.ToString()
-            }
-            elseif ($type -eq 7) {
-              $secHash[$k] = ($data -split '\s*,\s*') -join '; '
+        ##################################################################
+        # Detect Built-in Administrator Rename
+        ##################################################################
+        $adminSID = "S-1-5-21-*-500"
+        $adminAcct = Get-CimInstance Win32_UserAccount |
+                      Where-Object { $_.SID -like $adminSID -and $_.LocalAccount -eq $true }
+
+        $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
+
+        if ($actualAdminName -ne "Administrator") {
+            $AdminRenameStatus = "Renamed$"
+        } else {
+            $AdminRenameStatus = "Default (Administrator)"
+        }
+        ##################################################################
+
+        $results = foreach ($id in $map.psobject.Properties.Name) {
+            $val = "Not Defined"
+            $pName = $map.$id
+
+            if ($pName -eq "Accounts: Rename administrator account") {
+                $val = $AdminRenameStatus
             }
             else {
-              $secHash[$k] = $data
+
+                if ($id -like "MACHINE\*") {
+                    $regPath = $id.Replace("MACHINE\", "HKLM:\")
+                    $key  = Split-Path $regPath
+                    $name = Split-Path $regPath -Leaf
+
+                    if (Test-Path $key) {
+                        $rv = Get-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
+                        if ($rv -and $rv.$name -ne $null) {
+                            $val = $rv.$name.ToString()
+                        }
+                    }
+                }
+
+                if ($val -eq "Not Defined" -or $val -eq "") {
+                    $lookup = if ($secHash.ContainsKey($id)) { $id } else { Split-Path $id -Leaf }
+                    if ($secHash.ContainsKey($lookup)) { $val = $secHash[$lookup] }
+                }
+
+                if ($val -eq "0" -or $val -eq "3") { $val = "Disabled" }
+                elseif ($val -eq "1" -or $val -eq "4") { $val = "Enabled" }
+                elseif ($val -eq "536870912") { $val = "Require 128-bit encryption" }
             }
-          }
-          Remove-Item $secFile -Force -ErrorAction SilentlyContinue
+
+            [PSCustomObject]@{ Name = $pName; Value = $val }
         }
 
-        # --- Translators for common enumerations (kept minimal & accurate) ---
-        $enumMap = @{
-          # LM & NTLM
-          'MACHINE\System\CurrentControlSet\Control\Lsa\LmCompatibilityLevel' = @{
-            '0'='Send LM & NTLM responses'
-            '1'='Send LM & NTLM - use NTLMv2 session if negotiated'
-            '2'='Send NTLM response only'
-            '3'='Send NTLMv2 response only'
-            '4'='Send NTLMv2 response only; refuse LM'
-            '5'='Send NTLMv2 response only; refuse LM & NTLM'
-          }
-          # LDAP client signing (member)
-          'MACHINE\System\CurrentControlSet\Services\LDAP\LDAPClientIntegrity' = @{
-            '0'='None'
-            '1'='Negotiate signing'
-            '2'='Require signing'
-          }
-          # LDAP server signing (DC)
-          'LDAPServerIntegrity' = @{
-            '0'='None'
-            '1'='Negotiate signing'
-            '2'='Require signing'
-          }
-          # UAC prompts (admins)
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin' = @{
-            '0'='Elevate without prompting'
-            '1'='Prompt for credentials on secure desktop'
-            '2'='Prompt for consent on secure desktop'
-            '3'='Prompt for credentials'
-            '4'='Prompt for consent'
-            '5'='Prompt for consent for non-Windows binaries'
-          }
-          # UAC prompts (standard users)
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorUser' = @{
-            '0'='Automatically deny elevation requests'
-            '1'='Prompt for credentials on secure desktop'
-            '3'='Prompt for credentials'
-          }
-          # Smart card removal
-          'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\ScRemoveOption' = @{
-            '0'='No action'
-            '1'='Lock workstation'
-            '2'='Force logoff'
-          }
-        }
+        $results |
+            Sort-Object Name |
+            ForEach-Object { "$($_.Name)|$($_.Value)" }
+        {% endraw %}
+      register: scan_output
 
-        # Keys that should be treated as simple boolean (DWORD 0/1)
-        $boolKeys = @(
-          'EnableAdminAccount','EnableGuestAccount','DisableCAD','DontDisplayLastUserName',
-          'MACHINE\System\CurrentControlSet\Control\Lsa\NoLMHash',
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA',
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\PromptOnSecureDesktop',
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableInstallerDetection',
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\FilterAdministratorToken',
-          'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableVirtualization',
-          'MACHINE\System\CurrentControlSet\Services\LanmanWorkstation\Parameters\EnableSecuritySignature',
-          'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\EnableSecuritySignature',
-          'MACHINE\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy\Enabled'
-        )
+    - name: Generate HTML Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "../templates/baseline-local Policy-Security Options_report.j2"
+        dest: "{{ report_file }}"
+      vars:
+        scan_lines: "{{ corrected_scan_output | default(scan_output.stdout_lines) }}"
 
-        function Convert-Value([string]$key,[string]$raw) {
-          if ([string]::IsNullOrWhiteSpace($raw)) { return 'Not Defined' }
-
-          # Enumerations first
-          foreach ($mKey in $enumMap.Keys) {
-            if ($key -ieq $mKey) {
-              $map = $enumMap[$mKey]
-              if ($map.ContainsKey($raw)) { return $map[$raw] }
-              else { return $raw } # unknown value, show raw
-            }
-          }
-
-          # Simple booleans (DWORD 0/1)
-          if ($boolKeys -icontains $key) {
-            if ($raw -in @('1','true','True')) { return 'Enabled' }
-            elseif ($raw -in @('0','false','False')) { return 'Disabled' }
-            else { return $raw }
-          }
-
-          # Special-case constants
-          if ($raw -eq '536870912') { return 'Require 128-bit encryption' }
-
-          # Default: show raw as-is (number or string)
-          return $raw
-        }
-
+    - name: Push to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
+        src: "{{ report_file }}"
+        mode: put
+        region: "{{ aws_region }}"
