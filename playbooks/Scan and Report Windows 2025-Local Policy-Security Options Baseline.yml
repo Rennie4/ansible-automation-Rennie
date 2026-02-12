@@ -10,10 +10,10 @@
     report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
     remote_map_file: "C:\\temp\\security_options_map.json"
 
-    # IMPORTANT: keep your existing 89-map AS-IS here.
-    # (Do not include the 3 UAC entries in this YAML block; we add them dynamically in the script)
+    # KEEP YOUR EXISTING 89-ITEM MAP EXACTLY AS YOU HAVE IT.
+    # (Do not add the 3 UAC items here; the script appends them dynamically.)
     security_options_map:
-      # ... your 89 existing keys exactly as you already have them ...
+      # ... your 89 existing keys exactly as in your working file ...
 
   tasks:
 
@@ -31,23 +31,18 @@
         # --------------------------------------------------------------------
         # ADD ONLY THESE 3 MISSING UAC SETTINGS (synthetic IDs → friendly names)
         # --------------------------------------------------------------------
-        # 1) UAC: Detect application installations and prompt for elevation
-        # 2) UAC: Behavior of the elevation prompt for standard users
-        # 3) UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode
         $extra = [ordered]@{
-          'UAC_INSTALL_DETECTION'   = 'UAC: Detect application installations and prompt for elevation'
-          'UAC_STD_PROMPT_BEHAVIOR' = 'UAC: Behavior of the elevation prompt for standard users'
-          'UAC_ADMIN_PROMPT_BEHAVIOR' = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
+          'UAC_INSTALL_DETECTION'      = 'UAC: Detect application installations and prompt for elevation'
+          'UAC_STD_PROMPT_BEHAVIOR'    = 'UAC: Behavior of the elevation prompt for standard users'
+          'UAC_ADMIN_PROMPT_BEHAVIOR'  = 'UAC: Behavior of the elevation prompt for administrators in Admin Approval Mode'
         }
         foreach ($k in $extra.Keys) {
-          # only add if not present to avoid duplicates
           if (-not $map.PSObject.Properties.Name -contains $k) {
             Add-Member -InputObject $map -NotePropertyName $k -NotePropertyValue $extra[$k]
           }
         }
-        # --------------------------------------------------------------------
 
-        # Export local security policy for fallbacks (unchanged)
+        # Export local security policy for fallbacks
         $secFile = "C:\temp\secedit_audit.inf"
         secedit /export /areas SECURITYPOLICY /cfg $secFile | Out-Null
 
@@ -66,17 +61,13 @@
           Remove-Item $secFile -Force -ErrorAction SilentlyContinue
         }
 
-        # ------------------------------
-        # Special-case: Built-in Admin rename (kept from prior fix)
-        # ------------------------------
+        # Built-in Administrator rename detection (kept from prior fix)
         $adminSID = "S-1-5-21-*-500"
         $adminAcct = Get-CimInstance Win32_UserAccount | Where-Object { $_.SID -like $adminSID -and $_.LocalAccount -eq $true }
         $actualAdminName = if ($adminAcct) { $adminAcct.Name } else { "Administrator" }
         $AdminRenameStatus = if ($actualAdminName -ne "Administrator") { "Renamed$" } else { "Default (Administrator)" }
 
-        # ------------------------------
-        # Special-case: The 3 UAC settings (exact strings per CIS UI)
-        # ------------------------------
+        # UAC special cases (3 items)
         $polKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
 
         # 1) Detect application installs and prompt for elevation
@@ -85,7 +76,7 @@
         elseif ($EnableInstallerDetection -eq 0) { $UACInstall = "Disabled" }
         else { $UACInstall = "Not Defined" }
 
-        # 2) Behavior for standard users
+        # 2) Elevation prompt for standard users
         $UACStd = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorUser" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorUser"
         switch ($UACStd) {
           0 { $UACStdOut = "Automatically deny elevation requests (0)" }
@@ -94,7 +85,7 @@
           default { $UACStdOut = "Not Defined" }
         }
 
-        # 3) Behavior for administrators in Admin Approval Mode
+        # 3) Elevation prompt for administrators in Admin Approval Mode
         $UACAdmin = (Get-ItemProperty -Path $polKey -Name "ConsentPromptBehaviorAdmin" -ErrorAction SilentlyContinue)."ConsentPromptBehaviorAdmin"
         switch ($UACAdmin) {
           0 { $UACAdminOut = "Elevate without prompting (0)" }
@@ -106,18 +97,14 @@
           default { $UACAdminOut = "Not Defined" }
         }
 
-        # ------------------------------
-        # Compose results (map order)
-        # ------------------------------
+        # Compose results in map order
         $results = foreach ($id in $map.psobject.Properties.Name) {
           $pName = $map.$id
           $val = "Not Defined"
 
-          # Inject rename status
           if ($pName -eq "Accounts: Rename administrator account") {
             $val = $AdminRenameStatus
           }
-          # Inject 3 UAC items
           elseif ($id -eq 'UAC_INSTALL_DETECTION') {
             $val = $UACInstall
           }
@@ -128,7 +115,6 @@
             $val = $UACAdminOut
           }
           else {
-            # Default Registry → SecEdit fallback (unchanged)
             if ($id -like "MACHINE\*") {
               $regPath = $id.Replace("MACHINE\", "HKLM:\")
               $key  = Split-Path $regPath
