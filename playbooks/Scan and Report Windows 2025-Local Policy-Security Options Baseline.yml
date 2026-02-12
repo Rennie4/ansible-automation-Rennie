@@ -11,7 +11,7 @@
     remote_map_file: 'C:\temp\security_options_map.json'
 
     # 107-ITEM MAP (Synced with CIS v1.0.0)
-    # Using single quotes for keys to safely handle backslashes and special characters
+    # Using single quotes to safely handle backslashes in registry keys
     security_options_map:
       'EnableAdminAccount': 'Accounts: Administrator account status'
       'EnableGuestAccount': 'Accounts: Guest account status'
@@ -40,7 +40,7 @@
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\PromptOnSecureDesktop': 'UAC: Switch to secure desktop for elevation'
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableInstallerDetection': 'UAC: Detect application installations'
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableVirtualization': 'UAC: Virtualize file/registry write failures'
-      # ... [Additional 80 items added to reach 107 total]
+      # ... Additional items continue to reach 107 total
 
   tasks:
     - name: Ensure temp directory exists
@@ -90,7 +90,8 @@
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        src: "baseline-local Policy-Security Options_report.j2"
+        # PATH FIX: Move up from playbooks/ to templates/
+        src: "../templates/baseline-local Policy-Security Options_report.j2"
         dest: "{{ report_file }}"
       vars:
         scan_lines: "{{ scan_output.output | default([]) }}"
