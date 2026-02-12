@@ -4,15 +4,17 @@
   gather_facts: false
 
   vars:
+    # ===== S3 DESTINATION =====
     s3_bucket: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     s3_prefix: "cis-baseline-files/"
 
-    # Optional if your runner uses an instance role/profile
+    # ===== AWS AUTH (optional if the runner uses an instance profile) =====
     aws_access_key: "{{ vault_aws_access_key | default(omit) }}"
     aws_secret_key: "{{ vault_aws_secret_key | default(omit) }}"
     aws_session_token: "{{ vault_aws_session_token | default(omit) }}"
 
+    # ===== WORKING PATHS ON WINDOWS HOSTS =====
     work_root: "C:\\Temp\\ws-audit"
     artifacts_dir_name: "artifacts"
     artifacts_dir: "{{ work_root }}\\{{ artifacts_dir_name }}"
@@ -114,15 +116,15 @@
         json_report_data: "{{ json_raw.stdout | from_json }}"
 
     ####################################################################
-    # 5) RENDER HTML REPORT
+    # 5) RENDER HTML REPORT (USING YOUR EXISTING J2)
     ####################################################################
-    - name: "Render HTML Security Report"
+    - name: "Render HTML Security Report (Security Options focus)"
       template:
-        # Your repo has sibling folders: /playbooks and /templates
-        src: "{{ playbook_dir }}/../templates/security_report.j2"
-        # If you later move the J2 inside /playbooks/templates:
-        # src: "{{ playbook_dir }}/templates/security_report.j2"
-        dest: "{{ artifacts_dir }}\\security_report_{{ inventory_hostname }}.html"
+        # Your repo has sibling folders: /playbooks and /templates (per your screenshots)
+        src: "{{ playbook_dir }}/../templates/baseline-local Policy-Security Options_report.j2"
+        # If you later move the file under /playbooks/templates/, switch to:
+        # src: "{{ playbook_dir }}/templates/baseline-local Policy-Security Options_report.j2"
+        dest: "{{ artifacts_dir }}\\security_options_report_{{ inventory_hostname }}.html"
 
     ####################################################################
     # 6) ZIP ALL ARTIFACTS
