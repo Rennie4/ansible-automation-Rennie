@@ -1,8 +1,0 @@
-- name: Upload CIS CSV to S3
-  delegate_to: localhost
-  amazon.aws.s3_object:
-    bucket: "oml-s3-automation-sandbox"
-    object: "cis-baseline-files/cis_win2025_secopts_2.38-2.101.csv"
-    src: "{{ playbook_dir }}/cis_win2025_secopts_2.38-2.101.csv"
-    mode: put
-    region: "eu-west-1"
