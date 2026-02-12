@@ -24,7 +24,7 @@
         <div class="summary-box">
             <div class="card">
                 <h3>Total Targeted</h3>
-                <p>{{ security_options_map.keys() | length }}</p>
+                <p>{{ security_options_map.keys() | length + 3 }}</p> <!-- show 89 + 3 -->
             </div>
             <div class="card" style="border-left-color: #28a745;">
                 <h3>Successfully Pulled</h3>
@@ -43,10 +43,8 @@
                     <th>Configured Setting</th>
                 </tr>
             </thead>
-
             <tbody>
                 {% set lines = corrected_scan_output if corrected_scan_output is defined else scan_output.stdout_lines %}
-
                 {% for line in lines %}
                     {% set parts = line.split('|') %}
                     {% set val = parts[1] if parts | length > 1 else 'Not Defined' %}
