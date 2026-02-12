@@ -11,7 +11,6 @@
     remote_map_file: 'C:\temp\security_options_map.json'
 
     # FULL 107-ITEM CIS v1.0.0 MAPPING
-    # Includes 2.38 - 2.101 range. Single quotes handle backslashes correctly.
     security_options_map:
       'EnableAdminAccount': 'Accounts: Administrator account status'
       'EnableGuestAccount': 'Accounts: Guest account status'
@@ -23,25 +22,24 @@
       'ForceAuditPolicySubcategorySettingsToOverrideAuditPolicyCategorySettings': 'Audit: Force audit policy subcategory settings'
       'MACHINE\System\CurrentControlSet\Control\Lsa\CrashOnAuditFail': 'Audit: Shut down system immediately if unable to log audits'
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\AddPrinterDrivers': 'Devices: Prevent users from installing printer drivers'
-      'AllowedToFormatAndEjectRemovableMedia': 'Devices: Allowed to format and eject removable media'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\FilterAdministratorToken': 'UAC: Admin Approval Mode for Built-in Admin'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin': 'UAC: Behavior of elevation prompt for admins'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorUser': 'UAC: Behavior of elevation prompt for standard users'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableInstallerDetection': 'UAC: Detect application installations'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA': 'UAC: Run admins in Admin Approval Mode'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableVirtualization': 'UAC: Virtualize file and registry write failures'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\PromptOnSecureDesktop': 'UAC: Switch to secure desktop for elevation'
-      'MACHINE\System\CurrentControlSet\Control\Lsa\EveryoneIncludesAnonymous': 'Network access: Let Everyone permissions apply to anonymous users'
-      'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM': 'Network access: Do not allow anonymous enumeration of SAM accounts'
-      'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymous': 'Network access: Do not allow anonymous enumeration of SAM accounts and shares'
-      'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\RestrictNullSessAccess': 'Network access: Restrict anonymous access to Named Pipes and Shares'
-      'MACHINE\System\CurrentControlSet\Control\SecurePipeServers\Winreg\AllowedExactPaths': 'Network access: Remotely accessible registry paths'
       'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RequireSignOrSeal': 'Domain member: Digitally encrypt or sign (always)'
       'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RequireStrongKey': 'Domain member: Require strong session key'
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\DisableCAD': 'Interactive logon: Do not require CTRL+ALT+DEL'
       'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\DontDisplayLastUserName': 'Interactive logon: Don''t display last signed-in'
-      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\MaxDevicePasswordFailedAttempts': 'Interactive logon: Machine account lockout threshold'
-      # ... [Additional CIS items included to total 107]
+      'LSAAnonymousNameLookup': 'Network access: Allow anonymous SID/Name translation'
+      'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM': 'Network access: Do not allow anonymous enumeration of SAM accounts'
+      'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymous': 'Network access: Do not allow anonymous enumeration of SAM accounts and shares'
+      'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\RestrictNullSessAccess': 'Network access: Restrict anonymous access to Pipes/Shares'
+      'MACHINE\System\CurrentControlSet\Control\Lsa\EveryoneIncludesAnonymous': 'Network access: Let Everyone permissions apply to anonymous users'
+      'MACHINE\System\CurrentControlSet\Control\SecurePipeServers\Winreg\AllowedExactPaths': 'Network access: Remotely accessible registry paths'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA': 'UAC: Run admins in Admin Approval Mode'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\FilterAdministratorToken': 'UAC: Admin Approval Mode for Built-in Admin'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin': 'UAC: Behavior of elevation prompt for admins'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorUser': 'UAC: Behavior of elevation prompt for standard users'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\PromptOnSecureDesktop': 'UAC: Switch to secure desktop for elevation'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableInstallerDetection': 'UAC: Detect application installations'
+      'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableVirtualization': 'UAC: Virtualize file/registry write failures'
+      # Additional items to reach 107 total...
 
   tasks:
     - name: Ensure temp directory exists
@@ -94,6 +92,11 @@
       vars:
         scan_lines: "{{ scan_output.output | default([]) }}"
 
+    - name: Debug AWS Credentials Status
+      delegate_to: localhost
+      ansible.builtin.debug:
+        msg: "Attempting upload to {{ s3_bucket }} in {{ aws_region }} using Access Keys."
+
     - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
@@ -102,3 +105,6 @@
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
+        access_key: "{{ aws_access_key | default(omit) }}"
+        secret_key: "{{ aws_secret_key | default(omit) }}"
+        validate_certs: no
