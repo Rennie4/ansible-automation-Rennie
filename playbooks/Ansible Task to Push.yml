@@ -4,6 +4,16 @@
   gather_facts: no
 
   tasks:
+
+    - name: Write CIS CSV into project directory
+      copy:
+        dest: "{{ playbook_dir }}/cis_win2025_secopts_2.38-2.101.csv"
+        content: |
+          Control,DisplayName,RegistryPath
+          2.38,Accounts: Guest account status,N/A
+          2.39,Accounts: Limit local ...,HKLM\SYSTEM...
+          ...etc...
+
     - name: Upload CIS CSV to S3
       amazon.aws.s3_object:
         bucket: "oml-s3-automation-sandbox"
