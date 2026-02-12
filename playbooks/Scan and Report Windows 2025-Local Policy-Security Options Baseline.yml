@@ -23,7 +23,6 @@
 
     - name: Run Audit (adds +3 UAC entries and iterates a deterministic list)
       ansible.windows.win_shell: |
-        {% raw %}
         # Load your existing 89-map
         $map = Get-Content "C:\temp\security_options_map.json" | ConvertFrom-Json
 
@@ -155,7 +154,6 @@
         }
 
         $results | Sort-Object Name | ForEach-Object { "$($_.Name)|$($_.Value)" }
-        {% endraw %}
       register: scan_output
 
     - name: Generate HTML Report
