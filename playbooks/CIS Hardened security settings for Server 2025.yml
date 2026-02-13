@@ -1,6 +1,7 @@
 ---
 - name: CIS Hardened security settings for Server 2025
-  hosts: windows
+  hosts: all
+  gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files/"
@@ -57,11 +58,7 @@
         dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
       check_mode: false
 
-    - name: Upload Report to S3
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}Audit_{{ ansible_hostname }}.html"
-        src: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
-        region: "{{ aws_region }}"
-        mode: put
+    - name: Upload Report to S3 via PowerShell
+      ansible.windows.win_shell: |
+        Write-S3Object -BucketName "{{ s3_bucket }}" -Key "{{ s3_path }}Audit_{{ ansible_hostname }}.html" -File "C:\temp\Audit_{{ ansible_hostname }}.html" -Region "{{ aws_region }}"
       check_mode: false
