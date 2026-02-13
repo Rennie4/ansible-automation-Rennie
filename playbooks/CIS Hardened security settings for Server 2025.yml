@@ -6,7 +6,7 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Matches the naming convention in your working template
+    # This generates the file on the Ansible Controller
     report_file: "{{ playbook_dir }}/Audit_Report_{{ inventory_hostname }}.html"
 
   tasks:
@@ -61,11 +61,12 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
+        # Logic: cis-baseline-files/Audit_EC2AMAZ-808N0JM.html
         object: "{{ s3_path }}/Audit_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
-        # Uses the credentials already loaded in your Tower/AWX environment
+        # These pull from your refreshed "aws keys" credential
         access_key: "{{ aws_access_key | default(omit) }}"
         secret_key: "{{ aws_secret_key | default(omit) }}"
         session_token: "{{ aws_session_token | default(omit) }}"
