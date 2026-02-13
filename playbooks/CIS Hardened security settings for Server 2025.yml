@@ -6,8 +6,8 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Ensures a clean file name on the controller
-    report_file: "/tmp/Audit_{{ inventory_hostname }}.html"
+    # Using /tmp to ensure no permission issues on the controller
+    report_file: "/tmp/Audit_Report_{{ inventory_hostname }}.html"
 
   tasks:
     - name: "2.3.2.1: Audit Printer Driver Installation"
@@ -61,13 +61,19 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Forces the file into the cis-baseline-files folder
-        object: "{{ s3_path }}/Audit_{{ inventory_hostname }}.html"
+        # Using a hardcoded path structure to match your working folder exactly
+        object: "cis-baseline-files/Audit_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
-        # These pull directly from the "aws keys" credential in your template
+        # Automatically pulls from your "aws keys"
         access_key: "{{ aws_access_key | default(omit) }}"
         secret_key: "{{ aws_secret_key | default(omit) }}"
         session_token: "{{ aws_session_token | default(omit) }}"
         validate_certs: no
+      register: s3_upload_status
+
+    - name: Debug S3 Upload Path
+      delegate_to: localhost
+      debug:
+        msg: "File should be at: https://{{ s3_bucket }}.s3.{{ aws_region }}.amazonaws.com/cis-baseline-files/Audit_{{ inventory_hostname }}.html"
