@@ -1,46 +1,35 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>CIS Audit Report: Windows Server 2025</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f4f7f6; }
-        .container { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 30px; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #f8f9fa; color: #34495e; }
-        .compliant { color: #27ae60; font-weight: bold; }
-        .non-compliant { color: #e74c3c; font-weight: bold; }
-        .info { font-style: italic; color: #7f8c8d; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        .compliant { color: green; font-weight: bold; }
+        .non-compliant { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>CIS Compliance Audit: {{ ansible_hostname }}</h1>
-        <p class="info">Job Type: <strong>CHECK MODE</strong> | Generated: {{ ansible_date_time.iso8601 }}</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>CIS ID</th>
-                    <th>Category / Subcategory</th>
-                    <th>Setting Name</th>
-                    <th>Audit Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in audit_results %}
-                <tr>
-                    <td>{{ item.id }}</td>
-                    <td>{{ item.category }}</td>
-                    <td>{{ item.name }}</td>
-                    <td class="{{ 'non-compliant' if item.changed else 'compliant' }}">
-                        {{ 'NON-COMPLIANT (Change Required)' if item.changed else 'COMPLIANT' }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="header">
+        <h1>CIS Audit: Windows Server 2025</h1>
+        <p>Host: {{ ansible_hostname }} | Mode: CHECK</p>
     </div>
+    <table>
+        <tr>
+            <th>CIS ID</th>
+            <th>Setting Name</th>
+            <th>Status</th>
+        </tr>
+        {% for item in audit_results %}
+        <tr>
+            <td>{{ item.id }}</td>
+            <td>{{ item.name }}</td>
+            <td class="{{ 'non-compliant' if item.changed else 'compliant' }}">
+                {{ 'NON-COMPLIANT' if item.changed else 'COMPLIANT' }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
 </body>
 </html>
