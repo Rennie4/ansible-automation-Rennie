@@ -1,58 +1,67 @@
 ---
-- name: Apply CIS Hardened Settings for Server 2025
+- name: CIS Hardened settings for Server 2025
   hosts: windows
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files/"
     aws_region: "eu-west-1"
-    
+
   tasks:
-    - name: Apply Security Option: System Cryptography (FIPS)
+    # 2.3.2: Devices
+    - name: "2.3.2.1: Prevent users from installing printer drivers"
       ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy
-        name: Enabled
-        data: 1
+        path: HKLM:\System\CurrentControlSet\Control\Print\Providers\LanMan Print Provider
+        name: AddPrinterDrivers
+        [cite_start]data: 1 # Enabled [cite: 2]
         type: dword
+      register: check_printer
 
-    - name: Apply Security Option: Network Security (NTLM Session)
+    # 2.3.4: Domain Member
+    - name: "2.3.4.1: Digitally encrypt or sign secure channel data (always)"
       ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0
-        name: NTLMMinServerSec
-        data: 537395200
+        path: HKLM:\System\CurrentControlSet\Services\Netlogon\Parameters
+        name: RequireSignOrSeal
+        [cite_start]data: 1 # Enabled [cite: 2]
         type: dword
+      register: check_domain_sign
 
-    - name: Apply Security Option: Microsoft Network Server (Digitally Sign)
+    # 2.3.9: Microsoft Network Server
+    - name: "2.3.9.1: Digitally sign communications (always)"
       ansible.windows.win_regedit:
         path: HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters
         name: requiresecurenegotiate
-        data: 1
+        [cite_start]data: 1 # Enabled [cite: 5]
         type: dword
+      register: check_smb_server
 
-    - name: Apply Security Option: User Account Control (Secure Desktop)
+    # 2.3.17: User Account Control
+    - name: "2.3.17.x: Switch to the secure desktop when prompted for elevation"
       ansible.windows.win_regedit:
         path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
         name: PromptOnSecureDesktop
-        data: 1
+        [cite_start]data: 1 # Enabled [cite: 7]
         type: dword
+      register: check_uac
 
-    # Verification Logic to feed the J2 Template
-    - name: Verify Applied Settings
+    - name: Consolidate Audit Facts
       set_fact:
-        hardening_results:
-          - { category: "System Cryptography", name: "FIPS Algorithm Policy", status: "PASS" }
-          - { category: "Network Security", name: "NTLM Session Security", status: "PASS" }
-          - { category: "Microsoft Network Server", name: "Digital SMB Signing", status: "PASS" }
-          - { category: "User Account Control", name: "Secure Desktop Prompts", status: "PASS" }
+        audit_results:
+          - { id: "2.3.2.1", category: "Devices", name: "Prevent printer driver install", changed: "{{ check_printer.changed }}" }
+          - { id: "2.3.4.1", category: "Domain Member", name: "Secure Channel Signing", changed: "{{ check_domain_sign.changed }}" }
+          - { id: "2.3.9.1", category: "MS Network Server", name: "SMB Signing (Always)", changed: "{{ check_smb_server.changed }}" }
+          - { id: "2.3.17.x", category: "UAC", name: "Secure Desktop Prompts", changed: "{{ check_uac.changed }}" }
 
-    - name: Render HTML Report from J2 Template
+    - name: Generate Audit Report (Runs even in Check Mode)
       ansible.builtin.template:
         src: "CIS Hardened settings for Server 2025.j2"
-        dest: "C:\\temp\\CIS_Report_{{ ansible_hostname }}.html"
+        dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
+      check_mode: false # Crucial to ensure the file is created during audit [cite: 2025-12-24]
 
-    - name: Upload Report to S3 Bucket
+    - name: Upload Report to S3
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}CIS_Report_{{ ansible_hostname }}.html"
-        src: "C:\\temp\\CIS_Report_{{ ansible_hostname }}.html"
+        object: "{{ s3_path }}Audit_{{ ansible_hostname }}.html"
+        src: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
         region: "{{ aws_region }}"
         mode: put
+      check_mode: false # Crucial to ensure upload happens during audit
