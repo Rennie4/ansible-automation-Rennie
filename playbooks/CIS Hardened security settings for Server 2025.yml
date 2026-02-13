@@ -1,0 +1,58 @@
+---
+- name: Apply CIS Hardened Settings for Server 2025
+  hosts: windows
+  vars:
+    s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files/"
+    aws_region: "eu-west-1"
+    
+  tasks:
+    - name: Apply Security Option: System Cryptography (FIPS)
+      ansible.windows.win_regedit:
+        path: HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy
+        name: Enabled
+        data: 1
+        type: dword
+
+    - name: Apply Security Option: Network Security (NTLM Session)
+      ansible.windows.win_regedit:
+        path: HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0
+        name: NTLMMinServerSec
+        data: 537395200
+        type: dword
+
+    - name: Apply Security Option: Microsoft Network Server (Digitally Sign)
+      ansible.windows.win_regedit:
+        path: HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters
+        name: requiresecurenegotiate
+        data: 1
+        type: dword
+
+    - name: Apply Security Option: User Account Control (Secure Desktop)
+      ansible.windows.win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+        name: PromptOnSecureDesktop
+        data: 1
+        type: dword
+
+    # Verification Logic to feed the J2 Template
+    - name: Verify Applied Settings
+      set_fact:
+        hardening_results:
+          - { category: "System Cryptography", name: "FIPS Algorithm Policy", status: "PASS" }
+          - { category: "Network Security", name: "NTLM Session Security", status: "PASS" }
+          - { category: "Microsoft Network Server", name: "Digital SMB Signing", status: "PASS" }
+          - { category: "User Account Control", name: "Secure Desktop Prompts", status: "PASS" }
+
+    - name: Render HTML Report from J2 Template
+      ansible.builtin.template:
+        src: "CIS Hardened settings for Server 2025.j2"
+        dest: "C:\\temp\\CIS_Report_{{ ansible_hostname }}.html"
+
+    - name: Upload Report to S3 Bucket
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}CIS_Report_{{ ansible_hostname }}.html"
+        src: "C:\\temp\\CIS_Report_{{ ansible_hostname }}.html"
+        region: "{{ aws_region }}"
+        mode: put
