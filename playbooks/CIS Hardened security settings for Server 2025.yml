@@ -8,7 +8,6 @@
     aws_region: "eu-west-1"
 
   tasks:
-    # 2.3.2.1: Devices: Prevent users from installing printer drivers
     - name: "2.3.2.1: Audit Printer Driver Installation"
       ansible.windows.win_regedit:
         path: HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Provider
@@ -17,7 +16,6 @@
         type: dword
       register: check_printer
 
-    # 2.3.4.1: Domain member: Digitally encrypt or sign secure channel data (always)
     - name: "2.3.4.1: Audit Secure Channel Signing"
       ansible.windows.win_regedit:
         path: HKLM:\System\CurrentControlSet\Services\Netlogon\Parameters
@@ -26,7 +24,6 @@
         type: dword
       register: check_domain_sign
 
-    # 2.3.9.1: Microsoft network server: Digitally sign communications (always)
     - name: "2.3.9.1: Audit SMB Signing (Always)"
       ansible.windows.win_regedit:
         path: HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters
@@ -35,7 +32,6 @@
         type: dword
       register: check_smb_server
 
-    # 2.3.17.x: User Account Control: Switch to the secure desktop
     - name: "2.3.17.x: Audit UAC Secure Desktop"
       ansible.windows.win_regedit:
         path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
@@ -54,7 +50,7 @@
 
     - name: Generate Audit Report
       ansible.builtin.template:
-        src: "CIS Hardened security settings for Server 2025.j2"
+        src: server_2025_securitysettings.j2 # This must match the filename below
         dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
       check_mode: false
 
