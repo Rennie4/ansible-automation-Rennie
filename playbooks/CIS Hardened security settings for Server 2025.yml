@@ -6,7 +6,6 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Matches your working template's local file naming
     report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
 
   tasks:
@@ -61,13 +60,13 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Mirroring your working template's pathing exactly
         object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
-        # Uses your updated "aws keys" with the STS Token
-        access_key: "{{ aws_access_key | default(omit) }}"
-        secret_key: "{{ aws_secret_key | default(omit) }}"
-        session_token: "{{ aws_session_token | default(omit) }}"
         validate_certs: no
+      register: s3_upload_result
+
+    - name: Debug S3 upload result
+      debug:
+        var: s3_upload_result
