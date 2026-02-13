@@ -6,8 +6,8 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # This generates the file on the Ansible Controller
-    report_file: "{{ playbook_dir }}/Audit_Report_{{ inventory_hostname }}.html"
+    # Ensures a clean file name on the controller
+    report_file: "/tmp/Audit_{{ inventory_hostname }}.html"
 
   tasks:
     - name: "2.3.2.1: Audit Printer Driver Installation"
@@ -61,12 +61,12 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Logic: cis-baseline-files/Audit_EC2AMAZ-808N0JM.html
+        # Forces the file into the cis-baseline-files folder
         object: "{{ s3_path }}/Audit_{{ inventory_hostname }}.html"
         src: "{{ report_file }}"
         mode: put
         region: "{{ aws_region }}"
-        # These pull from your refreshed "aws keys" credential
+        # These pull directly from the "aws keys" credential in your template
         access_key: "{{ aws_access_key | default(omit) }}"
         secret_key: "{{ aws_secret_key | default(omit) }}"
         session_token: "{{ aws_session_token | default(omit) }}"
