@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .header { background: #0056b3; color: white; padding: 10px; border-radius: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .pass { color: #28a745; font-weight: bold; }
+        .fail { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>CIS Hardening Compliance Report: {{ ansible_hostname }}</h2>
+        <p>Generated: {{ ansible_date_time.iso8601 }}</p>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>CIS Section / Subcategory</th>
+                <th>Setting Name</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for result in hardening_results %}
+            <tr>
+                <td>{{ result.category }}</td>
+                <td>{{ result.name }}</td>
+                <td class="{{ result.status | lower }}">{{ result.status }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
