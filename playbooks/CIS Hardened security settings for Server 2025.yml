@@ -1,5 +1,5 @@
 ---
-- name: CIS Hardened settings for Server 2025
+- name: CIS Hardened security settings for Server 2025
   hosts: windows
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
@@ -7,17 +7,16 @@
     aws_region: "eu-west-1"
 
   tasks:
-    # CIS 2.3.2.1: Devices - Prevent users from installing printer drivers
-    # [cite_start]Path verified from CIS Benchmark v1.0.0 [cite: 2]
+    # 2.3.2.1: Devices: Prevent users from installing printer drivers
     - name: "2.3.2.1: Audit Printer Driver Installation"
       ansible.windows.win_regedit:
-        path: HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers
-        name: RegisterSpoolerRemoteRpcEndPoint
+        path: HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Provider
+        name: AddPrinterDrivers
         data: 1
         type: dword
       register: check_printer
 
-    # CIS 2.3.4.1: Domain Member - Secure channel signing
+    # 2.3.4.1: Domain member: Digitally encrypt or sign secure channel data (always)
     - name: "2.3.4.1: Audit Secure Channel Signing"
       ansible.windows.win_regedit:
         path: HKLM:\System\CurrentControlSet\Services\Netlogon\Parameters
@@ -26,8 +25,16 @@
         type: dword
       register: check_domain_sign
 
-    # CIS 2.3.17.x: UAC - Secure Desktop
-    # [cite_start]Verified: Path and value from CIS Benchmark [cite: 4]
+    # 2.3.9.1: Microsoft network server: Digitally sign communications (always)
+    - name: "2.3.9.1: Audit SMB Signing (Always)"
+      ansible.windows.win_regedit:
+        path: HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters
+        name: requiresecurenegotiate
+        data: 1
+        type: dword
+      register: check_smb_server
+
+    # 2.3.17.x: User Account Control: Switch to the secure desktop
     - name: "2.3.17.x: Audit UAC Secure Desktop"
       ansible.windows.win_regedit:
         path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
@@ -36,18 +43,19 @@
         type: dword
       register: check_uac
 
-    - name: Consolidate Audit Results
+    - name: Consolidate Audit Facts
       set_fact:
         audit_results:
           - { id: "2.3.2.1", category: "Devices", name: "Prevent printer driver install", changed: "{{ check_printer.changed }}" }
           - { id: "2.3.4.1", category: "Domain Member", name: "Secure Channel Signing", changed: "{{ check_domain_sign.changed }}" }
+          - { id: "2.3.9.1", category: "MS Network Server", name: "SMB Signing (Always)", changed: "{{ check_smb_server.changed }}" }
           - { id: "2.3.17.x", category: "UAC", name: "Secure Desktop Prompts", changed: "{{ check_uac.changed }}" }
 
     - name: Generate Audit Report
       ansible.builtin.template:
-        src: "CIS Hardened settings for Server 2025.j2"
+        src: "CIS Hardened security settings for Server 2025.j2"
         dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
-      [cite_start]check_mode: false # Ensure report is created during 'check' run [cite: 6]
+      check_mode: false
 
     - name: Upload Report to S3
       amazon.aws.s3_object:
@@ -56,4 +64,4 @@
         src: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
         region: "{{ aws_region }}"
         mode: put
-      check_mode: false # Ensure upload occurs during 'check' run
+      check_mode: false
