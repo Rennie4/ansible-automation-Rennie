@@ -6,20 +6,20 @@
         .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        .compliant { color: green; font-weight: bold; }
-        .non-compliant { color: red; font-weight: bold; }
+        .compliant { color: #27ae60; font-weight: bold; }
+        .non-compliant { color: #e74c3c; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>CIS Audit: Windows Server 2025</h1>
-        <p>Host: {{ ansible_hostname }} | Mode: CHECK</p>
+        <h1>CIS Compliance Audit: Windows Server 2025</h1>
+        <p>Target Host: {{ ansible_hostname }} | Mode: CHECK (Audit Only)</p>
     </div>
     <table>
         <tr>
             <th>CIS ID</th>
             <th>Setting Name</th>
-            <th>Status</th>
+            <th>Current Compliance</th>
         </tr>
         {% for item in audit_results %}
         <tr>
