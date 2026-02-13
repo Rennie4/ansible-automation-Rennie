@@ -50,12 +50,16 @@
 
     - name: Generate Audit Report
       ansible.builtin.template:
-        # This path matches your specific folder structure exactly
         src: "../templates/server_2025_securitysettings.j2"
         dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
       check_mode: false
 
-    - name: Upload Report to S3 via PowerShell
+    - name: Upload Report to S3 via PowerShell (with explicit keys)
       ansible.windows.win_shell: |
-        Write-S3Object -BucketName "{{ s3_bucket }}" -Key "{{ s3_path }}Audit_{{ ansible_hostname }}.html" -File "C:\temp\Audit_{{ ansible_hostname }}.html" -Region "{{ aws_region }}"
+        Write-S3Object -BucketName "{{ s3_bucket }}" `
+                       -Key "{{ s3_path }}Audit_{{ ansible_hostname }}.html" `
+                       -File "C:\temp\Audit_{{ ansible_hostname }}.html" `
+                       -Region "{{ aws_region }}" `
+                       -AccessKey "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}" `
+                       -SecretKey "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
       check_mode: false
