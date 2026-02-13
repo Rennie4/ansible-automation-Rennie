@@ -2,34 +2,36 @@
 <html>
 <head>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 30px; }
-        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 5px; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 30px; background-color: #f8f9fa; }
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #202124; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        .compliant { color: #27ae60; font-weight: bold; }
-        .non-compliant { color: #e74c3c; font-weight: bold; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        th { background-color: #f1f3f4; color: #5f6368; }
+        .status-pass { color: #1e8e3e; font-weight: bold; }
+        .status-fail { color: #d93025; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>CIS Compliance Audit: Windows Server 2025</h1>
-        <p>Target Host: {{ ansible_hostname }} | Mode: CHECK (Audit Only)</p>
+    <div class="container">
+        <h1>CIS Audit: {{ ansible_hostname }}</h1>
+        <p>Target: Windows Server 2025 | Job Type: <strong>CHECK</strong></p>
+        <table>
+            <tr>
+                <th>CIS ID</th>
+                <th>Setting Name</th>
+                <th>Result</th>
+            </tr>
+            {% for item in audit_results %}
+            <tr>
+                <td>{{ item.id }}</td>
+                <td>{{ item.name }}</td>
+                <td class="{{ 'status-fail' if item.changed else 'status-pass' }}">
+                    {{ 'NON-COMPLIANT' if item.changed else 'COMPLIANT' }}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
     </div>
-    <table>
-        <tr>
-            <th>CIS ID</th>
-            <th>Setting Name</th>
-            <th>Current Compliance</th>
-        </tr>
-        {% for item in audit_results %}
-        <tr>
-            <td>{{ item.id }}</td>
-            <td>{{ item.name }}</td>
-            <td class="{{ 'non-compliant' if item.changed else 'compliant' }}">
-                {{ 'NON-COMPLIANT' if item.changed else 'COMPLIANT' }}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
 </body>
 </html>
