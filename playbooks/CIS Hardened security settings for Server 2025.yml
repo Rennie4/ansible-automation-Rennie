@@ -4,8 +4,10 @@
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
-    s3_path: "cis-baseline-files/"
+    s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
+    # Matches the naming convention in your working template
+    report_file: "{{ playbook_dir }}/Audit_Report_{{ inventory_hostname }}.html"
 
   tasks:
     - name: "2.3.2.1: Audit Printer Driver Installation"
@@ -43,23 +45,28 @@
     - name: Consolidate Audit Facts
       set_fact:
         audit_results:
-          - { id: "2.3.2.1", category: "Devices", name: "Prevent printer driver install", changed: "{{ check_printer.changed }}" }
-          - { id: "2.3.4.1", category: "Domain Member", name: "Secure Channel Signing", changed: "{{ check_domain_sign.changed }}" }
-          - { id: "2.3.9.1", category: "MS Network Server", name: "SMB Signing (Always)", changed: "{{ check_smb_server.changed }}" }
-          - { id: "2.3.17.x", category: "UAC", name: "Secure Desktop Prompts", changed: "{{ check_uac.changed }}" }
+          - { id: "2.3.2.1", name: "Prevent printer driver install", changed: "{{ check_printer.changed }}" }
+          - { id: "2.3.4.1", name: "Secure Channel Signing", changed: "{{ check_domain_sign.changed }}" }
+          - { id: "2.3.9.1", name: "SMB Signing (Always)", changed: "{{ check_smb_server.changed }}" }
+          - { id: "2.3.17.x", name: "Secure Desktop Prompts", changed: "{{ check_uac.changed }}" }
 
-    - name: Generate Audit Report
+    - name: Generate Local HTML Report
+      delegate_to: localhost
       ansible.builtin.template:
         src: "../templates/server_2025_securitysettings.j2"
-        dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
+        dest: "{{ report_file }}"
       check_mode: false
 
-    - name: Upload Report to S3 via PowerShell
-      ansible.windows.win_shell: |
-        Write-S3Object -BucketName "{{ s3_bucket }}" `
-                       -Key "{{ s3_path }}Audit_{{ ansible_hostname }}.html" `
-                       -File "C:\temp\Audit_{{ ansible_hostname }}.html" `
-                       -Region "{{ aws_region }}" `
-                       -AccessKey "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}" `
-                       -SecretKey "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
-      check_mode: false
+    - name: Upload Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket }}"
+        object: "{{ s3_path }}/Audit_{{ inventory_hostname }}.html"
+        src: "{{ report_file }}"
+        mode: put
+        region: "{{ aws_region }}"
+        # Uses the credentials already loaded in your Tower/AWX environment
+        access_key: "{{ aws_access_key | default(omit) }}"
+        secret_key: "{{ aws_secret_key | default(omit) }}"
+        session_token: "{{ aws_session_token | default(omit) }}"
+        validate_certs: no
