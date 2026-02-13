@@ -50,7 +50,8 @@
 
     - name: Generate Audit Report
       ansible.builtin.template:
-        src: server_2025_securitysettings.j2 # This must match the filename below
+        # This path matches your specific folder structure exactly
+        src: "../templates/server_2025_securitysettings.j2"
         dest: "C:\\temp\\Audit_{{ ansible_hostname }}.html"
       check_mode: false
 
