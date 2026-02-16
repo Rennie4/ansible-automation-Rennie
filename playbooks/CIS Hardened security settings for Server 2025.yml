@@ -1,70 +1,36 @@
 ---
 - name: CIS Hardened security settings for Server 2025
-  hosts: all
+  hosts: windows_server_2025
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    report_file: "{{ playbook_dir }}/Security_Options_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: "2.3.2.1: Audit Printer Driver Installation"
-      ansible.windows.win_regedit:
-        path: HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Provider
-        name: AddPrinterDrivers
-        data: 1
-        type: dword
-      register: check_printer
+    # ... [Your Hardening Tasks Here] ...
 
-    - name: "2.3.4.1: Audit Secure Channel Signing"
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Services\Netlogon\Parameters
-        name: RequireSignOrSeal
-        data: 1
-        type: dword
-      register: check_domain_sign
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
 
-    - name: "2.3.9.1: Audit SMB Signing (Always)"
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters
-        name: requiresecurenegotiate
-        data: 1
-        type: dword
-      register: check_smb_server
-
-    - name: "2.3.17.x: Audit UAC Secure Desktop"
-      ansible.windows.win_regedit:
-        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-        name: PromptOnSecureDesktop
-        data: 1
-        type: dword
-      register: check_uac
-
-    - name: Consolidate Audit Facts
-      set_fact:
-        audit_results:
-          - { id: "2.3.2.1", name: "Prevent printer driver install", changed: "{{ check_printer.changed }}" }
-          - { id: "2.3.4.1", name: "Secure Channel Signing", changed: "{{ check_domain_sign.changed }}" }
-          - { id: "2.3.9.1", name: "SMB Signing (Always)", changed: "{{ check_smb_server.changed }}" }
-          - { id: "2.3.17.x", name: "Secure Desktop Prompts", changed: "{{ check_uac.changed }}" }
-
-    - name: Generate Local HTML Report
+    - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "../templates/server_2025_securitysettings.j2"
-        dest: "{{ report_file }}"
-      check_mode: false
+        src: "audit_report.j2"
+        dest: "{{ playbook_dir }}/reports/Audit_Report_{{ inventory_hostname }}.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "{{ s3_path }}/Security_Options_{{ inventory_hostname }}.html"
-        src: "{{ report_file }}"
+        # This matches your working template logic to hit the right folder
+        object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+        src: "{{ playbook_dir }}/reports/Audit_Report_{{ inventory_hostname }}.html"
         mode: put
         region: "{{ aws_region }}"
-        validate_certs: no
       register: s3_upload_result
 
     - name: Debug S3 upload result
