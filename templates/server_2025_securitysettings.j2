@@ -3,41 +3,33 @@
 <head>
     <title>CIS Hardened Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; line-height: 1.5; }
-        .header { background-color: #004a99; color: white; padding: 20px; border-radius: 5px; }
-        .status-box { background-color: #e7f3fe; border-left: 6px solid #2196F3; padding: 15px; margin: 20px 0; }
+        body { font-family: sans-serif; margin: 30px; }
+        .success-banner { background-color: #d4edda; color: #155724; padding: 15px; border-radius: 4px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>CIS Security Audit: {{ inventory_hostname }}</h1>
-        <p>Generated: {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+    <div class="success-banner">
+        <h2>CIS Audit Completed for {{ inventory_hostname }}</h2>
     </div>
-
-    <div class="status-box">
-        <strong>Hardening Status:</strong> Settings applied and verified via AAP.
-    </div>
-
+    <p><strong>Scan Time:</strong> {{ ansible_date_time.iso8601 }}</p>
+    <p><strong>Bucket:</strong> {{ s3_bucket }}</p>
+    
     <table>
         <tr>
-            <th>Control Description</th>
-            <th>Result</th>
+            <th>Control</th>
+            <th>Status</th>
         </tr>
         <tr>
-            <td>Audit Printer Driver Installation (2.3.2.1)</td>
-            <td>Success</td>
+            <td>Printer Driver Installation (2.3.2.1)</td>
+            <td>Applied</td>
         </tr>
         <tr>
-            <td>Audit SMB Signing (2.3.9.1)</td>
-            <td>Success</td>
+            <td>Audit SMB Signing (Always) (2.3.9.1)</td>
+            <td>Applied</td>
         </tr>
     </table>
-
-    <p style="color: #666; font-size: 12px; margin-top: 40px;">
-        Destination: {{ s3_bucket }}/{{ s3_path }}
-    </p>
 </body>
 </html>
