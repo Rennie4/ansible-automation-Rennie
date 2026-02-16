@@ -2,30 +2,13 @@
 <html>
 <head>
     <title>CIS Hardened Report - {{ inventory_hostname }}</title>
-    <style>
-        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
-        th { background: #eee; text-align: left; padding: 10px; border: 1px solid #ccc; }
-        td { padding: 10px; border: 1px solid #ccc; }
-        table { width: 100%; border-collapse: collapse; }
-    </style>
 </head>
 <body>
-    <h2>CIS Hardening Report: {{ inventory_hostname }}</h2>
-    <p><strong>Generation Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
-    
-    <table>
-        <tr>
-            <th>Setting Description</th>
-            <th>Status</th>
-        </tr>
-        <tr>
-            <td>Audit Printer Driver Installation (2.3.2.1)</td>
-            <td>Configured</td>
-        </tr>
-        <tr>
-            <td>Audit SMB Signing (2.3.9.1)</td>
-            <td>Configured</td>
-        </tr>
-    </table>
+    <h1>Security Audit: {{ inventory_hostname }}</h1>
+    <hr>
+    <p><strong>Verification Test:</strong> Successful</p>
+    <p><strong>Ansible Version:</strong> {{ ansible_version.full }}</p>
+    <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+    <p><strong>Time Generated:</strong> {{ ansible_date_time.iso8601 }}</p>
 </body>
 </html>
