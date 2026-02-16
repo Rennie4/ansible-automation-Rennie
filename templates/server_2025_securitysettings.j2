@@ -6,9 +6,8 @@
 <body>
     <h1>Security Audit: {{ inventory_hostname }}</h1>
     <hr>
-    <p><strong>Verification Test:</strong> Successful</p>
-    <p><strong>Ansible Version:</strong> {{ ansible_version.full }}</p>
+    <p><strong>Status:</strong> Success - Template found in /templates folder</p>
     <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
-    <p><strong>Time Generated:</strong> {{ ansible_date_time.iso8601 }}</p>
+    <p><strong>Time:</strong> {{ ansible_date_time.iso8601 }}</p>
 </body>
 </html>
