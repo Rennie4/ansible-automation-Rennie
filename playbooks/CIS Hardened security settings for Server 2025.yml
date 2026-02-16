@@ -6,31 +6,24 @@
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Unified path for the AAP execution environment
-    temp_report_path: "/tmp/Audit_Report_{{ inventory_hostname }}.html"
 
   tasks:
     # ... [Hardening Tasks] ...
 
-    - name: Generate HTML Report
-      delegate_to: localhost
-      ansible.builtin.template:
-        # Uses the path that worked in your debug console test
-        src: "../templates/server_2025_securitysettings.j2"
-        dest: "{{ temp_report_path }}"
-
-    - name: Upload Report to S3 with New Keys
+    - name: Upload Report to S3 with New Keys (Memory Direct)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Ensures it lands in the folder shown in your screenshot
+        # This matches the folder in your screenshot
         object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ temp_report_path }}"
+        # We use 'content' with 'lookup' to avoid the "file not found" error
+        content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
         region: "{{ aws_region }}"
+        content_type: "text/html"
       register: s3_upload_result
 
-    - name: Final S3 Verification
+    - name: Verify S3 Upload
       debug:
-        msg: "Report successfully pushed to {{ s3_bucket }}/{{ s3_path }}"
+        msg: "Success! Key created: {{ s3_upload_result.key }}"
       when: s3_upload_result.changed
