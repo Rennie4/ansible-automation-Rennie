@@ -10,19 +10,29 @@
     - name: Test Connection - List Bucket Contents
       delegate_to: localhost
       amazon.aws.s3_object_info:
-        bucket: "{{ s3_bucket }}"
+        # Fixed: this module specifically needs 'bucket_name'
+        bucket_name: "{{ s3_bucket }}"
         region: "{{ aws_region }}"
       register: bucket_info
 
     - name: Show what Ansible sees in S3
       debug:
-        msg: "I can see {{ bucket_info.s3_keys | length }} objects in the bucket."
+        msg: 
+          - "Credential Test: SUCCESS"
+          - "Objects found in bucket: {{ bucket_info.s3_keys | length }}"
+          - "First 5 keys: {{ bucket_info.s3_keys[:5] }}"
 
-    - name: Upload Report (Final Attempt - No extra params)
+    - name: Upload Report (Direct Memory Method)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        object: "diagnostic_test_{{ inventory_hostname }}.html"
+        # Putting it in the specific folder from your screenshot
+        object: "cis-baseline-files/diagnostic_test_{{ inventory_hostname }}.html"
         content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
         region: "{{ aws_region }}"
+      register: upload_result
+
+    - name: Verify Upload Key
+      debug:
+        var: upload_result.key
