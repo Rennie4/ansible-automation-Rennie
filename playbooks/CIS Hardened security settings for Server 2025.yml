@@ -1,32 +1,35 @@
 ---
+# PART 1: Run on the Windows Server to gather facts
 - name: CIS Hardened security settings for Server 2025
   hosts: windows_server_2025
   gather_facts: yes
+  tasks:
+    - name: Generate HTML Report to Controller
+      ansible.builtin.template:
+        src: "../templates/server_2025_securitysettings.j2"
+        dest: "/tmp/audit_report.html"
+      delegate_to: localhost
+
+# PART 2: Run locally on the AAP Controller to handle the S3 Upload
+- name: Upload Report to S3 via CLI
+  hosts: localhost
+  connection: local
+  gather_facts: no
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
     s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
-    # Local path inside the AAP runner container
-    local_report: "/tmp/report_{{ inventory_hostname }}.html"
-    s3_key: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    # Capture the hostname from the previous play
+    target_host: "windows_server_2025" 
 
   tasks:
-    # 1. Generate the file to disk (more reliable for CLI upload)
-    - name: Generate HTML Report to Disk
-      delegate_to: localhost
-      ansible.builtin.template:
-        src: "../templates/server_2025_securitysettings.j2"
-        dest: "{{ local_report }}"
-
-    # 2. Upload using AWS CLI (bypass the buggy Ansible module)
-    - name: Upload to S3 via AWS CLI
-      delegate_to: localhost
+    - name: Use AWS CLI to Upload (High Reliability)
       shell: |
-        aws s3 cp {{ local_report }} s3://{{ s3_bucket }}/{{ s3_key }} --region {{ aws_region }}
-      register: aws_cli_output
+        aws s3 cp /tmp/audit_report.html s3://{{ s3_bucket }}/{{ s3_path }}/Audit_Report_{{ target_host }}.html --region {{ aws_region }}
+      register: aws_output
 
-    - name: Show CLI Results
+    - name: Confirm Final S3 Location
       debug:
         msg: 
-          - "AWS CLI Result: {{ aws_cli_output.stdout }}"
-          - "Expected S3 Path: s3://{{ s3_bucket }}/{{ s3_key }}"
+          - "AWS CLI OUTPUT: {{ aws_output.stdout }}"
+          - "Check S3 at: oml-s3-automation-sandbox/{{ s3_path }}/"
