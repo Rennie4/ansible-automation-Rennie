@@ -8,13 +8,13 @@
     aws_region: "eu-west-1"
 
   tasks:
-    # ... [Insert your Hardening Tasks here] ...
+    # ... [Hardening Tasks] ...
 
     - name: Upload Report to S3 (Memory Direct)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Added a forward slash to ensure it goes INSIDE the folder
+        # This path ensures the file lands inside the folder
         object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
@@ -23,5 +23,5 @@
 
     - name: Final Verification
       debug:
-        msg: "Success! File is now at: {{ s3_upload_result.object }}"
+        msg: "Success! File is now available in S3 as: {{ s3_upload_result.key }}"
       when: s3_upload_result.changed
