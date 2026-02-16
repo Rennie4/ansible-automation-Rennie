@@ -1,33 +1,30 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CIS Hardening Report - {{ inventory_hostname }}</title>
+    <title>CIS Hardened Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; }
+        th { background: #eee; text-align: left; padding: 10px; border: 1px solid #ccc; }
+        td { padding: 10px; border: 1px solid #ccc; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-        th { background-color: #f4f4f4; }
-        .header { margin-bottom: 20px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>CIS Audit Report: {{ inventory_hostname }}</h1>
-        <p><strong>Scan Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
-        <p><strong>OS:</strong> {{ ansible_distribution }} {{ ansible_distribution_version }}</p>
-    </div>
+    <h2>CIS Hardening Report: {{ inventory_hostname }}</h2>
+    <p><strong>Generation Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+    
     <table>
         <tr>
-            <th>Control ID</th>
-            <th>Result</th>
+            <th>Setting Description</th>
+            <th>Status</th>
         </tr>
         <tr>
-            <td>Printer Driver Installation (2.3.2.1)</td>
-            <td>Applied</td>
+            <td>Audit Printer Driver Installation (2.3.2.1)</td>
+            <td>Configured</td>
         </tr>
         <tr>
-            <td>SMB Signing (2.3.9.1)</td>
-            <td>Applied</td>
+            <td>Audit SMB Signing (2.3.9.1)</td>
+            <td>Configured</td>
         </tr>
     </table>
 </body>
