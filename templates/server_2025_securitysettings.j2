@@ -1,8 +1,10 @@
 <!DOCTYPE html>
 <html>
+<head><title>S3 Diagnostic</title></head>
 <body>
-    <h1>S3 Diagnostic Report</h1>
-    <p><strong>Host:</strong> {{ inventory_hostname }}</p>
-    <p><strong>IAM Status:</strong> If you see this in S3, the keys are working.</p>
+    <h1>S3 Connection Verified</h1>
+    <p><strong>Hostname:</strong> {{ inventory_hostname }}</p>
+    <p><strong>Bucket:</strong> {{ s3_bucket }}</p>
+    <p><strong>Timestamp:</strong> {{ ansible_date_time.iso8601 }}</p>
 </body>
 </html>
