@@ -1,35 +1,8 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>CIS Hardened Report - {{ inventory_hostname }}</title>
-    <style>
-        body { font-family: sans-serif; margin: 30px; }
-        .success-banner { background-color: #d4edda; color: #155724; padding: 15px; border-radius: 4px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-    </style>
-</head>
 <body>
-    <div class="success-banner">
-        <h2>CIS Audit Completed for {{ inventory_hostname }}</h2>
-    </div>
-    <p><strong>Scan Time:</strong> {{ ansible_date_time.iso8601 }}</p>
-    <p><strong>Bucket:</strong> {{ s3_bucket }}</p>
-    
-    <table>
-        <tr>
-            <th>Control</th>
-            <th>Status</th>
-        </tr>
-        <tr>
-            <td>Printer Driver Installation (2.3.2.1)</td>
-            <td>Applied</td>
-        </tr>
-        <tr>
-            <td>Audit SMB Signing (Always) (2.3.9.1)</td>
-            <td>Applied</td>
-        </tr>
-    </table>
+    <h1>S3 Diagnostic Report</h1>
+    <p><strong>Host:</strong> {{ inventory_hostname }}</p>
+    <p><strong>IAM Status:</strong> If you see this in S3, the keys are working.</p>
 </body>
 </html>
