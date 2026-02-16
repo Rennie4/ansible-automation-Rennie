@@ -8,7 +8,7 @@
     aws_region: "eu-west-1"
 
   tasks:
-    # ... [Your Hardening Tasks Here] ...
+    # ... [Your Hardening Tasks] ...
 
     - name: Ensure Local Report Directory Exists
       delegate_to: localhost
@@ -19,14 +19,15 @@
     - name: Generate HTML Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "audit_report.j2"
+        # Steps out of 'playbooks' and into 'templates' as per your structure
+        src: "{{ playbook_dir }}/../templates/server_2025_securitysettings.j2"
         dest: "{{ playbook_dir }}/reports/Audit_Report_{{ inventory_hostname }}.html"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # This matches your working template logic to hit the right folder
+        # Places the file inside the cis-baseline-files folder seen in your screenshot
         object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         src: "{{ playbook_dir }}/reports/Audit_Report_{{ inventory_hostname }}.html"
         mode: put
