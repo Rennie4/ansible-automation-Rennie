@@ -1,29 +1,28 @@
 ---
-- name: CIS Hardened security settings for Server 2025
+- name: S3 Credential & Upload Diagnostic
   hosts: windows_server_2025
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
-    s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
 
   tasks:
-    # ... [Hardening Tasks] ...
+    - name: Test Connection - List Bucket Contents
+      delegate_to: localhost
+      amazon.aws.s3_object_info:
+        bucket: "{{ s3_bucket }}"
+        region: "{{ aws_region }}"
+      register: bucket_info
 
-    - name: Upload Report to S3 with New Keys (Memory Direct)
+    - name: Show what Ansible sees in S3
+      debug:
+        msg: "I can see {{ bucket_info.s3_keys | length }} objects in the bucket."
+
+    - name: Upload Report (Final Attempt - No extra params)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # This matches the folder in your screenshot
-        object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
-        # We use 'content' with 'lookup' to avoid the "file not found" error
+        object: "diagnostic_test_{{ inventory_hostname }}.html"
         content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
         region: "{{ aws_region }}"
-        content_type: "text/html"
-      register: s3_upload_result
-
-    - name: Verify S3 Upload
-      debug:
-        msg: "Success! Key created: {{ s3_upload_result.key }}"
-      when: s3_upload_result.changed
