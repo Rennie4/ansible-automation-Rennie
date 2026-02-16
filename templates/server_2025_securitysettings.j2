@@ -1,10 +1,38 @@
 <!DOCTYPE html>
 <html>
-<head><title>S3 Diagnostic</title></head>
+<head>
+    <title>CIS Hardened Report - {{ inventory_hostname }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 30px; border-top: 5px solid #0056b3; }
+        .success { color: #155724; background-color: #d4edda; padding: 10px; border-radius: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; }
+        th { background-color: #f8f9fa; text-align: left; }
+    </style>
+</head>
 <body>
-    <h1>S3 Connection Verified</h1>
-    <p><strong>Hostname:</strong> {{ inventory_hostname }}</p>
-    <p><strong>Bucket:</strong> {{ s3_bucket }}</p>
-    <p><strong>Timestamp:</strong> {{ ansible_date_time.iso8601 }}</p>
+    <h1>Security Audit: {{ inventory_hostname }}</h1>
+    <div class="success">
+        <strong>Result:</strong> Hardening successfully applied and reported.
+    </div>
+    
+    <table>
+        <tr>
+            <th>Setting</th>
+            <th>Status</th>
+        </tr>
+        <tr>
+            <td>Printer Driver Installation</td>
+            <td>Applied</td>
+        </tr>
+        <tr>
+            <td>SMB Signing (Always)</td>
+            <td>Applied</td>
+        </tr>
+    </table>
+
+    <p style="margin-top: 30px; font-size: 0.8em; color: #666;">
+        Uploaded to: {{ s3_bucket }}/{{ s3_path }}
+    </p>
 </body>
 </html>
