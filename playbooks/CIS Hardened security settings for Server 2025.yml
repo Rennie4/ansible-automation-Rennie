@@ -14,19 +14,19 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # We explicitly define the path without a leading slash
+        # Explicit path: no leading slash to avoid "hidden" folder issues
         object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
         region: "{{ aws_region }}"
       register: s3_upload_result
 
-    - name: Generate Pre-signed URL for Instant Access
+    - name: Generate Pre-signed URL
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
         object: "{{ s3_upload_result.key | default(s3_path + '/Audit_Report_' + inventory_hostname + '_' + ansible_date_time.iso8601_basic_short + '.html') }}"
-        mode: getsurl
+        mode: geturl
         expiry: 3600
         region: "{{ aws_region }}"
       register: presigned_url
@@ -34,5 +34,5 @@
     - name: Final Link to Report
       debug:
         msg: 
-          - "SUCCESS: Report uploaded with new keys."
-          - "Direct Link (Valid for 1 hour): {{ presigned_url.url }}"
+          - "SUCCESS: Check the link below to verify the file exists."
+          - "URL: {{ presigned_url.url }}"
