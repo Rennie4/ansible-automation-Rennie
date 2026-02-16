@@ -1,30 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>CIS Hardened Report - {{ inventory_hostname }}</title>
+    <title>CIS Audit - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
-        .header { background: #002D62; color: white; padding: 20px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; }
-        .status { color: #28a745; font-weight: bold; }
+        body { font-family: sans-serif; margin: 50px; }
+        .box { border: 2px solid #0056b3; padding: 20px; border-radius: 10px; }
+        .title { color: #0056b3; font-size: 24px; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #eee; padding: 12px; text-align: left; }
-        th { background: #f8f9fa; }
+        th, td { border-bottom: 1px solid #ddd; padding: 15px; text-align: left; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>CIS Hardening Report: {{ inventory_hostname }}</h1>
-            <p>Generated: {{ ansible_date_time.iso8601 }}</p>
-        </div>
-        <p><strong>System Status:</strong> <span class="status">VERIFIED COMPLIANT</span></p>
+    <div class="box">
+        <div class="title">CIS Hardening Report: {{ inventory_hostname }}</div>
+        <p><strong>Status:</strong> Finalised</p>
+        <p><strong>Generated:</strong> {{ ansible_date_time.iso8601 }}</p>
+        
         <table>
-            <tr><th>Control</th><th>Status</th></tr>
-            <tr><td>Audit Printer Driver Installation</td><td>Applied</td></tr>
-            <tr><td>Audit SMB Signing (Always)</td><td>Applied</td></tr>
+            <tr><th>Setting</th><th>Status</th></tr>
+            <tr><td>Audit Printer Driver Installation</td><td>Compliant</td></tr>
+            <tr><td>Audit SMB Signing (Always)</td><td>Compliant</td></tr>
         </table>
-        <p style="font-size: 0.7em; color: #999; margin-top: 20px;">Storage: {{ s3_bucket }}/{{ s3_path }}</p>
     </div>
 </body>
 </html>
