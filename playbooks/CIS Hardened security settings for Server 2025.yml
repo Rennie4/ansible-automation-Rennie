@@ -1,34 +1,10 @@
 ---
-- name: Verify Report Generation - Dry Run
+- name: Verify Report Content
   hosts: windows_server_2025
   gather_facts: yes
-  vars:
-    # Defining path as per your existing structure
-    local_report_path: "/tmp/Audit_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: Generate HTML Report
-      delegate_to: localhost
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/../templates/server_2025_securitysettings.j2"
-        dest: "{{ local_report_path }}"
-
-    - name: Read generated report back
-      delegate_to: localhost
-      ansible.builtin.slurp:
-        src: "{{ local_report_path }}"
-      register: report_content
-
-    - name: Display Report Content to Console
+    - name: Render and Display Report Content
       debug:
-        msg: "{{ report_content['content'] | b64decode }}"
-
-    - name: Check if file exists on disk
-      delegate_to: localhost
-      ansible.builtin.stat:
-        path: "{{ local_report_path }}"
-      register: file_stat
-
-    - name: Report Status
-      debug:
-        msg: "Report created at {{ local_report_path }} with size {{ file_stat.stat.size }} bytes"
+        # We use '../' to step out of the playbooks folder into templates
+        msg: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
