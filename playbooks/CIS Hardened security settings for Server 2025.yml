@@ -1,38 +1,27 @@
 ---
-- name: S3 Credential & Upload Diagnostic
+- name: CIS Hardened security settings for Server 2025
   hosts: windows_server_2025
   gather_facts: yes
   vars:
     s3_bucket: "oml-s3-automation-sandbox"
+    s3_path: "cis-baseline-files"
     aws_region: "eu-west-1"
 
   tasks:
-    - name: Test Connection - List Bucket Contents
-      delegate_to: localhost
-      amazon.aws.s3_object_info:
-        # Fixed: this module specifically needs 'bucket_name'
-        bucket_name: "{{ s3_bucket }}"
-        region: "{{ aws_region }}"
-      register: bucket_info
+    # ... [Insert your Hardening Tasks here] ...
 
-    - name: Show what Ansible sees in S3
-      debug:
-        msg: 
-          - "Credential Test: SUCCESS"
-          - "Objects found in bucket: {{ bucket_info.s3_keys | length }}"
-          - "First 5 keys: {{ bucket_info.s3_keys[:5] }}"
-
-    - name: Upload Report (Direct Memory Method)
+    - name: Upload Report to S3 (Memory Direct)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket }}"
-        # Putting it in the specific folder from your screenshot
-        object: "cis-baseline-files/diagnostic_test_{{ inventory_hostname }}.html"
+        # Added a forward slash to ensure it goes INSIDE the folder
+        object: "{{ s3_path }}/Audit_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
         content: "{{ lookup('ansible.builtin.template', '../templates/server_2025_securitysettings.j2') }}"
         mode: put
         region: "{{ aws_region }}"
-      register: upload_result
+      register: s3_upload_result
 
-    - name: Verify Upload Key
+    - name: Final Verification
       debug:
-        var: upload_result.key
+        msg: "Success! File is now at: {{ s3_upload_result.object }}"
+      when: s3_upload_result.changed
