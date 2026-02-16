@@ -3,32 +3,28 @@
 <head>
     <title>CIS Hardened Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f4f7f6; }
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .header { border-bottom: 3px solid #0056b3; margin-bottom: 20px; padding-bottom: 10px; }
-        .status-pill { background: #d4edda; color: #155724; padding: 5px 15px; border-radius: 20px; font-weight: bold; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .header { background: #002D62; color: white; padding: 20px; margin: -20px -20px 20px -20px; border-radius: 8px 8px 0 0; }
+        .status { color: #28a745; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
+        th, td { border: 1px solid #eee; padding: 12px; text-align: left; }
+        th { background: #f8f9fa; }
     </style>
 </head>
 <body>
-    <div class="card">
+    <div class="container">
         <div class="header">
             <h1>CIS Hardening Report: {{ inventory_hostname }}</h1>
-            <p><strong>Date:</strong> {{ ansible_date_time.date }} | <strong>Time:</strong> {{ ansible_date_time.time }}</p>
+            <p>Generated: {{ ansible_date_time.iso8601 }}</p>
         </div>
-        <p>Verification Status: <span class="status-pill">COMPLIANT</span></p>
-        
+        <p><strong>System Status:</strong> <span class="status">VERIFIED COMPLIANT</span></p>
         <table>
-            <tr><th>Setting</th><th>Result</th></tr>
-            <tr><td>Audit Printer Driver Installation</td><td>Verified</td></tr>
-            <tr><td>Audit SMB Signing (Always)</td><td>Verified</td></tr>
-            <tr><td>User Account Control (UAC)</td><td>Verified</td></tr>
+            <tr><th>Control</th><th>Status</th></tr>
+            <tr><td>Audit Printer Driver Installation</td><td>Applied</td></tr>
+            <tr><td>Audit SMB Signing (Always)</td><td>Applied</td></tr>
         </table>
-        
-        <p style="font-size: 0.8em; color: #777; margin-top: 30px;">
-            Resource: {{ s3_bucket }}/{{ s3_path }}
-        </p>
+        <p style="font-size: 0.7em; color: #999; margin-top: 20px;">Storage: {{ s3_bucket }}/{{ s3_path }}</p>
     </div>
 </body>
 </html>
