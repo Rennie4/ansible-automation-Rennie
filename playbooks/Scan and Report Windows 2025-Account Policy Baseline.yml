@@ -26,7 +26,7 @@
             return "0"
         }
 
-        # Fetch Relax minimum password length limits (Registry Check)
+        # Check Relax minimum password length limits (Registry)
         $relaxPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $relaxVal = (Get-ItemProperty -Path $relaxPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
         $relaxStatus = if ($relaxVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
@@ -51,7 +51,8 @@
         } | ConvertTo-Json
       register: before_audit
 
-    # Hardening tasks would be placed here to change values for the "After" audit.
+    # --- NO CHANGES MADE TO OTHER SETTINGS ---
+    # HARDENING TASKS WOULD GO HERE
 
     - name: Audit "After" State
       win_shell: *audit_logic
