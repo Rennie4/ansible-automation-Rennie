@@ -30,10 +30,10 @@
             <thead><tr><th class="policy-col">Policy Setting Name</th><th>Before</th><th>After (Hardened)</th><th>CIS Requirement</th></tr></thead>
             <tbody>
                 <tr><td>Enforce password history</td><td class="val-before">{{ before.PasswordHistoryCount }}</td><td class="val-after">{{ after.PasswordHistoryCount }}</td><td class="val-cis">24 or more</td></tr>
-                <tr><td>Maximum password age</td><td class="val-before">{{ before.MaximumPasswordAge }}</td><td class="val-after">{{ after.MaximumPasswordAge }}</td><td class="val-cis">1-365 days</td></tr>
+                <tr><td>Maximum password age</td><td class="val-before">{{ before.MaximumPasswordAge }}</td><td class="val-after">{{ after.MaximumPasswordAge }}</td><td class="val-cis">365 or less (not 0)</td></tr>
                 <tr><td>Minimum password age</td><td class="val-before">{{ before.MinimumPasswordAge }}</td><td class="val-after">{{ after.MinimumPasswordAge }}</td><td class="val-cis">1 or more</td></tr>
                 <tr><td>Minimum password length</td><td class="val-before">{{ before.MinimumPasswordLength }}</td><td class="val-after">{{ after.MinimumPasswordLength }}</td><td class="val-cis">14 or more</td></tr>
-                <tr><td>Relax minimum password length limits</td><td class="val-before">{{ before.RelaxPasswordLength }}</td><td class="val-after">{{ after.RelaxPasswordLength }}</td><td class="val-cis">Business Defined</td></tr>
+                <tr><td>Relax minimum password length limits</td><td class="val-before">{{ before.RelaxPasswordLength }}</td><td class="val-after">{{ after.RelaxPasswordLength }}</td><td class="val-cis">Enabled</td></tr>
                 <tr><td>Password must meet complexity</td><td class="val-before">{{ 'Enabled' if before.PasswordComplexity == '1' else 'Disabled' }}</td><td class="val-after">{{ 'Enabled' if after.PasswordComplexity == '1' else 'Disabled' }}</td><td class="val-cis">Enabled</td></tr>
                 <tr><td>Store passwords using reversible encryption</td><td class="val-before">{{ 'Enabled' if before.ReversibleEncryption == '1' else 'Disabled' }}</td><td class="val-after">{{ 'Enabled' if after.ReversibleEncryption == '1' else 'Disabled' }}</td><td class="val-cis">Disabled</td></tr>
             </tbody>
