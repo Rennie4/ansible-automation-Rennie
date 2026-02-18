@@ -51,8 +51,14 @@
         } | ConvertTo-Json
       register: before_audit
 
-    # --- NO CHANGES MADE TO OTHER SETTINGS ---
-    # HARDENING TASKS WOULD GO HERE
+    # --- HARDENING TASK: ENABLE RELAX MINIMUM PASSWORD LENGTH ---
+    - name: Ensure "Relax minimum password length limits" is Enabled
+      win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+        name: RelaxMinimumPasswordLengthLimits
+        data: 1
+        type: dword
+        state: present
 
     - name: Audit "After" State
       win_shell: *audit_logic
