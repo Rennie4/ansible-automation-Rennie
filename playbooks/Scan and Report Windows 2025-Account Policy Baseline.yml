@@ -26,28 +26,32 @@
             return "0"
         }
 
+        # Fetch Relax minimum password length limits (Registry Check)
+        $relaxPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $relaxVal = (Get-ItemProperty -Path $relaxPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        $relaxStatus = if ($relaxVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
         $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
         $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
 
         @{
-            PasswordHistoryCount     = Get-Val "PasswordHistorySize"
-            MaximumPasswordAge       = Get-Val "MaximumPasswordAge"
-            MinimumPasswordAge       = Get-Val "MinimumPasswordAge"
-            MinimumPasswordLength    = Get-Val "MinimumPasswordLength"
-            PasswordComplexity       = Get-Val "PasswordComplexity"
-            ReversibleEncryption     = Get-Val "ClearTextPassword"
-            LockoutDuration          = $duration
-            LockoutThreshold         = $threshold
-            ResetLockoutCounter      = $window
-            AllowAdminLockout        = $adminStatus
-            OsName                   = (Get-ComputerInfo).OsName
+            PasswordHistoryCount      = Get-Val "PasswordHistorySize"
+            MaximumPasswordAge        = Get-Val "MaximumPasswordAge"
+            MinimumPasswordAge        = Get-Val "MinimumPasswordAge"
+            MinimumPasswordLength     = Get-Val "MinimumPasswordLength"
+            RelaxPasswordLength       = $relaxStatus
+            PasswordComplexity        = Get-Val "PasswordComplexity"
+            ReversibleEncryption      = Get-Val "ClearTextPassword"
+            LockoutDuration           = $duration
+            LockoutThreshold          = $threshold
+            ResetLockoutCounter       = $window
+            AllowAdminLockout         = $adminStatus
+            OsName                    = (Get-ComputerInfo).OsName
         } | ConvertTo-Json
       register: before_audit
 
-    # -------------------------------------------------------------------------
-    # HARDENING TASKS GO HERE
-    # -------------------------------------------------------------------------
+    # Hardening tasks would be placed here to change values for the "After" audit.
 
     - name: Audit "After" State
       win_shell: *audit_logic
