@@ -45,11 +45,17 @@
         } | ConvertTo-Json
       register: before_audit
 
-    # --- INSERT HARDENING TASKS HERE ---
+    # --- ACTION: Place your hardening tasks here to see changes in "After" ---
 
     - name: Audit "After" State
       win_shell: *audit_logic
       register: after_audit
+
+    - name: Ensure Local Report Directory Exists
+      delegate_to: localhost
+      file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
 
     - name: Generate the Comparison Report
       delegate_to: localhost
