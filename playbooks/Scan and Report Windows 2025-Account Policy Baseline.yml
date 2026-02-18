@@ -5,17 +5,16 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
+    report_filename: "Account_Policy_Comparison_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Audit All Standard Account Policy Defaults
-      win_shell: !unsafe |
-        # 1. Capture Lockout Policies from 'net accounts'
+    - name: Audit "Before" State
+      win_shell: &audit_logic |
         $netAccounts = net accounts
         $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
         $duration = ($netAccounts | Select-String "Lockout duration").ToString().Split(':')[1].Trim()
         $window = ($netAccounts | Select-String "Lockout observation window").ToString().Split(':')[1].Trim()
 
-        # 2. Capture Password Policies from secedit
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -24,58 +23,49 @@
         function Get-Val($key) {
             $line = $policy | Select-String "^$key\s*="
             if ($line) { return $line.ToString().Split('=')[1].Trim() }
-            return "Not Configured"
+            return "0"
         }
 
-        # 3. FORCE Check for Administrator Lockout
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
         $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
-        
-        # Logic: Matches UI 'Enabled' status if threshold is active or registry is set
         $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
 
-        $results = @{
+        @{
             PasswordHistoryCount     = Get-Val "PasswordHistorySize"
             MaximumPasswordAge       = Get-Val "MaximumPasswordAge"
             MinimumPasswordAge       = Get-Val "MinimumPasswordAge"
             MinimumPasswordLength    = Get-Val "MinimumPasswordLength"
             PasswordComplexity       = Get-Val "PasswordComplexity"
-            RelaxMinPasswordLimit    = Get-Val "RelaxMinimumPasswordLengthLimits"
             ReversibleEncryption     = Get-Val "ClearTextPassword"
             LockoutDuration          = $duration
             LockoutThreshold         = $threshold
             ResetLockoutCounter      = $window
             AllowAdminLockout        = $adminStatus
             OsName                   = (Get-ComputerInfo).OsName
-            OsVersion                = (Get-ComputerInfo).OsVersion
-        }
-        $results | ConvertTo-Json
-      register: default_audit
+        } | ConvertTo-Json
+      register: before_audit
 
-    - name: Ensure Local Report Directory Exists
-      delegate_to: localhost
-      file:
-        path: "{{ playbook_dir }}/reports"
-        state: directory
+    # --- INSERT HARDENING TASKS HERE ---
 
-    - name: Generate the HTML Report
+    - name: Audit "After" State
+      win_shell: *audit_logic
+      register: after_audit
+
+    - name: Generate the Comparison Report
       delegate_to: localhost
       template:
-        src: "{{ playbook_dir }}/../templates/baseline-Account Policy_report.j2"
-        dest: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+        src: "{{ playbook_dir }}/../templates/Scan and Report Windows 2025-Account Policy Baseline.j2"
+        dest: "{{ playbook_dir }}/reports/{{ report_filename }}"
       vars:
-        report_data: "{{ default_audit.stdout | from_json }}"
+        before: "{{ before_audit.stdout | from_json }}"
+        after: "{{ after_audit.stdout | from_json }}"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/Account_Defaults_{{ ansible_date_time.iso8601_basic_short }}.html"
-        src: "{{ playbook_dir }}/reports/account_policy_defaults.html"
+        object: "cis-baseline-files/{{ report_filename }}"
+        src: "{{ playbook_dir }}/reports/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
       register: s3_upload
-
-    - name: Display Report Link
-      debug:
-        msg: "The corrected baseline report link is: {{ s3_upload.url }}"
