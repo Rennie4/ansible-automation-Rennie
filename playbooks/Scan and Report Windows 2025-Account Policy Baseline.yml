@@ -5,7 +5,6 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Dynamic filename prevents hard-coded values and conflicts
     report_filename: "Account_Policy_Comparison_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
@@ -46,8 +45,9 @@
         } | ConvertTo-Json
       register: before_audit
 
-    # --- PLACE HARDENING TASKS HERE ---
-    # This ensures the "After" audit reflects your actual changes.
+    # -------------------------------------------------------------------------
+    # HARDENING TASKS GO HERE
+    # -------------------------------------------------------------------------
 
     - name: Audit "After" State
       win_shell: *audit_logic
@@ -76,4 +76,3 @@
         src: "{{ playbook_dir }}/reports/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
-      register: s3_upload
