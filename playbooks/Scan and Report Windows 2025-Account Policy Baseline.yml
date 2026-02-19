@@ -26,10 +26,18 @@
             return "0"
         }
 
-        # Check Relax minimum password length limits (Registry)
+        # IMPROVED CHECK: Specifically looking for the existence of the 1 value
         $relaxPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $relaxVal = (Get-ItemProperty -Path $relaxPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
-        $relaxStatus = if ($relaxVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+        
+        # If the value is null or 0, it is NOT Enabled.
+        if ($relaxVal -eq 1) { 
+            $relaxStatus = "Enabled (1)" 
+        } elseif ($relaxVal -eq 0 -and $null -ne $relaxVal) { 
+            $relaxStatus = "Disabled (0)" 
+        } else { 
+            $relaxStatus = "Not Defined" 
+        }
 
         $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
         $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
@@ -51,7 +59,6 @@
         } | ConvertTo-Json
       register: before_audit
 
-    # --- HARDENING TASK: ENABLE RELAX MINIMUM PASSWORD LENGTH ---
     - name: Ensure "Relax minimum password length limits" is Enabled
       win_regedit:
         path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
