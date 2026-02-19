@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1100px; margin: auto; }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #455A64; color: white; text-align: left; padding: 12px; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 13px; }
+        .status-ok { color: #2E7D32; font-weight: bold; }
+        .status-fix { color: #d9534f; font-weight: bold; }
+        .highlight { background-color: #E8F5E9; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>Hardening Remediation Report: {{ inventory_hostname }}</h1>
+        
+        <h2>Policy Comparison (Before vs After)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Setting Name</th>
+                    <th>Before (Current)</th>
+                    <th>After (Hardened)</th>
+                    <th>CIS Requirement</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Password History</td><td>{{ before.PasswordHistory }}</td><td class="highlight">{{ after.PasswordHistory }}</td><td>24 versions</td></tr>
+                <tr><td>Max Password Age</td><td>{{ before.MaxPasswordAge }}</td><td class="highlight">{{ after.MaxPasswordAge }}</td><td>365 days</td></tr>
+                <tr><td>Min Password Length</td><td>{{ before.MinPasswordLength }}</td><td class="highlight">{{ after.MinPasswordLength }}</td><td>14 or more</td></tr>
+                <tr><td>Password Complexity</td><td>{{ before.PasswordComplexity }}</td><td class="highlight">{{ after.PasswordComplexity }}</td><td>Enabled</td></tr>
+                <tr>
+                    <td>Reversible Encryption</td>
+                    <td>{{ before.ReversibleEncryption }}</td>
+                    <td class="status-ok">Disabled</td>
+                    <td>Disabled</td>
+                </tr>
+                <tr><td>Lockout Threshold</td><td>{{ before.LockoutThreshold }}</td><td class="highlight">{{ after.LockoutThreshold }}</td><td>5 attempts</td></tr>
+                <tr>
+                    <td>Admin Account Lockout</td>
+                    <td>{{ before.AllowAdminLockout }}</td>
+                    <td class="status-ok">Enabled</td>
+                    <td>Enabled</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
