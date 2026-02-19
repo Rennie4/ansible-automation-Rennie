@@ -17,7 +17,6 @@
             return "Unknown"
         }
 
-        # Secedit Export for deep policy inspection
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -29,7 +28,6 @@
             return "0"
         }
 
-        # Registry checks for Relax Length and Admin Lockout
         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
         
@@ -72,13 +70,13 @@
         
         - name: Apply Registry Policies
           win_regedit:
-            path: "{{ item.path }}"
-            name: "{{ item.name }}"
+            path: '{{ item.path }}'
+            name: '{{ item.name }}'
             data: 1
             type: dword
           loop:
-            - { path: "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", name: "RelaxMinimumPasswordLengthLimits" }
-            - { path: "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0", name: "AllowAdminLockout" }
+            - { path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', name: 'RelaxMinimumPasswordLengthLimits' }
+            - { path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0', name: 'AllowAdminLockout' }
 
     - name: Generate and Upload Full Report
       delegate_to: localhost
