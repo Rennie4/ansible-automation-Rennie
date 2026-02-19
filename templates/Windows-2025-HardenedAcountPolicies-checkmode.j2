@@ -2,51 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>CIS Check Mode Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f8f9fa; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
-        .banner { background-color: #fff3cd; color: #856404; padding: 15px; border: 1px solid #ffeeba; border-radius: 4px; text-align: center; font-weight: bold; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #455A64; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .out-of-compliance { color: #d9534f; font-weight: bold; }
-        .in-compliance { color: #5cb85c; }
+        body { font-family: sans-serif; margin: 30px; background: #f4f7f6; }
+        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 14px; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th { background: #455A64; color: white; text-align: left; padding: 10px; }
+        td { padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; }
+        .diff { color: #d9534f; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="banner">PREVIEW MODE: This report shows current compliance gaps. No changes were made.</div>
-        <h1>Hardening Audit: {{ inventory_hostname }}</h1>
-        <p><strong>Operating System:</strong> {{ before.OsName }}</p>
-
+    <div class="box">
+        <h1>Full CIS Audit: {{ inventory_hostname }}</h1>
+        
+        <h2>1. Password Policy Comparison</h2>
         <table>
-            <thead>
-                <tr>
-                    <th>Policy Setting</th>
-                    <th>Current State</th>
-                    <th>CIS Required State</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Relax minimum password length limits</td>
-                    <td>{{ before.RelaxPasswordLength }}</td>
-                    <td>Enabled (1)</td>
-                    <td class="{{ 'out-of-compliance' if before.RelaxPasswordLength != 'Enabled (1)' else 'in-compliance' }}">
-                        {{ 'FIX REQUIRED' if before.RelaxPasswordLength != 'Enabled (1)' else 'COMPLIANT' }}
-                    </td>
-                </tr>
-                <tr>
-                    <td>Account Lockout Threshold</td>
-                    <td>{{ before.LockoutThreshold }}</td>
-                    <td>5</td>
-                    <td class="{{ 'out-of-compliance' if before.LockoutThreshold != '5' else 'in-compliance' }}">
-                        {{ 'FIX REQUIRED' if before.LockoutThreshold != '5' else 'COMPLIANT' }}
-                    </td>
-                </tr>
-            </tbody>
+            <tr><th>Policy</th><th>Current</th><th>CIS Requirement</th></tr>
+            <tr><td>Enforce password history</td><td class="{{ 'diff' if data.PasswordHistory|int < 24 }}">{{ data.PasswordHistory }}</td><td>24 or more</td></tr>
+            <tr><td>Max password age</td><td>{{ data.MaxPasswordAge }}</td><td>1-365 days</td></tr>
+            <tr><td>Min password age</td><td>{{ data.MinPasswordAge }}</td><td>1 or more</td></tr>
+            <tr><td>Min password length</td><td class="{{ 'diff' if data.MinPasswordLength|int < 14 }}">{{ data.MinPasswordLength }}</td><td>14 or more</td></tr>
+            <tr><td>Relax min password length</td><td>{{ data.RelaxLength }}</td><td>Enabled (1)</td></tr>
+            <tr><td>Password complexity</td><td>{{ data.PasswordComplexity }}</td><td>Enabled</td></tr>
+        </table>
+
+        <h2>2. Account Lockout Policy Comparison</h2>
+        <table>
+            <tr><th>Policy</th><th>Current</th><th>CIS Requirement</th></tr>
+            <tr><td>Lockout duration</td><td>{{ data.LockoutDuration }}</td><td>15 or more</td></tr>
+            <tr><td>Lockout threshold</td><td class="diff">{{ data.LockoutThreshold }}</td><td>1-5 attempts</td></tr>
+            <tr><td>Observation window</td><td>{{ data.LockoutWindow }}</td><td>15 or more</td></tr>
+            <tr><td>Allow Admin Lockout</td><td>{{ data.AllowAdminLockout }}</td><td>Enabled (1)</td></tr>
         </table>
     </div>
 </body>
