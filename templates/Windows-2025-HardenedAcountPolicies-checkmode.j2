@@ -2,53 +2,49 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Check Mode Report - {{ inventory_hostname }}</title>
+    <title>CIS Check Mode Report - {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; background-color: #f8f9fa; }
-        .container { background: white; padding: 35px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); max-width: 1000px; margin: auto; }
-        .banner { padding: 15px; border-radius: 6px; margin-bottom: 25px; font-weight: bold; text-align: center; }
-        .check-mode { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-        .run-mode { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f8f9fa; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
+        .banner { background-color: #fff3cd; color: #856404; padding: 15px; border: 1px solid #ffeeba; border-radius: 4px; text-align: center; font-weight: bold; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background-color: #455A64; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .status-diff { color: #d9534f; font-weight: bold; }
-        .status-ok { color: #5cb85c; }
+        .out-of-compliance { color: #d9534f; font-weight: bold; }
+        .in-compliance { color: #5cb85c; }
     </style>
 </head>
 <body>
     <div class="container">
-        {% if ansible_check_mode %}
-        <div class="banner check-mode">PREVIEW: Running in Check Mode. No system changes made.</div>
-        {% else %}
-        <div class="banner run-mode">LIVE: Running in Normal Mode. Hardening applied.</div>
-        {% endif %}
-
-        <h1>Baseline Comparison: {{ inventory_hostname }}</h1>
-        <p><strong>OS:</strong> {{ before.OsName }}</p>
+        <div class="banner">PREVIEW MODE: This report shows current compliance gaps. No changes were made.</div>
+        <h1>Hardening Audit: {{ inventory_hostname }}</h1>
+        <p><strong>Operating System:</strong> {{ before.OsName }}</p>
 
         <table>
             <thead>
                 <tr>
-                    <th>Hardening Policy</th>
+                    <th>Policy Setting</th>
                     <th>Current State</th>
-                    <th>Required State (CIS)</th>
+                    <th>CIS Required State</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td>Relax minimum password length limits</td>
-                    <td class="{{ 'status-diff' if before.RelaxPasswordLength != 'Enabled (1)' else 'status-ok' }}">
-                        {{ before.RelaxPasswordLength }}
-                    </td>
+                    <td>{{ before.RelaxPasswordLength }}</td>
                     <td>Enabled (1)</td>
+                    <td class="{{ 'out-of-compliance' if before.RelaxPasswordLength != 'Enabled (1)' else 'in-compliance' }}">
+                        {{ 'FIX REQUIRED' if before.RelaxPasswordLength != 'Enabled (1)' else 'COMPLIANT' }}
+                    </td>
                 </tr>
                 <tr>
                     <td>Account Lockout Threshold</td>
-                    <td class="{{ 'status-diff' if before.LockoutThreshold != '5' else 'status-ok' }}">
-                        {{ before.LockoutThreshold }}
-                    </td>
+                    <td>{{ before.LockoutThreshold }}</td>
                     <td>5</td>
+                    <td class="{{ 'out-of-compliance' if before.LockoutThreshold != '5' else 'in-compliance' }}">
+                        {{ 'FIX REQUIRED' if before.LockoutThreshold != '5' else 'COMPLIANT' }}
+                    </td>
                 </tr>
             </tbody>
         </table>
