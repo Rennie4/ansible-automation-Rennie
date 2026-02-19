@@ -5,7 +5,7 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Full_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit All Settings (Force Run)
@@ -28,10 +28,10 @@
             return "0"
         }
 
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
         $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
         
-        $adminReg = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $adminReg = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
         $adminLock = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
 
         @{
@@ -40,7 +40,8 @@
             MinPasswordAge       = Get-Val "MinimumPasswordAge"
             MinPasswordLength    = Get-Val "MinimumPasswordLength"
             PasswordComplexity   = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
-            ClearText            = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
+            # Hardening Setting: Store passwords using reversible encryption
+            ReversibleEncryption = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
             RelaxLength          = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
             LockoutThreshold     = Get-Net "Lockout threshold"
             LockoutDuration      = Get-Net "Lockout duration"
@@ -53,7 +54,7 @@
 
     - name: Apply All Hardening Settings
       block:
-        - name: Apply Secedit Policies
+        - name: Apply Secedit Policies (Password & Lockout)
           win_shell: |
             $cfg = "C:\Windows\Temp\h.inf"
             "[Unicode]`r`nUnicode=yes`r`n[System Access]`r`n" +
@@ -62,13 +63,14 @@
             "MinimumPasswordAge = 1`r`n" +
             "MinimumPasswordLength = 14`r`n" +
             "PasswordComplexity = 1`r`n" +
-            "ClearTextPassword = 0`r`n" +
+            "ClearTextPassword = 0`r`n" + # Fixes Reversible Encryption
             "LockoutBadCount = 5`r`n" +
             "ResetLockoutCount = 15`r`n" +
             "LockoutDuration = 15" | Out-File $cfg -Encoding Unicode
             secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY
+            Remove-Item $cfg
         
-        - name: Apply Registry Policies
+        - name: Apply Registry Policies (Relax Length & Admin Lockout)
           win_regedit:
             path: '{{ item.path }}'
             name: '{{ item.name }}'
