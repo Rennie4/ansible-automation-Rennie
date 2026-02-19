@@ -1,68 +1,100 @@
 ---
-- name: Apply CIS Windows Server 2025 Account Policy Hardening (Check Mode Optimized)
+- name: Apply CIS Windows Server 2025 Account Policy Hardening (Full Suite)
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "CheckMode_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Full_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Audit Current State (Force Run)
+    - name: Audit All Settings (Force Run)
       win_shell: &audit_logic |
         $netAccounts = net accounts
-        $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
-        
+        function Get-Net($regex) {
+            $line = $netAccounts | Select-String $regex
+            if ($line) { return $line.ToString().Split(':')[1].Trim() }
+            return "Unknown"
+        }
+
+        # Secedit Export for deep policy inspection
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "0"
+        }
+
+        # Registry checks for Relax Length and Admin Lockout
         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        $valName = "RelaxMinimumPasswordLengthLimits"
-        if (Test-Path $regPath) {
-            $prop = Get-ItemProperty -Path $regPath -Name $valName -ErrorAction SilentlyContinue
-            if ($null -ne $prop -and $prop.PSObject.Properties[$valName]) {
-                $relaxStatus = if ($prop.$valName -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
-            } else { $relaxStatus = "Not Defined" }
-        } else { $relaxStatus = "Not Defined" }
+        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        
+        $adminReg = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $adminLock = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
 
         @{
-            RelaxPasswordLength = $relaxStatus
-            LockoutThreshold    = $threshold
-            OsName              = (Get-ComputerInfo).OsName
+            PasswordHistory      = Get-Val "PasswordHistorySize"
+            MaxPasswordAge       = Get-Val "MaximumPasswordAge"
+            MinPasswordAge       = Get-Val "MinimumPasswordAge"
+            MinPasswordLength    = Get-Val "MinimumPasswordLength"
+            PasswordComplexity   = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
+            ClearText            = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
+            RelaxLength          = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
+            LockoutThreshold     = Get-Net "Lockout threshold"
+            LockoutDuration      = Get-Net "Lockout duration"
+            LockoutWindow        = Get-Net "Lockout observation window"
+            AllowAdminLockout    = if ($adminLock -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+            OsName               = (Get-ComputerInfo).OsName
         } | ConvertTo-Json
-      register: before_audit
+      register: full_audit
       check_mode: no 
 
-    - name: Hardening Simulation - Relax Minimum Password Length
-      win_regedit:
-        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-        name: RelaxMinimumPasswordLengthLimits
-        data: 1
-        type: dword
-        state: present
-      # In Check Mode, this will report "changed" if the value isn't 1, but won't actually change it.
+    - name: Apply All Hardening Settings
+      block:
+        - name: Apply Secedit Policies
+          win_shell: |
+            $cfg = "C:\Windows\Temp\h.inf"
+            "[Unicode]`r`nUnicode=yes`r`n[System Access]`r`n" +
+            "PasswordHistorySize = 24`r`n" +
+            "MaximumPasswordAge = 365`r`n" +
+            "MinimumPasswordAge = 1`r`n" +
+            "MinimumPasswordLength = 14`r`n" +
+            "PasswordComplexity = 1`r`n" +
+            "ClearTextPassword = 0`r`n" +
+            "LockoutBadCount = 5`r`n" +
+            "ResetLockoutCount = 15`r`n" +
+            "LockoutDuration = 15" | Out-File $cfg -Encoding Unicode
+            secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY
+        
+        - name: Apply Registry Policies
+          win_regedit:
+            path: "{{ item.path }}"
+            name: "{{ item.name }}"
+            data: 1
+            type: dword
+          loop:
+            - { path: "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", name: "RelaxMinimumPasswordLengthLimits" }
+            - { path: "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0", name: "AllowAdminLockout" }
 
-    - name: Hardening Simulation - Account Lockout Threshold
-      win_shell: net accounts /lockoutthreshold:5
-      # In Check Mode, this shell command is skipped by default.
-
-    - name: Generate and Upload Comparison Report
+    - name: Generate and Upload Full Report
       delegate_to: localhost
       check_mode: no
       block:
-        - name: Ensure Local Report Directory Exists
-          file:
-            path: "{{ playbook_dir }}/reports"
-            state: directory
-        
-        - name: Render Checkmode Template
+        - name: Render Full Template
           template:
             src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
-            dest: "{{ playbook_dir }}/reports/{{ report_filename }}"
+            dest: "/tmp/{{ report_filename }}"
           vars:
-            before: "{{ before_audit.stdout | from_json }}"
+            data: "{{ full_audit.stdout | from_json }}"
 
-        - name: Upload Simulation Results to S3
+        - name: Upload to S3
           amazon.aws.s3_object:
             bucket: "{{ s3_bucket_name }}"
             object: "cis-baseline-files/{{ report_filename }}"
-            src: "{{ playbook_dir }}/reports/{{ report_filename }}"
+            src: "/tmp/{{ report_filename }}"
             mode: put
             region: "{{ s3_region }}"
