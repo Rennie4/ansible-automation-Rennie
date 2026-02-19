@@ -1,0 +1,117 @@
+---
+- name: Apply CIS Windows Server 2025 Account Policy Hardening
+  hosts: windows_server_2025
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "Account_Policy_Comparison_{{ ansible_date_time.iso8601_basic_short }}.html"
+
+  tasks:
+    - name: Audit "Before" State
+      win_shell: &audit_logic |
+        $netAccounts = net accounts
+        $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
+        $duration = ($netAccounts | Select-String "Lockout duration").ToString().Split(':')[1].Trim()
+        $window = ($netAccounts | Select-String "Lockout observation window").ToString().Split(':')[1].Trim()
+
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "0"
+        }
+
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $valName = "RelaxMinimumPasswordLengthLimits"
+        if (Test-Path $regPath) {
+            $prop = Get-ItemProperty -Path $regPath -Name $valName -ErrorAction SilentlyContinue
+            if ($null -ne $prop -and $prop.PSObject.Properties[$valName]) {
+                $relaxStatus = if ($prop.$valName -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+            } else { $relaxStatus = "Not Defined" }
+        } else { $relaxStatus = "Not Defined" }
+
+        $adminReg = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $adminVal = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        $adminStatus = if ($adminVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+
+        @{
+            PasswordHistoryCount      = Get-Val "PasswordHistorySize"
+            MaximumPasswordAge        = Get-Val "MaximumPasswordAge"
+            MinimumPasswordAge        = Get-Val "MinimumPasswordAge"
+            MinimumPasswordLength     = Get-Val "MinimumPasswordLength"
+            RelaxPasswordLength       = $relaxStatus
+            PasswordComplexity        = Get-Val "PasswordComplexity"
+            ReversibleEncryption      = Get-Val "ClearTextPassword"
+            LockoutDuration           = $duration
+            LockoutThreshold          = $threshold
+            ResetLockoutCounter       = $window
+            AllowAdminLockout         = $adminStatus
+            OsName                    = (Get-ComputerInfo).OsName
+        } | ConvertTo-Json
+      register: before_audit
+
+    - name: Apply Hardening via Secedit
+      win_shell: |
+        $cfg = "C:\Windows\Temp\hardening.inf"
+        "[Unicode]" + "`r`n" + "Unicode=yes" + "`r`n" +
+        "[System Access]" + "`r`n" +
+        "PasswordHistorySize = 24" + "`r`n" +
+        "MaximumPasswordAge = 365" + "`r`n" +
+        "MinimumPasswordAge = 1" + "`r`n" +
+        "MinimumPasswordLength = 14" + "`r`n" +
+        "PasswordComplexity = 1" + "`r`n" +
+        "ClearTextPassword = 0" + "`r`n" +
+        "LockoutBadCount = 5" + "`r`n" + 
+        "ResetLockoutCount = 15" + "`r`n" +
+        "LockoutDuration = 15" | Out-File $cfg -Encoding Unicode
+        secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY
+        Remove-Item $cfg
+
+    - name: Hardening - Relax Minimum Password Length (Registry)
+      win_regedit:
+        path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+        name: RelaxMinimumPasswordLengthLimits
+        data: 1
+        type: dword
+        state: present
+
+    - name: Hardening - Allow Administrator Account Lockout (Registry)
+      win_regedit:
+        path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+        name: AllowAdminLockout
+        data: 1
+        type: dword
+        state: present
+
+    - name: Audit "After" State
+      win_shell: *audit_logic
+      register: after_audit
+
+    - name: Generate and Upload Report
+      delegate_to: localhost
+      block:
+        - name: Ensure Local Report Directory Exists
+          file:
+            path: "{{ playbook_dir }}/reports"
+            state: directory
+        
+        - name: Render Template
+          template:
+            src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies.j2"
+            dest: "{{ playbook_dir }}/reports/{{ report_filename }}"
+          vars:
+            before: "{{ before_audit.stdout | from_json }}"
+            after: "{{ after_audit.stdout | from_json }}"
+
+        - name: Upload to S3
+          amazon.aws.s3_object:
+            bucket: "{{ s3_bucket_name }}"
+            object: "cis-baseline-files/{{ report_filename }}"
+            src: "{{ playbook_dir }}/reports/{{ report_filename }}"
+            mode: put
+            region: "{{ s3_region }}"
