@@ -40,13 +40,14 @@
             MinPasswordAge       = Get-Val "MinimumPasswordAge"
             MinPasswordLength    = Get-Val "MinimumPasswordLength"
             PasswordComplexity   = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
+            # Match Requirement: "Disabled"
             ReversibleEncryption = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
             RelaxLength          = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
             LockoutThreshold     = Get-Net "Lockout threshold"
             LockoutDuration      = Get-Net "Lockout duration"
             LockoutWindow        = Get-Net "Lockout observation window"
-            # Explicitly setting the string to match the report requirement
-            AllowAdminLockout    = if ($adminLockVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+            # Match Requirement: "Enabled"
+            AllowAdminLockout    = if ($adminLockVal -eq 1) { "Enabled" } else { "Disabled" }
             OsName               = (Get-ComputerInfo).OsName
         } | ConvertTo-Json
       register: full_audit
@@ -84,11 +85,6 @@
       delegate_to: localhost
       check_mode: no
       block:
-        - name: Ensure Local Report Directory Exists
-          file:
-            path: "{{ playbook_dir }}/reports"
-            state: directory
-
         - name: Render Full Template
           template:
             src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
