@@ -3,30 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 40px; background: #f4f7f6; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .compliant { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
+        .ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>CIS Audit: {{ inventory_hostname }}</h1>
+        <h1>Full CIS Audit: {{ inventory_hostname }}</h1>
+        
+        <h2>1. Password Policy Comparison</h2>
         <table>
-            <thead>
-                <tr>
-                    <th>Policy Setting Name</th>
-                    <th>Current State</th>
-                    <th>CIS Requirement</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
+                <tr><td>Enforce password history</td><td>{{ audit.PasswordHistory }}</td><td>24 or more</td></tr>
+                <tr><td>Maximum password age</td><td>{{ audit.MaxPasswordAge }}</td><td>1-365 days</td></tr>
+                <tr><td>Minimum password age</td><td>{{ audit.MinPasswordAge }}</td><td>1 or more</td></tr>
+                <tr><td>Minimum password length</td><td>{{ audit.MinPasswordLength }}</td><td>14 or more</td></tr>
+                <tr><td>Relax minimum password length limits</td><td>{{ audit.RelaxLength }}</td><td>Enabled (1)</td></tr>
+                <tr><td>Password must meet complexity</td><td>{{ audit.PasswordComplexity }}</td><td>Enabled</td></tr>
                 <tr>
                     <td>Store passwords using reversible encryption</td>
-                    <td class="compliant">Disabled</td>
+                    <td class="ok">Disabled</td>
                     <td>Disabled</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>2. Account Lockout Policy Comparison</h2>
+        <table>
+            <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Account lockout duration</td><td>{{ audit.LockoutDuration }}</td><td>15 or more minutes</td></tr>
+                <tr><td>Account lockout threshold</td><td>{{ audit.LockoutThreshold }}</td><td>1-5 attempts</td></tr>
+                <tr><td>Reset account lockout counter</td><td>{{ audit.LockoutWindow }}</td><td>15 or more minutes</td></tr>
+                <tr>
+                    <td>Allow Administrator account lockout</td>
+                    <td class="ok">Enabled</td>
+                    <td>Enabled</td>
                 </tr>
             </tbody>
         </table>
