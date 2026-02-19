@@ -44,7 +44,13 @@
                 <tr><td>Account lockout duration</td><td>{{ data.LockoutDuration }}</td><td>15 or more minutes</td></tr>
                 <tr><td>Account lockout threshold</td><td class="{{ 'diff' if data.LockoutThreshold != '5' }}">{{ data.LockoutThreshold }}</td><td>1-5 attempts</td></tr>
                 <tr><td>Reset account lockout counter</td><td>{{ data.LockoutWindow }}</td><td>15 or more minutes</td></tr>
-                <tr><td>Allow Administrator account lockout</td><td>{{ data.AllowAdminLockout }}</td><td>Enabled (1)</td></tr>
+                <tr>
+                    <td>Allow Administrator account lockout</td>
+                    <td class="{{ 'ok' if data.AllowAdminLockout == 'Enabled (1)' else 'diff' }}">
+                        {{ data.AllowAdminLockout }}
+                    </td>
+                    <td>Enabled (1)</td>
+                </tr>
             </tbody>
         </table>
     </div>
