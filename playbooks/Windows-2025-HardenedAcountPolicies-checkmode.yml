@@ -10,7 +10,6 @@
   tasks:
     - name: Audit All Settings (Force Run)
       win_shell: &audit_logic |
-        # Exporting security policy to check ClearTextPassword (Reversible Encryption)
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -22,7 +21,6 @@
             return "0"
         }
 
-        # Net Accounts for Lockout policies
         $netAccounts = net accounts
         function Get-Net($regex) {
             $line = $netAccounts | Select-String $regex
@@ -30,9 +28,11 @@
             return "Unknown"
         }
 
-        # Registry for Relax Length and Admin Lockout
-        $relax = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
-        $adminLock = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0' -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        
+        $adminReg = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
+        $adminLockVal = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
 
         @{
             PasswordHistory      = Get-Val "PasswordHistorySize"
@@ -40,13 +40,13 @@
             MinPasswordAge       = Get-Val "MinimumPasswordAge"
             MinPasswordLength    = Get-Val "MinimumPasswordLength"
             PasswordComplexity   = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
-            # 0 = Disabled (Compliant), 1 = Enabled (Non-Compliant)
             ReversibleEncryption = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
             RelaxLength          = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
             LockoutThreshold     = Get-Net "Lockout threshold"
             LockoutDuration      = Get-Net "Lockout duration"
             LockoutWindow        = Get-Net "Lockout observation window"
-            AllowAdminLockout    = if ($adminLock -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+            # Explicitly setting the string to match the report requirement
+            AllowAdminLockout    = if ($adminLockVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
             OsName               = (Get-ComputerInfo).OsName
         } | ConvertTo-Json
       register: full_audit
@@ -84,6 +84,11 @@
       delegate_to: localhost
       check_mode: no
       block:
+        - name: Ensure Local Report Directory Exists
+          file:
+            path: "{{ playbook_dir }}/reports"
+            state: directory
+
         - name: Render Full Template
           template:
             src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
