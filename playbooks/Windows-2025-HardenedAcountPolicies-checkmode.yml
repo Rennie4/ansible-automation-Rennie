@@ -10,13 +10,7 @@
   tasks:
     - name: Audit All Settings (Force Run)
       win_shell: &audit_logic |
-        $netAccounts = net accounts
-        function Get-Net($regex) {
-            $line = $netAccounts | Select-String $regex
-            if ($line) { return $line.ToString().Split(':')[1].Trim() }
-            return "Unknown"
-        }
-
+        # Exporting security policy to check ClearTextPassword (Reversible Encryption)
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -28,11 +22,17 @@
             return "0"
         }
 
-        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
-        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
-        
-        $adminReg = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
-        $adminLock = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        # Net Accounts for Lockout policies
+        $netAccounts = net accounts
+        function Get-Net($regex) {
+            $line = $netAccounts | Select-String $regex
+            if ($line) { return $line.ToString().Split(':')[1].Trim() }
+            return "Unknown"
+        }
+
+        # Registry for Relax Length and Admin Lockout
+        $relax = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        $adminLock = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0' -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
 
         @{
             PasswordHistory      = Get-Val "PasswordHistorySize"
@@ -40,7 +40,7 @@
             MinPasswordAge       = Get-Val "MinimumPasswordAge"
             MinPasswordLength    = Get-Val "MinimumPasswordLength"
             PasswordComplexity   = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
-            # Hardening Setting: Store passwords using reversible encryption
+            # 0 = Disabled (Compliant), 1 = Enabled (Non-Compliant)
             ReversibleEncryption = if (Get-Val "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
             RelaxLength          = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
             LockoutThreshold     = Get-Net "Lockout threshold"
@@ -54,7 +54,7 @@
 
     - name: Apply All Hardening Settings
       block:
-        - name: Apply Secedit Policies (Password & Lockout)
+        - name: Apply Secedit Policies
           win_shell: |
             $cfg = "C:\Windows\Temp\h.inf"
             "[Unicode]`r`nUnicode=yes`r`n[System Access]`r`n" +
@@ -63,14 +63,14 @@
             "MinimumPasswordAge = 1`r`n" +
             "MinimumPasswordLength = 14`r`n" +
             "PasswordComplexity = 1`r`n" +
-            "ClearTextPassword = 0`r`n" + # Fixes Reversible Encryption
+            "ClearTextPassword = 0`r`n" +
             "LockoutBadCount = 5`r`n" +
             "ResetLockoutCount = 15`r`n" +
             "LockoutDuration = 15" | Out-File $cfg -Encoding Unicode
             secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY
             Remove-Item $cfg
         
-        - name: Apply Registry Policies (Relax Length & Admin Lockout)
+        - name: Apply Registry Policies
           win_regedit:
             path: '{{ item.path }}'
             name: '{{ item.name }}'
