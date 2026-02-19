@@ -1,33 +1,58 @@
 ---
-- name: Audit Reversible Encryption
+- name: Apply CIS Windows Server 2025 Account Policy Hardening (Full Suite)
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Reversible_Encryption_Report_{{ inventory_hostname }}.html"
+    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Audit Reversible Encryption Setting
+    - name: Audit All Settings (Force Run)
       win_shell: |
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
         Remove-Item $tempFile
-        
-        $line = $policy | Select-String "^ClearTextPassword\s*="
-        # If 0 (Disabled), we return "Disabled". If 1 (Enabled), we return "Enabled".
-        if ($line -and $line.ToString().Split('=')[1].Trim() -eq "0") { "Disabled" } else { "Enabled" }
-      register: reversible_status
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "0"
+        }
+
+        $netAccounts = net accounts
+        function Get-Net($regex) {
+            $line = $netAccounts | Select-String $regex
+            if ($line) { return $line.ToString().Split(':')[1].Trim() }
+            return "Unknown"
+        }
+
+        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+
+        @{
+            PasswordHistory    = Get-Val "PasswordHistorySize"
+            MaxPasswordAge     = Get-Val "MaximumPasswordAge"
+            MinPasswordAge     = Get-Val "MinimumPasswordAge"
+            MinPasswordLength  = Get-Val "MinimumPasswordLength"
+            PasswordComplexity = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
+            RelaxLength        = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
+            LockoutThreshold   = Get-Net "Lockout threshold"
+            LockoutDuration    = Get-Net "Lockout duration"
+            LockoutWindow      = Get-Net "Lockout observation window"
+        } | ConvertTo-Json
+      register: full_audit
       check_mode: no
 
-    - name: Render Report
+    - name: Render Full Report
       delegate_to: localhost
       template:
         src: "../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        current_state: "{{ reversible_status.stdout | trim }}"
+        # Convert the JSON string from win_shell into an actual object for the template
+        audit: "{{ full_audit.stdout | from_json }}"
       check_mode: no
 
     - name: Upload to S3
