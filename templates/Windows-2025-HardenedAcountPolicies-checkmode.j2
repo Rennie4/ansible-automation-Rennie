@@ -1,35 +1,48 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f4f7f6; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background-color: #455A64; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .ok { color: #5cb85c; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>CIS Audit: {{ inventory_hostname }}</h1>
-        <table>
-            <thead>
-                <tr>
-                    <th>Policy Setting Name</th>
-                    <th>Current State</th>
-                    <th>CIS Requirement</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>Store passwords using reversible encryption</td>
-                    <td class="{{ 'ok' if data.ReversibleEncryption == 'Disabled' }}">Disabled</td>
-                    <td>Disabled</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+---
+- name: Audit Reversible Encryption Setting
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "Reversible_Encryption_Report_{{ inventory_hostname }}.html"
+
+  tasks:
+    - name: Audit ClearTextPassword (Force Run)
+      win_shell: |
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+        
+        # Capture the raw value (0 or 1)
+        $line = $policy | Select-String "^ClearTextPassword\s*="
+        $val = if ($line) { $line.ToString().Split('=')[1].Trim() } else { "0" }
+        
+        # Explicit mapping: If 0, then "Disabled"
+        $status = if ($val -eq "0") { "Disabled" } else { "Enabled" }
+        
+        @{
+            ReversibleEncryption = $status
+        } | ConvertTo-Json
+      register: audit_result
+      check_mode: no
+
+    - name: Generate and Upload Report
+      delegate_to: localhost
+      check_mode: no
+      block:
+        - name: Render Template
+          template:
+            src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
+            dest: "/tmp/{{ report_filename }}"
+          vars:
+            data: "{{ audit_result.stdout | from_json }}"
+
+        - name: Upload to S3
+          amazon.aws.s3_object:
+            bucket: "{{ s3_bucket_name }}"
+            object: "cis-baseline-files/{{ report_filename }}"
+            src: "/tmp/{{ report_filename }}"
+            mode: put
+            region: "{{ s3_region }}"
