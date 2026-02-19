@@ -10,6 +10,7 @@
   tasks:
     - name: Audit "Before" State
       win_shell: &audit_logic |
+        # 1. Capture Account Policy Data
         $netAccounts = net accounts
         $threshold = ($netAccounts | Select-String "Lockout threshold").ToString().Split(':')[1].Trim()
         $duration = ($netAccounts | Select-String "Lockout duration").ToString().Split(':')[1].Trim()
@@ -26,22 +27,26 @@
             return "0"
         }
 
-        # IMPROVED CHECK: Specifically looking for the existence of the 1 value
-        $relaxPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        $relaxVal = (Get-ItemProperty -Path $relaxPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        # 2. FIXED: Precise Registry Check for "Relax minimum password length limits"
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $valName = "RelaxMinimumPasswordLengthLimits"
         
-        # If the value is null or 0, it is NOT Enabled.
-        if ($relaxVal -eq 1) { 
-            $relaxStatus = "Enabled (1)" 
-        } elseif ($relaxVal -eq 0 -and $null -ne $relaxVal) { 
-            $relaxStatus = "Disabled (0)" 
-        } else { 
-            $relaxStatus = "Not Defined" 
+        if (Test-Path $regPath) {
+            $prop = Get-ItemProperty -Path $regPath -Name $valName -ErrorAction SilentlyContinue
+            if ($null -ne $prop -and $prop.PSObject.Properties[$valName]) {
+                $relaxVal = $prop.$valName
+                $relaxStatus = if ($relaxVal -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
+            } else {
+                $relaxStatus = "Not Defined"
+            }
+        } else {
+            $relaxStatus = "Not Defined"
         }
 
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
-        $regValue = (Get-ItemProperty -Path $regPath -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
-        $adminStatus = if ($regValue -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
+        # 3. Administrator Lockout Status
+        $adminReg = "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0"
+        $adminVal = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        $adminStatus = if ($adminVal -eq 1 -or ($threshold -ne "0" -and $threshold -ne "Never")) { "Enabled (1)" } else { "Disabled (0)" }
 
         @{
             PasswordHistoryCount      = Get-Val "PasswordHistorySize"
@@ -59,7 +64,8 @@
         } | ConvertTo-Json
       register: before_audit
 
-    - name: Ensure "Relax minimum password length limits" is Enabled
+    # --- HARDENING TASK ---
+    - name: Set Relax minimum password length limits to Enabled
       win_regedit:
         path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
         name: RelaxMinimumPasswordLengthLimits
