@@ -3,40 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background: #f4f7f6; color: #333; }
         .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
-        h2 { border-bottom: 2px solid #455A64; padding-bottom: 5px; color: #455A64; }
+        h2 { border-bottom: 2px solid #455A64; padding-bottom: 5px; color: #455A64; font-size: 18px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
-        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .status-ok { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; padding: 2px 5px; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 14px; }
+        .status-ok { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; padding: 4px 8px; border-radius: 4px; }
+        .highlight { background-color: #F9FBE7; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
         <h1>CIS Remediation Report: {{ inventory_hostname }}</h1>
-        <h2>Policy Transformation (After Reboot)</h2>
+        <p><strong>Compliance Standard:</strong> CIS Microsoft Windows Server 2025 Benchmark v1.0.0</p>
+        
+        <h2>Post-Reboot Verification Table</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Setting</th>
-                    <th>Before</th>
-                    <th>After</th>
-                    <th>Requirement</th>
+                    <th>Security Setting</th>
+                    <th>State Before</th>
+                    <th>State After</th>
+                    <th>CIS Requirement</th>
                 </tr>
             </thead>
             <tbody>
-                <tr><td>Min Password Length</td><td>{{ before.MinPasswordLength }}</td><td>{{ after.MinPasswordLength }}</td><td>14</td></tr>
-                <tr><td>Password History</td><td>{{ before.PasswordHistory }}</td><td>{{ after.PasswordHistory }}</td><td>24</td></tr>
-                <tr><td>Lockout Threshold</td><td>{{ before.LockoutThreshold }}</td><td>{{ after.LockoutThreshold }}</td><td>5</td></tr>
+                <tr><td>Minimum Password Length</td><td>{{ before.MinPasswordLength }}</td><td class="highlight">{{ after.MinPasswordLength }}</td><td>14</td></tr>
+                <tr><td>Password History Size</td><td>{{ before.PasswordHistory }}</td><td class="highlight">{{ after.PasswordHistory }}</td><td>24</td></tr>
+                <tr><td>Account Lockout Threshold</td><td>{{ before.LockoutThreshold }}</td><td class="highlight">{{ after.LockoutThreshold }}</td><td>5 attempts</td></tr>
                 <tr>
-                    <td>Reversible Encryption</td>
+                    <td>Store passwords using reversible encryption</td>
                     <td>{{ before.ReversibleEncryption }}</td>
                     <td class="status-ok">Disabled</td>
                     <td>Disabled</td>
                 </tr>
                 <tr>
-                    <td>Admin Lockout</td>
+                    <td>Allow Administrator account lockout</td>
                     <td>{{ before.AllowAdminLockout }}</td>
                     <td class="status-ok">Enabled</td>
                     <td>Enabled</td>
