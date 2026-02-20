@@ -5,7 +5,7 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Hardening_Comparison_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Hardening_Remediation_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit Current State (Before)
@@ -49,11 +49,11 @@
         } | ConvertTo-Json
       register: before_audit
 
-    - name: Apply CIS Hardening Settings
+    - name: Apply Hardening and Force Commit
       block:
-        - name: Apply Secedit (Password & Lockout)
+        - name: Apply Secedit Configuration
           win_shell: |
-            $cfg = "C:\Windows\Temp\h.inf"
+            $cfg = "C:\Windows\Temp\hardening_v2.inf"
             "[Unicode]`r`nUnicode=yes`r`n[System Access]`r`n" +
             "PasswordHistorySize = 24`r`n" +
             "MaximumPasswordAge = 365`r`n" +
@@ -64,10 +64,15 @@
             "LockoutBadCount = 5`r`n" +
             "ResetLockoutCount = 15`r`n" +
             "LockoutDuration = 15" | Out-File $cfg -Encoding Unicode
-            secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY
+            
+            # Use /quiet and /overwrite to ensure database commit
+            secedit /configure /db C:\Windows\security\local.sdb /cfg $cfg /areas SECURITYPOLICY /overwrite /quiet
             Remove-Item $cfg
+            
+            # Force the local security subsystem to refresh
+            gpupdate /force
         
-        - name: Apply Registry (Relax Length & Admin Lockout)
+        - name: Apply Registry Settings
           win_regedit:
             path: '{{ item.path }}'
             name: '{{ item.name }}'
