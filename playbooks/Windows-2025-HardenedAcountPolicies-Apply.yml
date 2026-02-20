@@ -5,7 +5,6 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Updated to match your working folder path
     s3_folder: "cis-baseline-files"
     report_filename: "Full_CIS_Remediation_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
@@ -64,7 +63,7 @@
       block:
         - name: Render HTML Template
           template:
-            src: "../templates/Windows-2025-HardenedAcountPolicies-verify.j2"
+            src: "../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
             before: "{{ before_audit.stdout | from_json }}"
