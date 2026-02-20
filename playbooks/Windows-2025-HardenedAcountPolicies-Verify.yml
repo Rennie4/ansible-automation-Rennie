@@ -1,0 +1,57 @@
+---
+- name: Verify CIS Hardening and Force Report Upload
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "Hardening_Compliance_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+
+  tasks:
+    - name: Audit Final Hardened State
+      win_shell: |
+        $net = net accounts
+        function Get-Net($re) { $l = $net | Select-String $re; if($l){$l.ToString().Split(':')[1].Trim() }else{"0"} }
+        
+        $adminReg = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
+        $adminVal = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
+        
+        $seceditTemp = "C:\Windows\Temp\audit_final.inf"
+        secedit /export /cfg $seceditTemp /areas SECURITYPOLICY | Out-Null
+        $sec = Get-Content $seceditTemp
+        Remove-Item $seceditTemp
+        function Get-Sec($k) { $l = $sec | Select-String "^$k\s*="; if($l){$l.ToString().Split('=')[1].Trim()}else{"0"} }
+
+        @{
+            MinPasswordLength    = Get-Net "Minimum password length"
+            PasswordHistory      = Get-Net "Length of password history"
+            LockoutThreshold     = Get-Net "Lockout threshold"
+            ReversibleEncryption = if (Get-Sec "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
+            AllowAdminLockout    = if ($adminVal -eq 1) { "Enabled" } else { "Disabled" }
+        } | ConvertTo-Json
+      register: verified_audit
+
+    - name: Generate and Upload Report
+      delegate_to: localhost
+      block:
+        - name: Render HTML Template
+          template:
+            src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
+            dest: "/tmp/{{ report_filename }}"
+          vars:
+            # Setting both before and after to the current state for the compliance view
+            before: "{{ verified_audit.stdout | from_json }}"
+            after: "{{ verified_audit.stdout | from_json }}"
+
+        - name: Upload Report to S3
+          amazon.aws.s3_object:
+            bucket: "{{ s3_bucket_name }}"
+            object: "cis-remediation-reports/{{ report_filename }}"
+            src: "/tmp/{{ report_filename }}"
+            mode: put
+            region: "{{ s3_region }}"
+          register: s3_result
+
+        - name: Verify S3 Upload Success
+          debug:
+            msg: "Report successfully uploaded to S3. URL: https://{{ s3_bucket_name }}.s3.{{ s3_region }}.amazonaws.com/cis-remediation-reports/{{ report_filename }}"
