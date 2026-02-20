@@ -1,11 +1,11 @@
 ---
-- name: Verify CIS Hardening and Force Report Upload
+- name: Verify CIS Hardening and Generate Final Report
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Hardening_Compliance_Report_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Hardening_Verified_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit Final Hardened State
@@ -31,27 +31,27 @@
         } | ConvertTo-Json
       register: verified_audit
 
-    - name: Generate and Upload Report
+    - name: Render and Upload Final Report
       delegate_to: localhost
       block:
-        - name: Render HTML Template
+        - name: Generate HTML Report
           template:
-            src: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
+            src: "../templates/Windows-2025-HardenedAcountPolicies-verify.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
-            # Setting both before and after to the current state for the compliance view
+            # Using verified state for both columns since settings are applied
             before: "{{ verified_audit.stdout | from_json }}"
             after: "{{ verified_audit.stdout | from_json }}"
 
-        - name: Upload Report to S3
+        - name: Upload to S3
           amazon.aws.s3_object:
             bucket: "{{ s3_bucket_name }}"
             object: "cis-remediation-reports/{{ report_filename }}"
             src: "/tmp/{{ report_filename }}"
             mode: put
             region: "{{ s3_region }}"
-          register: s3_result
+          register: s3_status
 
-        - name: Verify S3 Upload Success
+        - name: Show S3 Result
           debug:
-            msg: "Report successfully uploaded to S3. URL: https://{{ s3_bucket_name }}.s3.{{ s3_region }}.amazonaws.com/cis-remediation-reports/{{ report_filename }}"
+            var: s3_status.msg
