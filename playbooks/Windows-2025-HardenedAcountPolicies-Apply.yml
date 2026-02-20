@@ -1,5 +1,5 @@
 ---
-- name: Apply CIS Windows Server 2025 Account Policy Hardening
+- name: Apply CIS Windows Server 2025 Account Policy Hardening (Full Suite)
   hosts: all
   gather_facts: yes
   vars:
@@ -9,32 +9,45 @@
     report_filename: "Full_CIS_Remediation_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Audit State (Before)
-      win_shell: &audit_logic |
-        $net = net accounts
-        function Get-Net($re) { $l = $net | Select-String $re; if($l){$l.ToString().Split(':')[1].Trim() }else{"0"} }
-        
-        $adminReg = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0'
-        $adminVal = (Get-ItemProperty -Path $adminReg -Name "AllowAdminLockout" -ErrorAction SilentlyContinue).AllowAdminLockout
-        
-        $seceditTemp = "C:\Windows\Temp\audit_temp.inf"
-        secedit /export /cfg $seceditTemp /areas SECURITYPOLICY | Out-Null
-        $sec = Get-Content $seceditTemp
-        Remove-Item $seceditTemp
-        function Get-Sec($k) { $l = $sec | Select-String "^$k\s*="; if($l){$l.ToString().Split('=')[1].Trim()}else{"0"} }
+    - name: Audit All Settings (Before)
+      win_shell: &full_audit_logic |
+        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "0"
+        }
+
+        $netAccounts = net accounts
+        function Get-Net($regex) {
+            $line = $netAccounts | Select-String $regex
+            if ($line) { return $line.ToString().Split(':')[1].Trim() }
+            return "Unknown"
+        }
+
+        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
 
         @{
-            MinPasswordLength    = Get-Net "Minimum password length"
-            PasswordHistory      = Get-Net "Length of password history"
-            LockoutThreshold     = Get-Net "Lockout threshold"
-            ReversibleEncryption = if (Get-Sec "ClearTextPassword" -eq "1") { "Enabled" } else { "Disabled" }
-            AllowAdminLockout    = if ($adminVal -eq 1) { "Enabled" } else { "Disabled" }
+            PasswordHistory    = Get-Val "PasswordHistorySize"
+            MaxPasswordAge     = Get-Val "MaximumPasswordAge"
+            MinPasswordAge     = Get-Val "MinimumPasswordAge"
+            MinPasswordLength  = Get-Val "MinimumPasswordLength"
+            PasswordComplexity = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
+            RelaxLength        = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
+            LockoutThreshold   = Get-Net "Lockout threshold"
+            LockoutDuration    = Get-Net "Lockout duration"
+            LockoutWindow      = Get-Net "Lockout observation window"
         } | ConvertTo-Json
       register: before_audit
 
-    - name: Apply SAM and Registry Hardening
+    - name: Apply CIS Hardening
       block:
-        - name: Set SAM Policies via Net Accounts
+        - name: Set SAM Policies (Net Accounts)
           win_shell: |
             net accounts /minpwlen:14 /maxpwage:365 /minpwage:1 /unique:24
             net accounts /lockoutthreshold:5 /lockoutduration:15 /lockoutwindow:15
@@ -49,27 +62,27 @@
             - { path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', name: 'RelaxMinimumPasswordLengthLimits' }
             - { path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0', name: 'AllowAdminLockout' }
 
-    - name: Reboot to Sync Security Databases
+    - name: Reboot to Sync Policy Engine
       win_reboot:
-        msg: "Applying CIS Hardening. Rebooting to sync policy engine."
         reboot_timeout: 600
 
-    - name: Audit State (After Reboot)
-      win_shell: *audit_logic
+    - name: Audit All Settings (After)
+      win_shell: *full_audit_logic
       register: after_audit
 
-    - name: Render and Upload Report
+    - name: Render and Upload Full Remediation Report
       delegate_to: localhost
       block:
-        - name: Render HTML Template
+        - name: Render Template
           template:
             src: "../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
+            # Matches your checkmode variable name 'audit' for easy compatibility
+            audit: "{{ after_audit.stdout | from_json }}"
             before: "{{ before_audit.stdout | from_json }}"
-            after: "{{ after_audit.stdout | from_json }}"
 
-        - name: Upload to S3 (Verified Working Folder)
+        - name: Upload to S3
           amazon.aws.s3_object:
             bucket: "{{ s3_bucket_name }}"
             object: "{{ s3_folder }}/{{ report_filename }}"
