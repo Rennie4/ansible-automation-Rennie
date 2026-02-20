@@ -5,7 +5,7 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Hardening_Force_Apply_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Hardening_Final_Apply_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit Before State
@@ -31,14 +31,14 @@
         } | ConvertTo-Json
       register: before_audit
 
-    - name: Force Hardening (Direct Net & Registry)
+    - name: Force Hardening (Direct SAM & Registry)
       block:
-        - name: Apply Password & Lockout via Net Accounts
+        - name: Apply SAM Policy via Net Accounts
           win_shell: |
             net accounts /minpwlen:14 /maxpwage:365 /minpwage:1 /unique:24
             net accounts /lockoutthreshold:5 /lockoutduration:15 /lockoutwindow:15
 
-        - name: Apply Registry Settings
+        - name: Apply Registry Policy Settings
           win_regedit:
             path: "{{ item.path }}"
             name: "{{ item.name }}"
@@ -48,12 +48,12 @@
             - { path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', name: 'RelaxMinimumPasswordLengthLimits', data: 1 }
             - { path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0', name: 'AllowAdminLockout', data: 1 }
 
-        - name: Restart Netlogon to Refresh Policies
-          win_service:
-            name: Netlogon
-            state: restarted
+    - name: Reboot to Commit Changes
+      win_reboot:
+        msg: "Applying CIS Security Hardening. Rebooting now."
+        pre_reboot_delay: 2
 
-    - name: Audit After State
+    - name: Audit After State (Post-Reboot)
       win_shell: *audit_logic
       register: after_audit
 
