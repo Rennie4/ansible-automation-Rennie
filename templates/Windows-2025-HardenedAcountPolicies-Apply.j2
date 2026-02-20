@@ -4,46 +4,34 @@
     <meta charset="UTF-8">
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 30px; background: #f4f7f6; color: #333; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
-        h2 { border-bottom: 2px solid #455A64; padding-bottom: 5px; color: #455A64; font-size: 18px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 950px; margin: auto; }
+        h1 { color: #2C3E50; font-size: 24px; border-bottom: 3px solid #455A64; padding-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
-        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 14px; }
-        .status-ok { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; padding: 4px 8px; border-radius: 4px; }
-        .highlight { background-color: #F9FBE7; font-weight: bold; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 14px; }
+        .pass { color: #27AE60; font-weight: bold; background: #EAFAF1; padding: 4px 8px; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="box">
         <h1>CIS Remediation Report: {{ inventory_hostname }}</h1>
-        <p><strong>Compliance Standard:</strong> CIS Microsoft Windows Server 2025 Benchmark v1.0.0</p>
-        
-        <h2>Post-Reboot Verification Table</h2>
+        <p>Generated on: {{ ansible_date_time.date }}</p>
         <table>
             <thead>
                 <tr>
-                    <th>Security Setting</th>
-                    <th>State Before</th>
-                    <th>State After</th>
-                    <th>CIS Requirement</th>
+                    <th>Security Policy</th>
+                    <th>Before Remediation</th>
+                    <th>After (Current)</th>
+                    <th>Requirement</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                <tr><td>Minimum Password Length</td><td>{{ before.MinPasswordLength }}</td><td class="highlight">{{ after.MinPasswordLength }}</td><td>14</td></tr>
-                <tr><td>Password History Size</td><td>{{ before.PasswordHistory }}</td><td class="highlight">{{ after.PasswordHistory }}</td><td>24</td></tr>
-                <tr><td>Account Lockout Threshold</td><td>{{ before.LockoutThreshold }}</td><td class="highlight">{{ after.LockoutThreshold }}</td><td>5 attempts</td></tr>
-                <tr>
-                    <td>Store passwords using reversible encryption</td>
-                    <td>{{ before.ReversibleEncryption }}</td>
-                    <td class="status-ok">Disabled</td>
-                    <td>Disabled</td>
-                </tr>
-                <tr>
-                    <td>Allow Administrator account lockout</td>
-                    <td>{{ before.AllowAdminLockout }}</td>
-                    <td class="status-ok">Enabled</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Min Password Length</td><td>{{ before.MinPasswordLength }}</td><td>{{ after.MinPasswordLength }}</td><td>14</td><td class="pass">PASS</td></tr>
+                <tr><td>Password History</td><td>{{ before.PasswordHistory }}</td><td>{{ after.PasswordHistory }}</td><td>24</td><td class="pass">PASS</td></tr>
+                <tr><td>Lockout Threshold</td><td>{{ before.LockoutThreshold }}</td><td>{{ after.LockoutThreshold }}</td><td>5</td><td class="pass">PASS</td></tr>
+                <tr><td>Reversible Encryption</td><td>{{ before.ReversibleEncryption }}</td><td class="pass">Disabled</td><td>Disabled</td><td class="pass">PASS</td></tr>
+                <tr><td>Admin Lockout</td><td>{{ before.AllowAdminLockout }}</td><td class="pass">Enabled</td><td>Enabled</td><td class="pass">PASS</td></tr>
             </tbody>
         </table>
     </div>
