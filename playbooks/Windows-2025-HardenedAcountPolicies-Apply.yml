@@ -78,7 +78,6 @@
             src: "../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
-            # Matches your checkmode variable name 'audit' for easy compatibility
             audit: "{{ after_audit.stdout | from_json }}"
             before: "{{ before_audit.stdout | from_json }}"
 
