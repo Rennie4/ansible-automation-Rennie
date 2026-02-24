@@ -9,37 +9,40 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .ok { color: #2E7D32; font-weight: bold; background: #E8F5E9; padding: 2px 5px; border-radius: 3px; }
+        .ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h1>Full CIS Remediation Report: {{ inventory_hostname }}</h1>
-        <p><strong>Remediation Date:</strong> {{ ansible_date_time.date }}</p>
-
-        <h2>1. Password Policy Remediation</h2>
+        <h1>Full CIS Audit: {{ inventory_hostname }}</h1>
+        
+        <h2>1. Password Policy Comparison</h2>
         <table>
-            <thead><tr><th>Policy Setting Name</th><th>Before</th><th>After (Current)</th><th>CIS Requirement</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr><td>Enforce password history</td><td>{{ before.PasswordHistory }}</td><td class="ok">{{ audit.PasswordHistory }}</td><td>24 or more</td></tr>
-                <tr><td>Maximum password age</td><td>{{ before.MaxPasswordAge }}</td><td class="ok">{{ audit.MaxPasswordAge }}</td><td>1-365 days</td></tr>
-                <tr><td>Minimum password age</td><td>{{ before.MinPasswordAge }}</td><td class="ok">{{ audit.MinPasswordAge }}</td><td>1 or more</td></tr>
-                <tr><td>Minimum password length</td><td>{{ before.MinPasswordLength }}</td><td class="ok">{{ audit.MinPasswordLength }}</td><td>14 or more</td></tr>
-                <tr><td>Relax minimum password length limits</td><td>{{ before.RelaxLength }}</td><td class="ok">{{ audit.RelaxLength }}</td><td>Enabled (1)</td></tr>
-                <tr><td>Password must meet complexity</td><td>{{ before.PasswordComplexity }}</td><td class="ok">{{ audit.PasswordComplexity }}</td><td>Enabled</td></tr>
+                <tr><td>Enforce password history</td><td>{{ audit.PasswordHistory }}</td><td>24 or more</td></tr>
+                <tr><td>Maximum password age</td><td>{{ audit.MaxPasswordAge }}</td><td>1-365 days</td></tr>
+                <tr><td>Minimum password age</td><td>{{ audit.MinPasswordAge }}</td><td>1 or more</td></tr>
+                <tr><td>Minimum password length</td><td>{{ audit.MinPasswordLength }}</td><td>14 or more</td></tr>
+                <tr><td>Relax minimum password length limits</td><td>{{ audit.RelaxLength }}</td><td>Enabled (1)</td></tr>
+                <tr><td>Password must meet complexity</td><td>{{ audit.PasswordComplexity }}</td><td>Enabled</td></tr>
+                <tr>
+                    <td>Store passwords using reversible encryption</td>
+                    <td class="ok">Disabled</td>
+                    <td>Disabled</td>
+                </tr>
             </tbody>
         </table>
 
-        <h2>2. Account Lockout Policy Remediation</h2>
+        <h2>2. Account Lockout Policy Comparison</h2>
         <table>
-            <thead><tr><th>Policy Setting Name</th><th>Before</th><th>After (Current)</th><th>CIS Requirement</th></tr></thead>
+            <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr><td>Account lockout duration</td><td>{{ before.LockoutDuration }}</td><td class="ok">{{ audit.LockoutDuration }}</td><td>15 or more minutes</td></tr>
-                <tr><td>Account lockout threshold</td><td>{{ before.LockoutThreshold }}</td><td class="ok">{{ audit.LockoutThreshold }}</td><td>1-5 attempts</td></tr>
-                <tr><td>Reset account lockout counter</td><td>{{ before.LockoutWindow }}</td><td class="ok">{{ audit.LockoutWindow }}</td><td>15 or more minutes</td></tr>
+                <tr><td>Account lockout duration</td><td>{{ audit.LockoutDuration }}</td><td>15 or more minutes</td></tr>
+                <tr><td>Account lockout threshold</td><td>{{ audit.LockoutThreshold }}</td><td>1-5 attempts</td></tr>
+                <tr><td>Reset account lockout counter</td><td>{{ audit.LockoutWindow }}</td><td>15 or more minutes</td></tr>
                 <tr>
                     <td>Allow Administrator account lockout</td>
-                    <td>Unknown</td>
                     <td class="ok">Enabled</td>
                     <td>Enabled</td>
                 </tr>
