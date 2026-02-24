@@ -5,11 +5,12 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    s3_folder: "cis-baseline-files"
+    report_filename: "Full_CIS_Remediation_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Audit All Settings (Force Run)
-      win_shell: |
+    - name: Audit All Settings (Before)
+      win_shell: &full_audit_logic |
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile
@@ -42,25 +43,49 @@
             LockoutDuration    = Get-Net "Lockout duration"
             LockoutWindow      = Get-Net "Lockout observation window"
         } | ConvertTo-Json
-      register: full_audit
-      check_mode: no
+      register: before_audit
 
-    - name: Render Full Report
-      delegate_to: localhost
-      template:
-        src: "../templates/Windows-2025-HardenedAcountPolicies-checkmode.j2"
-        dest: "/tmp/{{ report_filename }}"
-      vars:
-        # Convert the JSON string from win_shell into an actual object for the template
-        audit: "{{ full_audit.stdout | from_json }}"
-      check_mode: no
+    - name: Apply CIS Hardening
+      block:
+        - name: Set SAM Policies (Net Accounts)
+          win_shell: |
+            net accounts /minpwlen:14 /maxpwage:365 /minpwage:1 /unique:24
+            net accounts /lockoutthreshold:5 /lockoutduration:15 /lockoutwindow:15
 
-    - name: Upload to S3
+        - name: Set Registry Policy Keys
+          win_regedit:
+            path: "{{ item.path }}"
+            name: "{{ item.name }}"
+            data: 1
+            type: dword
+          loop:
+            - { path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System', name: 'RelaxMinimumPasswordLengthLimits' }
+            - { path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0', name: 'AllowAdminLockout' }
+
+    - name: Reboot to Sync Policy Engine
+      win_reboot:
+        reboot_timeout: 600
+
+    - name: Audit All Settings (After)
+      win_shell: *full_audit_logic
+      register: after_audit
+
+    - name: Render and Upload Full Remediation Report
       delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/{{ report_filename }}"
-        src: "/tmp/{{ report_filename }}"
-        mode: put
-        region: "{{ s3_region }}"
-      check_mode: no
+      block:
+        - name: Render Template
+          template:
+            src: "../templates/Windows-2025-HardenedAcountPolicies-Apply.j2"
+            dest: "/tmp/{{ report_filename }}"
+          vars:
+            # Matches your checkmode variable name 'audit' for easy compatibility
+            audit: "{{ after_audit.stdout | from_json }}"
+            before: "{{ before_audit.stdout | from_json }}"
+
+        - name: Upload to S3
+          amazon.aws.s3_object:
+            bucket: "{{ s3_bucket_name }}"
+            object: "{{ s3_folder }}/{{ report_filename }}"
+            src: "/tmp/{{ report_filename }}"
+            mode: put
+            region: "{{ s3_region }}"
