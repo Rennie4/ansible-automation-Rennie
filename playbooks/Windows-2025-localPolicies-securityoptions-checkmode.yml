@@ -5,9 +5,52 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    local_report: "/tmp/Security_Report_{{ inventory_hostname }}.html"
+    # Unified paths for the AAP Execution Environment
+    temp_template: "/tmp/security_report.j2"
+    local_html_report: "/tmp/Security_Audit_{{ inventory_hostname }}.html"
 
   tasks:
+    - name: Create Audit Template on Controller
+      delegate_to: localhost
+      ansible.builtin.copy:
+        dest: "{{ temp_template }}"
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <style>
+                  body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f9; padding: 40px; }
+                  .card { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+                  h1 { color: #1e3a8a; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                  th { background: #1e3a8a; color: white; text-align: left; padding: 12px; }
+                  td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+                  .Enabled { color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; }
+                  .Disabled { color: #dc2626; font-weight: bold; background: #fef2f2; padding: 4px 8px; border-radius: 4px; }
+                  .Not-Defined { color: #94a3b8; font-style: italic; }
+              </style>
+          </head>
+          <body>
+              <div class="card">
+                  <h1>CIS 2025 Security Audit: {{ inventory_hostname }}</h1>
+                  <table>
+                      <thead><tr><th>Policy Item</th><th>Status</th></tr></thead>
+                      <tbody>
+                          {% for line in scan_lines %}
+                          {% set parts = line.split('|') %}
+                          {% set status_val = parts[1].strip() %}
+                          <tr>
+                              <td>{{ parts[0].strip() }}</td>
+                              <td><span class="{{ status_val.replace(' ', '-') }}">{{ status_val }}</span></td>
+                          </tr>
+                          {% endfor %}
+                      </tbody>
+                  </table>
+              </div>
+          </body>
+          </html>
+
     - name: Audit CIS Item 2.52 (Interactive Logon)
       ansible.windows.win_powershell:
         script: |
@@ -21,21 +64,16 @@
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        # SEARCH LOGIC: This looks one level UP from the playbook folder to find templates
-        src: "{{ lookup('first_found', search_list) }}"
-        dest: "{{ local_report }}"
+        src: "{{ temp_template }}"
+        dest: "{{ local_html_report }}"
       vars:
-        search_list:
-          - "../templates/security_report.j2" # This is the most likely path in AAP
-          - "templates/security_report.j2"
-          - "security_report.j2"
         scan_lines: "{{ audit_results.output[0].scan_results }}"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "audits/{{ local_report | basename }}"
-        src: "{{ local_report }}"
+        object: "audits/{{ local_html_report | basename }}"
+        src: "{{ local_html_report }}"
         mode: put
         region: "{{ s3_region }}"
