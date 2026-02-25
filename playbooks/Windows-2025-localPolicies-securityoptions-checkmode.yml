@@ -1,22 +1,22 @@
 ---
-- name: Windows Server 2025 – Single Item Audit & S3 Report
+- name: Windows Server 2025 – Security Audit & S3 Report
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # standardizing the output path on the AAP execution node
-    local_output_file: "/tmp/Security_Report_{{ inventory_hostname }}.html"
+    local_report: "/tmp/Security_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: Audit Last User Name Display
+    - name: Audit CIS Security Option (2.52)
       ansible.windows.win_powershell:
         script: |
-          # CIS Item 2.52: Interactive logon: Do Not Display Last User Name 
+          # CIS 2025 Item 2.52: Interactive logon: Do not display last user name
           $path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
           $name = "DontDisplayLastUserName"
           $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue).$name
           
+          # Mapping result for the HTML template
           $status = if ($null -eq $val) { "Not Defined" } elseif ($val -eq 1) { "Enabled" } else { "Disabled" }
           return @{ 
             scan_results = @(
@@ -28,17 +28,21 @@
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        # Using playbook_dir fixes the AAP "Could not find" error
-        src: "{{ playbook_dir }}/templates/security_report.j2"
-        dest: "{{ local_output_file }}"
+        # AAP FIX: This searches every possible location in your Git repo
+        src: "{{ item }}"
+        dest: "{{ local_report }}"
       vars:
         scan_lines: "{{ audit_results.output[0].scan_results }}"
+      with_first_found:
+        - "templates/security_report.j2"
+        - "../templates/security_report.j2"
+        - "security_report.j2"
 
     - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "audits/{{ local_output_file | basename }}"
-        src: "{{ local_output_file }}"
+        object: "audits/{{ local_report | basename }}"
+        src: "{{ local_report }}"
         mode: put
         region: "{{ s3_region }}"
