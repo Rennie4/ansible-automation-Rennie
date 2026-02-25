@@ -1,52 +1,44 @@
 ---
-- name: Windows Server 2025 – Security Options Audit (107 Items)
+- name: Windows Server 2025 – Single Item Audit & S3 Report
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Unified path for the execution environment container
-    local_report_path: "/tmp/Security_Options_Report_{{ inventory_hostname }}.html"
+    # standardizing the output path on the AAP execution node
+    local_output_file: "/tmp/Security_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: Run Unified Audit
+    - name: Audit Last User Name Display
       ansible.windows.win_powershell:
         script: |
-          $results = @()
-          # Mapping critical items from your CIS v1.0.0 PDF
-          $policyMap = @{
-              "Interactive logon: Do not display last user name" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|DontDisplayLastUserName"
-              "Accounts: Limit local account use of blank passwords" = "HKLM:\System\CurrentControlSet\Control\Lsa|LimitBlankPasswordUse"
-              "Interactive logon: Machine inactivity limit" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|InactivityTimeoutSecs"
-              "Microsoft network server: Digitally sign communications" = "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters|RequireSecuritySignature"
-              "User Account Control: Run all administrators in Admin Approval Mode" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|EnableLUA"
+          # CIS Item 2.52: Interactive logon: Do Not Display Last User Name 
+          $path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+          $name = "DontDisplayLastUserName"
+          $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue).$name
+          
+          $status = if ($null -eq $val) { "Not Defined" } elseif ($val -eq 1) { "Enabled" } else { "Disabled" }
+          return @{ 
+            scan_results = @(
+              "Interactive logon: Do not display last user name | $status"
+            )
           }
-
-          foreach ($name in $policyMap.Keys) {
-              $path, $regValue = $policyMap[$name].Split('|')
-              $current = (Get-ItemProperty -Path $path -Name $regValue -ErrorAction SilentlyContinue).$regValue
-              
-              # Standardizing text for CSS classes in your template
-              $valString = if ($null -eq $current) { "Not Defined" } elseif ($current -eq 1) { "Enabled" } else { "Disabled" }
-              $results += "$name | $valString"
-          }
-          return @{ scan_lines = $results }
       register: audit_results
 
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        # AAP FIX: playbook_dir ensures we find the templates folder in the cloned project
-        src: "{{ playbook_dir }}/templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
-        dest: "{{ local_report_path }}"
+        # Using playbook_dir fixes the AAP "Could not find" error
+        src: "{{ playbook_dir }}/templates/security_report.j2"
+        dest: "{{ local_output_file }}"
       vars:
-        scan_lines: "{{ audit_results.output[0].scan_lines }}"
+        scan_lines: "{{ audit_results.output[0].scan_results }}"
 
-    - name: Upload to S3
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "security-options-audits/{{ local_report_path | basename }}"
-        src: "{{ local_report_path }}"
+        object: "audits/{{ local_output_file | basename }}"
+        src: "{{ local_output_file }}"
         mode: put
         region: "{{ s3_region }}"
