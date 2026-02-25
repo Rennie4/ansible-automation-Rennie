@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #0078D4; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #0078D4; color: white; text-align: left; padding: 12px; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
+        .status-ok { color: #2E7D32; font-weight: bold; }
+        .status-warn { color: #D32F2F; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>Local Policies: Security Options Audit</h1>
+        <p><strong>Server:</strong> {{ inventory_hostname }}</p>
+        <p><strong>Date:</strong> {{ ansible_date_time.date }}</p>
+
+        <h2>1. Interactive Logon & System Settings</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Security Option</th>
+                    <th>Current Value</th>
+                    <th>CIS Requirement</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Interactive logon: Do not display last user name</td>
+                    <td>{{ audit.DontDisplayLastUserName }}</td>
+                    <td>1 (Enabled)</td>
+                </tr>
+                <tr>
+                    <td>Accounts: Limit local account use of blank passwords</td>
+                    <td>{{ audit.LimitBlankPasswordUse }}</td>
+                    <td>1 (Enabled)</td>
+                </tr>
+                <tr>
+                    <td>Microsoft network server: Digitally sign communications (always)</td>
+                    <td>{{ audit.RequireSecuritySignature }}</td>
+                    <td>1 (Enabled)</td>
+                </tr>
+                <tr>
+                    <td>User Account Control: Run all administrators in Admin Approval Mode</td>
+                    <td>{{ audit.EnableLUA }}</td>
+                    <td>1 (Enabled)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
