@@ -5,20 +5,20 @@
     <style>
         body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f9; padding: 40px; }
         .card { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #1e3a8a; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; }
+        h1 { color: #1e3a8a; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-top: 0; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background: #1e3a8a; color: white; text-align: left; padding: 12px; }
-        td { padding: 12px; border-bottom: 1px solid #eee; }
-        .Enabled { color: #16a34a; font-weight: bold; }
-        .Disabled { color: #dc2626; font-weight: bold; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+        .Enabled { color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; }
+        .Disabled { color: #dc2626; font-weight: bold; background: #fef2f2; padding: 4px 8px; border-radius: 4px; }
         .Not-Defined { color: #94a3b8; font-style: italic; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>CIS 2025 Audit: {{ inventory_hostname }}</h1>
+        <h1>CIS 2025 Security Audit: {{ inventory_hostname }}</h1>
         <table>
-            <thead><tr><th>Security Policy Item</th><th>Status</th></tr></thead>
+            <thead><tr><th>Policy Item</th><th>Status</th></tr></thead>
             <tbody>
                 {% for line in scan_lines %}
                 {% set parts = line.split('|') %}
