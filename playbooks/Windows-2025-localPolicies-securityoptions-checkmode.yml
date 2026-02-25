@@ -1,44 +1,45 @@
----
-- name: Apply CIS Windows Server 2025 Security Options Hardening (Audit)
-  hosts: all
-  gather_facts: yes
-  vars:
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
-    report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Full Security Options Audit</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f0f2f5; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #1a202c; border-bottom: 3px solid #005a9e; padding-bottom: 10px; }
+        .meta { margin-bottom: 20px; color: #4a5568; font-size: 0.9em; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        th { background-color: #005a9e; color: white; padding: 12px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.85em; word-wrap: break-word; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        .value-cell { font-family: 'Consolas', monospace; color: #2d3748; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Windows Server 2025: Security Options Inventory</h1>
+        <div class="meta">
+            <strong>Server:</strong> {{ inventory_hostname }}<br>
+            <strong>Audit Date:</strong> {{ ansible_date_time.date_time }}<br>
+            <strong>Total Settings Found:</strong> {{ all_options | length }}
+        </div>
 
-  tasks:
-    - name: Audit Security Options Registry Settings
-      ansible.windows.win_powershell:
-        script: |
-          $results = @{
-              "DontDisplayLastUserName" = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue).DontDisplayLastUserName
-              "LimitBlankPasswordUse"   = (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction SilentlyContinue).LimitBlankPasswordUse
-              "RequireSecuritySignature"= (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters" -Name "RequireSecuritySignature" -ErrorAction SilentlyContinue).RequireSecuritySignature
-              "EnableLUA"               = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -ErrorAction SilentlyContinue).EnableLUA
-          }
-          # Handle nulls for clean reporting
-          $results.Keys | ForEach-Object { if ($null -eq $results[$_]) { $results[$_] = "Not Defined" } }
-          return $results
-      register: sec_audit
-      check_mode: no
-
-    - name: Render Security Options Report
-      delegate_to: localhost
-      ansible.builtin.template:
-        src: "../templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
-        dest: "/tmp/{{ report_filename }}"
-      vars:
-        # Using | first ensures we handle the list returned by win_powershell
-        audit: "{{ sec_audit.output | first }}"
-      check_mode: no
-
-    - name: Upload to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "security-options-audits/{{ report_filename }}"
-        src: "/tmp/{{ report_filename }}"
-        mode: put
-        region: "{{ s3_region }}"
-      check_mode: no
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 70%;">Registry Path / Policy Name</th>
+                    <th style="width: 30%;">Effective Setting (Value)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in all_options %}
+                <tr>
+                    <td>{{ item.Key }}</td>
+                    <td class="value-cell">{{ item.Value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>
