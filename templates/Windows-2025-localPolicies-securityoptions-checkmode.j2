@@ -2,49 +2,40 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <title>Full Security Options Audit</title>
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #0078D4; margin-top: 25px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #0078D4; color: white; text-align: left; padding: 12px; }
-        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .pass { color: #2E7D32; font-weight: bold; background-color: #E8F5E9; }
-        .fail { color: #C62828; font-weight: bold; background-color: #FFEBEE; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f0f2f5; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        h1 { color: #1a202c; border-bottom: 3px solid #005a9e; padding-bottom: 10px; }
+        .meta { margin-bottom: 20px; color: #4a5568; font-size: 0.9em; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+        th { background-color: #005a9e; color: white; padding: 12px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.85em; word-wrap: break-word; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        .value-cell { font-family: 'Consolas', monospace; color: #2d3748; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="box">
-        <h1>Local Policies: Security Options Audit</h1>
-        <p><strong>Server:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Run Date:</strong> {{ ansible_date_time.date }}</p>
+    <div class="container">
+        <h1>Windows Server 2025: Security Options Inventory</h1>
+        <div class="meta">
+            <strong>Server:</strong> {{ inventory_hostname }}<br>
+            <strong>Audit Date:</strong> {{ ansible_date_time.date_time }}<br>
+            <strong>Total Settings Found:</strong> {{ all_options | length }}
+        </div>
 
-        <h2>1. Interactive Logon & System Settings</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Security Option</th>
-                    <th>Current Value</th>
-                    <th>CIS Requirement</th>
-                    <th>Status</th>
+                    <th style="width: 70%;">Registry Path / Policy Name</th>
+                    <th style="width: 30%;">Effective Setting (Value)</th>
                 </tr>
             </thead>
             <tbody>
-                {% set policies = [
-                    {'name': 'Do not display last user name', 'val': audit.DontDisplayLastUserName, 'req': 1},
-                    {'name': 'Limit blank password use', 'val': audit.LimitBlankPasswordUse, 'req': 1},
-                    {'name': 'Digitally sign communications', 'val': audit.RequireSecuritySignature, 'req': 1},
-                    {'name': 'UAC: Admin Approval Mode', 'val': audit.EnableLUA, 'req': 1}
-                ] %}
-
-                {% for item in policies %}
+                {% for item in all_options %}
                 <tr>
-                    <td>{{ item.name }}</td>
-                    <td>{{ item.val }}</td>
-                    <td>{{ item.req }}</td>
-                    <td class="{{ 'pass' if item.val|string == item.req|string else 'fail' }}">
-                        {{ 'COMPLIANT' if item.val|string == item.req|string else 'NON-COMPLIANT' }}
-                    </td>
+                    <td>{{ item.Key }}</td>
+                    <td class="value-cell">{{ item.Value }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
