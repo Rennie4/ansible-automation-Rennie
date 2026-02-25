@@ -9,14 +9,13 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #0078D4; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .status-ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
         <h1>Local Policies: Security Options Audit</h1>
         <p><strong>Server:</strong> {{ inventory_hostname }}</p>
-        <p><strong>Date:</strong> {{ ansible_date_time.date }}</p>
+        <p><strong>Run Date:</strong> {{ ansible_date_time.date }}</p>
 
         <h2>1. Interactive Logon & System Settings</h2>
         <table>
@@ -30,22 +29,22 @@
             <tbody>
                 <tr>
                     <td>Interactive logon: Do not display last user name</td>
-                    <td>{{ audit.DontDisplayLastUserName }}</td>
+                    <td>{{ audit.DontDisplayLastUserName | default('Not Defined') }}</td>
                     <td>1</td>
                 </tr>
                 <tr>
                     <td>Accounts: Limit local account use of blank passwords</td>
-                    <td>{{ audit.LimitBlankPasswordUse }}</td>
+                    <td>{{ audit.LimitBlankPasswordUse | default('Not Defined') }}</td>
                     <td>1</td>
                 </tr>
                 <tr>
                     <td>Microsoft network server: Digitally sign communications (always)</td>
-                    <td>{{ audit.RequireSecuritySignature }}</td>
+                    <td>{{ audit.RequireSecuritySignature | default('Not Defined') }}</td>
                     <td>1</td>
                 </tr>
                 <tr>
                     <td>User Account Control: Run all administrators in Admin Approval Mode</td>
-                    <td>{{ audit.EnableLUA }}</td>
+                    <td>{{ audit.EnableLUA | default('Not Defined') }}</td>
                     <td>1</td>
                 </tr>
             </tbody>
