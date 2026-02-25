@@ -11,7 +11,7 @@
         .stat h3 { margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; }
         .stat p { margin: 8px 0 0; font-size: 28px; font-weight: 800; color: #1e293b; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background: #1e3a8a; color: white; text-align: left; padding: 15px; position: sticky; top: 0; }
+        th { background: #1e3a8a; color: white; text-align: left; padding: 15px; }
         td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-size: 14px; color: #334155; }
         .Enabled { color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; }
         .Disabled { color: #dc2626; font-weight: bold; background: #fef2f2; padding: 4px 8px; border-radius: 4px; }
@@ -35,7 +35,7 @@
                 {% set val = parts[1].strip() if parts|length > 1 else 'Not Defined' %}
                 <tr>
                     <td>{{ parts[0].strip() }}</td>
-                    <td><span class="{{ val.split(' ')[0] if val != 'Not Defined' else 'Not-Defined' }}">{{ val }}</span></td>
+                    <td><span class="{{ val.replace(' ', '-') }}">{{ val }}</span></td>
                 </tr>
                 {% endfor %}
             </tbody>
