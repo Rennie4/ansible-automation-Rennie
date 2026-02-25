@@ -6,6 +6,7 @@
         body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; }
         .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
         h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        .cis-badge { background: #3498db; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
         th { background: #34495e; color: white; padding: 12px; text-align: left; }
         td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
@@ -16,15 +17,16 @@
 </head>
 <body>
     <div class="box">
-        <h1>CIS Benchmark Audit: Windows Server 2025</h1>
-        <p><strong>Target:</strong> {{ inventory_hostname }} | <strong>Date:</strong> {{ ansible_date_time.date }}</p>
+        <span class="cis-badge">CIS Benchmark v1.0.0 - Level 1 Member Server</span>
+        <h1>CIS Audit: {{ inventory_hostname }}</h1>
+        <p><strong>Status:</strong> Automated Compliance Check</p>
         
         <table>
             <thead>
                 <tr>
-                    <th>CIS Security Option (Friendly Name)</th>
-                    <th>Current Value</th>
-                    <th>Required (CIS)</th>
+                    <th>Security Option (Friendly Name)</th>
+                    <th>Actual Value</th>
+                    <th>Expected (CIS)</th>
                     <th>Status</th>
                 </tr>
             </thead>
