@@ -1,69 +1,39 @@
 ---
-- name: Windows Server 2025 – Self-Healing Security Audit
+- name: Windows Server 2025 – Security Audit & S3 Report
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    local_report: "/tmp/Security_Report_{{ inventory_hostname }}.html"
-    temp_j2: "/tmp/security_report.j2"
+    # standardizing the output path on the AAP execution node
+    local_report: "/tmp/Security_Options_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: Ensure Template Exists (Self-Healing)
-      delegate_to: localhost
-      ansible.builtin.copy:
-        dest: "{{ temp_j2 }}"
-        content: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <style>
-                  body { font-family: sans-serif; background: #f4f7f9; padding: 40px; }
-                  .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                  th { background: #1e3a8a; color: white; text-align: left; padding: 10px; }
-                  td { padding: 10px; border-bottom: 1px solid #eee; }
-                  .Enabled { color: green; font-weight: bold; }
-                  .Disabled { color: red; font-weight: bold; }
-              </style>
-          </head>
-          <body>
-              <div class="card">
-                  <h1>CIS 2025 Audit: {{ inventory_hostname }}</h1>
-                  <table>
-                      <tr><th>Policy</th><th>Status</th></tr>
-                      {% for line in scan_lines %}
-                      {% set parts = line.split('|') %}
-                      <tr>
-                          <td>{{ parts[0].strip() }}</td>
-                          <td><span class="{{ parts[1].strip() }}">{{ parts[1].strip() }}</span></td>
-                      </tr>
-                      {% endfor %}
-                  </table>
-              </div>
-          </body>
-          </html>
-
     - name: Audit CIS Item 2.52 (Interactive Logon)
       ansible.windows.win_powershell:
         script: |
-          # Registry path for CIS 2025 Item 2.52 
           $path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
           $name = "DontDisplayLastUserName"
           $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue).$name
           
-          $status = if ($null -eq $val) { "Not Defined" } elseif ($val -eq 1) { "Enabled" } else { "Disabled" }
-          return @{ scan_results = @("Interactive logon: Do not display last user name | $status") }
+          $status = if ($null -eq $val) { "Enabled" } elseif ($val -eq 0) { "Disabled" } else { "Not Defined" }
+          return @{ 
+            scan_results = @(
+              "Interactive logon: Do not display last user name | $status"
+            )
+          }
       register: audit_results
 
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        src: "{{ temp_j2 }}"
+        # FIXED: Using the double-dot to go up from 'playbooks/' to the project root where 'templates/' lives
+        src: "{{ playbook_dir }}/../templates/security_report.j2"
         dest: "{{ local_report }}"
       vars:
         scan_lines: "{{ audit_results.output[0].scan_results }}"
 
-    - name: Upload to S3
+    - name: Upload Report to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
