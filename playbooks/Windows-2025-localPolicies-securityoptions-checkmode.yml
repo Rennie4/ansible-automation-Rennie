@@ -5,33 +5,30 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Standardizing the path to avoid "does not exist" errors
+    # Unified path for the execution environment container
     local_report_path: "/tmp/Security_Options_Report_{{ inventory_hostname }}.html"
 
   tasks:
-    - name: Ensure temp directory exists
-      ansible.windows.win_file:
-        path: 'C:\Temp'
-        state: directory
-
     - name: Run Unified Audit
       ansible.windows.win_powershell:
         script: |
-          # This script pulls the effective Security Options 
-          # It generates a list in "Name | Value" format for your template
           $results = @()
-          $regKeys = @{
+          # Mapping critical items from your CIS v1.0.0 PDF
+          $policyMap = @{
               "Interactive logon: Do not display last user name" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|DontDisplayLastUserName"
               "Accounts: Limit local account use of blank passwords" = "HKLM:\System\CurrentControlSet\Control\Lsa|LimitBlankPasswordUse"
+              "Interactive logon: Machine inactivity limit" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|InactivityTimeoutSecs"
               "Microsoft network server: Digitally sign communications" = "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters|RequireSecuritySignature"
-              # Add more of the 107 items here...
+              "User Account Control: Run all administrators in Admin Approval Mode" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System|EnableLUA"
           }
 
-          foreach ($friendlyName in $regKeys.Keys) {
-              $path, $valName = $regKeys[$friendlyName].Split('|')
-              $val = (Get-ItemProperty -Path $path -Name $valName -ErrorAction SilentlyContinue).$valName
-              $status = if ($null -eq $val) { "Not Defined" } elseif ($val -eq 1) { "Enabled (1)" } else { "Disabled (0)" }
-              $results += "$friendlyName | $status"
+          foreach ($name in $policyMap.Keys) {
+              $path, $regValue = $policyMap[$name].Split('|')
+              $current = (Get-ItemProperty -Path $path -Name $regValue -ErrorAction SilentlyContinue).$regValue
+              
+              # Standardizing text for CSS classes in your template
+              $valString = if ($null -eq $current) { "Not Defined" } elseif ($current -eq 1) { "Enabled" } else { "Disabled" }
+              $results += "$name | $valString"
           }
           return @{ scan_lines = $results }
       register: audit_results
@@ -39,18 +36,17 @@
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
+        # AAP FIX: playbook_dir ensures we find the templates folder in the cloned project
         src: "{{ playbook_dir }}/templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
         dest: "{{ local_report_path }}"
       vars:
         scan_lines: "{{ audit_results.output[0].scan_lines }}"
-      check_mode: no
 
     - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "security-options-audits/Security_Options_Report_{{ inventory_hostname }}.html"
+        object: "security-options-audits/{{ local_report_path | basename }}"
         src: "{{ local_report_path }}"
         mode: put
         region: "{{ s3_region }}"
-      check_mode: no
