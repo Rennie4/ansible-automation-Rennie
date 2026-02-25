@@ -5,25 +5,20 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # FIXED: Added missing }} before .html
     report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit Security Options Registry Settings
       ansible.windows.win_powershell:
         script: |
-          $results = @{}
-          $paths = @{
-              "DontDisplayLastUserName" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
-              "LimitBlankPasswordUse"   = "HKLM:\System\CurrentControlSet\Control\Lsa"
-              "RequireSecuritySignature"= "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters"
-              "EnableLUA"               = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+          $results = @{
+              "DontDisplayLastUserName" = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue).DontDisplayLastUserName
+              "LimitBlankPasswordUse"   = (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction SilentlyContinue).LimitBlankPasswordUse
+              "RequireSecuritySignature"= (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters" -Name "RequireSecuritySignature" -ErrorAction SilentlyContinue).RequireSecuritySignature
+              "EnableLUA"               = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -ErrorAction SilentlyContinue).EnableLUA
           }
-
-          foreach ($name in $paths.Keys) {
-              $val = (Get-ItemProperty -Path $paths[$name] -Name $name -ErrorAction SilentlyContinue).$name
-              $results[$name] = if ($null -ne $val) { $val } else { "Not Defined" }
-          }
+          # Ensure nulls are handled so the template doesn't crash
+          $results.Keys | ForEach-Object { if ($null -eq $results[$_]) { $results[$_] = "Not Defined" } }
           return $results
       register: sec_audit
       check_mode: no
@@ -34,8 +29,8 @@
         src: "../templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        # PowerShell output in win_powershell is stored in .output
-        audit: "{{ sec_audit.output }}"
+        # FIXED: Added '| first' to convert the list into a single object
+        audit: "{{ sec_audit.output | first }}"
       check_mode: no
 
     - name: Upload to S3
