@@ -3,39 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #f0f2f5; margin: 0; padding: 40px; }
-        .report-card { max-width: 1200px; margin: auto; background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
-        h1 { color: #1e3a8a; border-bottom: 4px solid #3b82f6; padding-bottom: 15px; margin-top: 0; }
-        .grid { display: flex; gap: 20px; margin: 25px 0; }
-        .stat { flex: 1; padding: 20px; background: #f8fafc; border-left: 6px solid #3b82f6; border-radius: 6px; }
-        .stat h3 { margin: 0; font-size: 11px; text-transform: uppercase; color: #64748b; }
-        .stat p { margin: 8px 0 0; font-size: 28px; font-weight: 800; color: #1e293b; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f9; padding: 40px; }
+        .card { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #1e3a8a; border-bottom: 3px solid #3b82f6; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background: #1e3a8a; color: white; text-align: left; padding: 15px; }
-        td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-size: 14px; color: #334155; }
-        .Enabled { color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; }
-        .Disabled { color: #dc2626; font-weight: bold; background: #fef2f2; padding: 4px 8px; border-radius: 4px; }
+        th { background: #1e3a8a; color: white; text-align: left; padding: 12px; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+        .Enabled { color: #16a34a; font-weight: bold; }
+        .Disabled { color: #dc2626; font-weight: bold; }
         .Not-Defined { color: #94a3b8; font-style: italic; }
-        tr:hover { background-color: #f1f5f9; }
     </style>
 </head>
 <body>
-    <div class="report-card">
-        <h1>CIS Audit: Windows Server 2025 Security Options</h1>
-        <div class="grid">
-            <div class="stat"><h3>Benchmark Goal</h3><p>107 Items</p></div>
-            <div class="stat"><h3>Policies Scanned</h3><p>{{ scan_lines | length }}</p></div>
-            <div class="stat" style="border-left-color: #10b981;"><h3>Server</h3><p>{{ inventory_hostname }}</p></div>
-        </div>
+    <div class="card">
+        <h1>Security Audit Report: {{ inventory_hostname }}</h1>
         <table>
-            <thead><tr><th>Policy Item</th><th>Configuration Value</th></tr></thead>
+            <thead><tr><th>Security Policy Item</th><th>Status</th></tr></thead>
             <tbody>
                 {% for line in scan_lines %}
                 {% set parts = line.split('|') %}
-                {% set val = parts[1].strip() if parts|length > 1 else 'Not Defined' %}
+                {% set status_val = parts[1].strip() %}
                 <tr>
                     <td>{{ parts[0].strip() }}</td>
-                    <td><span class="{{ val.replace(' ', '-') }}">{{ val }}</span></td>
+                    {# replace space with dash for CSS class 'Not-Defined' #}
+                    <td><span class="{{ status_val.replace(' ', '-') }}">{{ status_val }}</span></td>
                 </tr>
                 {% endfor %}
             </tbody>
