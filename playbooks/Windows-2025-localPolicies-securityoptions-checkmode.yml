@@ -1,55 +1,54 @@
 ---
-- name: Full Audit of Windows Server 2025 Security Options
+- name: CIS Benchmark Audit - Windows Server 2025 Security Options
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Full_Security_Options_Audit_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "CIS_Audit_SecurityOptions_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    
+    # Mapped from CIS Benchmark v1.0.0 PDF
+    cis_security_options:
+      - { name: "Interactive logon: Do not display last user name", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "DontDisplayLastUserName", expected: 1 }
+      - { name: "Accounts: Limit local account use of blank passwords", path: "HKLM:\\System\\CurrentControlSet\\Control\\Lsa", value_name: "LimitBlankPasswordUse", expected: 1 }
+      - { name: "Microsoft network server: Digitally sign communications (always)", path: "HKLM:\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters", value_name: "RequireSecuritySignature", expected: 1 }
+      - { name: "User Account Control: Run all administrators in Admin Approval Mode", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "EnableLUA", expected: 1 }
+      - { name: "Interactive logon: Machine inactivity limit", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "InactivityTimeoutSecs", expected: 900 }
+      - { name: "Network access: Do not allow anonymous enumeration of SAM accounts", path: "HKLM:\\System\\CurrentControlSet\\Control\\Lsa", value_name: "RestrictAnonymousSAM", expected: 1 }
 
   tasks:
-    - name: Export and Parse All Security Options
+    - name: Run PowerShell Audit Script
       ansible.windows.win_powershell:
         script: |
-          # Export local security policy to a temp file
-          $tempFile = Join-Path $env:TEMP "secedit_export.inf"
-          secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-          
-          # Read the [Registry Values] section which contains "Security Options"
-          $content = Get-Content $tempFile
-          $isRegistrySection = $false
-          $results = @()
+          $cis_list = $input | ConvertFrom-Json
+          $audit_results = @()
 
-          foreach ($line in $content) {
-              if ($line -match "\[Registry Values\]") { $isRegistrySection = $true; continue }
-              if ($line -match "\[") { $isRegistrySection = $false }
+          foreach ($item in $cis_list) {
+              $val = (Get-ItemProperty -Path $item.path -Name $item.value_name -ErrorAction SilentlyContinue).$($item.value_name)
+              $actual = if ($null -eq $val) { "Not Defined" } else { $val }
               
-              if ($isRegistrySection -and $line -match "=") {
-                  $parts = $line.Split("=", 2)
-                  $regPath = $parts[0].Trim()
-                  $valData = $parts[1].Trim().Split(",")
-                  
-                  # Extract just the friendly-ish name and the value
-                  $results += @{
-                      Key = $regPath
-                      Value = if ($valData.Count -gt 2) { $valData[2] } else { $valData[1] }
-                  }
+              $audit_results += @{
+                  FriendlyName = $item.name
+                  ActualValue  = $actual
+                  ExpectedValue = $item.expected
+                  Status       = if ($actual.ToString() -eq $item.expected.ToString()) { "PASS" } else { "FAIL" }
               }
           }
-          return @{ audit_data = $results }
-      register: full_audit
+          return @{ results = $audit_results }
+        parameters:
+          input: "{{ cis_security_options | to_json }}"
+      register: audit_output
 
-    - name: Render Full Security Report
+    - name: Render CIS Security Report
       delegate_to: localhost
       ansible.builtin.template:
-        src: "../templates/Windows-2025-SecurityOptions-FullAudit.j2"
+        # Use a relative path that assumes the template is in a 'templates' folder
+        src: "templates/Windows-2025-SecurityOptions-CIS-Audit.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        # Pass the full list of objects to the template
-        all_options: "{{ full_audit.output[0].audit_data }}"
-      check_mode: no
+        audit_data: "{{ audit_output.output[0].results }}"
 
-    - name: Upload Full Report to S3
+    - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
@@ -57,4 +56,3 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
-      check_mode: no
