@@ -10,7 +10,6 @@
         th { background: #0078D4; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
         .status-ok { color: #2E7D32; font-weight: bold; }
-        .status-warn { color: #D32F2F; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -32,22 +31,22 @@
                 <tr>
                     <td>Interactive logon: Do not display last user name</td>
                     <td>{{ audit.DontDisplayLastUserName }}</td>
-                    <td>1 (Enabled)</td>
+                    <td>1</td>
                 </tr>
                 <tr>
                     <td>Accounts: Limit local account use of blank passwords</td>
                     <td>{{ audit.LimitBlankPasswordUse }}</td>
-                    <td>1 (Enabled)</td>
+                    <td>1</td>
                 </tr>
                 <tr>
                     <td>Microsoft network server: Digitally sign communications (always)</td>
                     <td>{{ audit.RequireSecuritySignature }}</td>
-                    <td>1 (Enabled)</td>
+                    <td>1</td>
                 </tr>
                 <tr>
                     <td>User Account Control: Run all administrators in Admin Approval Mode</td>
                     <td>{{ audit.EnableLUA }}</td>
-                    <td>1 (Enabled)</td>
+                    <td>1</td>
                 </tr>
             </tbody>
         </table>
