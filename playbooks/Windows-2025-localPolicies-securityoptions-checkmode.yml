@@ -5,13 +5,13 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Reusable naming convention
-    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short.split('T')[0] }}.html"
-    # We use /tmp/ because it is always accessible in AAP Execution Environments
+    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
   tasks:
     - name: Audit All Settings (PowerShell)
+      # Forces this to run even though your Job Type is 'Check'
+      check_mode: no
       ansible.windows.win_shell: |
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
@@ -48,11 +48,12 @@
       register: full_audit
 
     - name: Generate HTML Report Directly
+      check_mode: no
       delegate_to: localhost
+      # We embed the template content here to avoid the sibling-folder pathing issues in AAP
       ansible.builtin.copy:
         dest: "{{ local_temp_report }}"
         content: |
-          {% set audit = full_audit.stdout | from_json %}
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -70,6 +71,7 @@
           <body>
               <div class="box">
                   <h1>Full CIS Audit: {{ inventory_hostname }}</h1>
+                  {% set audit = full_audit.stdout | from_json %}
                   <h2>1. Password Policy Comparison</h2>
                   <table>
                       <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
@@ -98,6 +100,7 @@
           </html>
 
     - name: Upload to S3
+      check_mode: no
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
