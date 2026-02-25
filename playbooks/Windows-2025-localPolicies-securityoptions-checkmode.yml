@@ -17,7 +17,7 @@
               "RequireSecuritySignature"= (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters" -Name "RequireSecuritySignature" -ErrorAction SilentlyContinue).RequireSecuritySignature
               "EnableLUA"               = (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -ErrorAction SilentlyContinue).EnableLUA
           }
-          # Ensure nulls are handled so the template doesn't crash
+          # Handle nulls for clean reporting
           $results.Keys | ForEach-Object { if ($null -eq $results[$_]) { $results[$_] = "Not Defined" } }
           return $results
       register: sec_audit
@@ -29,7 +29,7 @@
         src: "../templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        # FIXED: Added '| first' to convert the list into a single object
+        # Using | first ensures we handle the list returned by win_powershell
         audit: "{{ sec_audit.output | first }}"
       check_mode: no
 
