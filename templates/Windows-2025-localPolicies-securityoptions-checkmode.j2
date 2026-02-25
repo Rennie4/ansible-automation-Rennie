@@ -3,30 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
-        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
-        .cis-badge { background: #3498db; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background: #34495e; color: white; padding: 12px; text-align: left; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
-        .PASS { color: #27ae60; font-weight: bold; background: #eafaf1; text-align: center; }
-        .FAIL { color: #c0392b; font-weight: bold; background: #fdedec; text-align: center; }
-        .val-code { font-family: 'Consolas', monospace; color: #2980b9; }
+        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h1 { color: #455A64; border-bottom: 2px solid #455A64; padding-bottom: 10px; }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #455A64; color: white; text-align: left; padding: 12px; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
+        .PASS { color: #2E7D32; font-weight: bold; background: #E8F5E9; text-align: center; }
+        .FAIL { color: #C62828; font-weight: bold; background: #FFEBEE; text-align: center; }
     </style>
 </head>
 <body>
     <div class="box">
-        <span class="cis-badge">CIS Benchmark v1.0.0 - Level 1 Member Server</span>
-        <h1>CIS Audit: {{ inventory_hostname }}</h1>
-        <p><strong>Status:</strong> Automated Compliance Check</p>
+        <h1>CIS Security Options Audit: {{ inventory_hostname }}</h1>
+        <p><strong>Date:</strong> {{ ansible_date_time.date }}</p>
         
+        <h2>Local Policies: Security Options</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Security Option (Friendly Name)</th>
-                    <th>Actual Value</th>
-                    <th>Expected (CIS)</th>
+                    <th>Policy Setting Name</th>
+                    <th>Current State</th>
+                    <th>CIS Requirement</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -34,8 +33,8 @@
                 {% for row in audit_data %}
                 <tr>
                     <td>{{ row.FriendlyName }}</td>
-                    <td class="val-code">{{ row.ActualValue }}</td>
-                    <td class="val-code">{{ row.ExpectedValue }}</td>
+                    <td>{{ row.ActualValue }}</td>
+                    <td>{{ row.ExpectedValue }}</td>
                     <td class="{{ row.Status }}">{{ row.Status }}</td>
                 </tr>
                 {% endfor %}
