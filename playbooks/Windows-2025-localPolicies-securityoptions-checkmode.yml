@@ -7,14 +7,14 @@
     s3_region: "eu-west-1"
     report_filename: "CIS_Audit_SecurityOptions_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
     
-    # Mapped from CIS Benchmark v1.0.0 PDF
+    # These are mapped directly from your uploaded CIS Benchmark v1.0.0 PDF
     cis_security_options:
       - { name: "Interactive logon: Do not display last user name", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "DontDisplayLastUserName", expected: 1 }
       - { name: "Accounts: Limit local account use of blank passwords", path: "HKLM:\\System\\CurrentControlSet\\Control\\Lsa", value_name: "LimitBlankPasswordUse", expected: 1 }
       - { name: "Microsoft network server: Digitally sign communications (always)", path: "HKLM:\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters", value_name: "RequireSecuritySignature", expected: 1 }
       - { name: "User Account Control: Run all administrators in Admin Approval Mode", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "EnableLUA", expected: 1 }
       - { name: "Interactive logon: Machine inactivity limit", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "InactivityTimeoutSecs", expected: 900 }
-      - { name: "Network access: Do not allow anonymous enumeration of SAM accounts", path: "HKLM:\\System\\CurrentControlSet\\Control\\Lsa", value_name: "RestrictAnonymousSAM", expected: 1 }
+      - [cite_start]{ name: "Network security: LDAP client encryption requirements", path: "HKLM:\\System\\CurrentControlSet\\Services\\LDAP", value_name: "LDAPClientIntegrity", expected: 1 } # 
 
   tasks:
     - name: Run PowerShell Audit Script
@@ -22,11 +22,9 @@
         script: |
           $cis_list = $input | ConvertFrom-Json
           $audit_results = @()
-
           foreach ($item in $cis_list) {
               $val = (Get-ItemProperty -Path $item.path -Name $item.value_name -ErrorAction SilentlyContinue).$($item.value_name)
               $actual = if ($null -eq $val) { "Not Defined" } else { $val }
-              
               $audit_results += @{
                   FriendlyName = $item.name
                   ActualValue  = $actual
@@ -42,8 +40,8 @@
     - name: Render CIS Security Report
       delegate_to: localhost
       ansible.builtin.template:
-        # Use a relative path that assumes the template is in a 'templates' folder
-        src: "templates/Windows-2025-SecurityOptions-CIS-Audit.j2"
+        # FIX: Using playbook_dir to prevent the "Could not find or access" error
+        src: "{{ playbook_dir }}/templates/Windows-2025-SecurityOptions-CIS-Audit.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit_data: "{{ audit_output.output[0].results }}"
