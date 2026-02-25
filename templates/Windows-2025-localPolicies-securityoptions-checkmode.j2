@@ -16,7 +16,7 @@
 </head>
 <body>
     <div class="card">
-        <h1>Security Audit Report: {{ inventory_hostname }}</h1>
+        <h1>CIS 2025 Audit: {{ inventory_hostname }}</h1>
         <table>
             <thead><tr><th>Security Policy Item</th><th>Status</th></tr></thead>
             <tbody>
@@ -25,7 +25,7 @@
                 {% set status_val = parts[1].strip() %}
                 <tr>
                     <td>{{ parts[0].strip() }}</td>
-                    {# replace space with dash for CSS class 'Not-Defined' #}
+                    {# Converts "Not Defined" to "Not-Defined" for CSS #}
                     <td><span class="{{ status_val.replace(' ', '-') }}">{{ status_val }}</span></td>
                 </tr>
                 {% endfor %}
