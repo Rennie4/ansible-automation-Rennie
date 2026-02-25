@@ -1,23 +1,23 @@
 ---
-- name: CIS Benchmark Audit - Windows Server 2025 Security Options
+- name: Apply CIS Windows Server 2025 Security Options Hardening (Audit)
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "CIS_Audit_SecurityOptions_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "Security_Options_Audit_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
     
-    # These are mapped directly from your uploaded CIS Benchmark v1.0.0 PDF
+    # Mapped from CIS Benchmark v1.0.0 PDF - Fixed YAML Syntax
     cis_security_options:
       - { name: "Interactive logon: Do not display last user name", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "DontDisplayLastUserName", expected: 1 }
       - { name: "Accounts: Limit local account use of blank passwords", path: "HKLM:\\System\\CurrentControlSet\\Control\\Lsa", value_name: "LimitBlankPasswordUse", expected: 1 }
       - { name: "Microsoft network server: Digitally sign communications (always)", path: "HKLM:\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters", value_name: "RequireSecuritySignature", expected: 1 }
       - { name: "User Account Control: Run all administrators in Admin Approval Mode", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "EnableLUA", expected: 1 }
       - { name: "Interactive logon: Machine inactivity limit", path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", value_name: "InactivityTimeoutSecs", expected: 900 }
-      - [cite_start]{ name: "Network security: LDAP client encryption requirements", path: "HKLM:\\System\\CurrentControlSet\\Services\\LDAP", value_name: "LDAPClientIntegrity", expected: 1 } # 
+      - { name: "Network security: LDAP client encryption requirements", path: "HKLM:\\System\\CurrentControlSet\\Services\\LDAP", value_name: "LDAPClientIntegrity", expected: 1 }
 
   tasks:
-    - name: Run PowerShell Audit Script
+    - name: Audit Security Options Registry Settings
       ansible.windows.win_powershell:
         script: |
           $cis_list = $input | ConvertFrom-Json
@@ -35,16 +35,18 @@
           return @{ results = $audit_results }
         parameters:
           input: "{{ cis_security_options | to_json }}"
-      register: audit_output
+      register: sec_audit
+      check_mode: no
 
-    - name: Render CIS Security Report
+    - name: Render Security Options Report
       delegate_to: localhost
       ansible.builtin.template:
-        # FIX: Using playbook_dir to prevent the "Could not find or access" error
-        src: "{{ playbook_dir }}/templates/Windows-2025-SecurityOptions-CIS-Audit.j2"
+        # Using relative pathing that works with standard Ansible structures
+        src: "templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        audit_data: "{{ audit_output.output[0].results }}"
+        audit_data: "{{ sec_audit.output[0].results }}"
+      check_mode: no
 
     - name: Upload to S3
       delegate_to: localhost
@@ -54,3 +56,4 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
+      check_mode: no
