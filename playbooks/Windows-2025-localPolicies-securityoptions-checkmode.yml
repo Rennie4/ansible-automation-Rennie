@@ -1,45 +1,60 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Full Security Options Audit</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background-color: #f0f2f5; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        h1 { color: #1a202c; border-bottom: 3px solid #005a9e; padding-bottom: 10px; }
-        .meta { margin-bottom: 20px; color: #4a5568; font-size: 0.9em; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
-        th { background-color: #005a9e; color: white; padding: 12px; text-align: left; }
-        td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 0.85em; word-wrap: break-word; }
-        tr:nth-child(even) { background-color: #f8fafc; }
-        .value-cell { font-family: 'Consolas', monospace; color: #2d3748; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Windows Server 2025: Security Options Inventory</h1>
-        <div class="meta">
-            <strong>Server:</strong> {{ inventory_hostname }}<br>
-            <strong>Audit Date:</strong> {{ ansible_date_time.date_time }}<br>
-            <strong>Total Settings Found:</strong> {{ all_options | length }}
-        </div>
+---
+- name: Full Audit of Windows Server 2025 Security Options
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "Full_Security_Options_Audit_{{ inventory_hostname_short }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 70%;">Registry Path / Policy Name</th>
-                    <th style="width: 30%;">Effective Setting (Value)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in all_options %}
-                <tr>
-                    <td>{{ item.Key }}</td>
-                    <td class="value-cell">{{ item.Value }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>
+  tasks:
+    - name: Export and Parse All Security Options
+      ansible.windows.win_powershell:
+        script: |
+          # Export local security policy to a temp file
+          $tempFile = Join-Path $env:TEMP "secedit_export.inf"
+          secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+          
+          # Read the [Registry Values] section which contains "Security Options"
+          $content = Get-Content $tempFile
+          $isRegistrySection = $false
+          $results = @()
+
+          foreach ($line in $content) {
+              if ($line -match "\[Registry Values\]") { $isRegistrySection = $true; continue }
+              if ($line -match "\[") { $isRegistrySection = $false }
+              
+              if ($isRegistrySection -and $line -match "=") {
+                  $parts = $line.Split("=", 2)
+                  $regPath = $parts[0].Trim()
+                  $valData = $parts[1].Trim().Split(",")
+                  
+                  # Extract just the friendly-ish name and the value
+                  $results += @{
+                      Key = $regPath
+                      Value = if ($valData.Count -gt 2) { $valData[2] } else { $valData[1] }
+                  }
+              }
+          }
+          return @{ audit_data = $results }
+      register: full_audit
+
+    - name: Render Full Security Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "../templates/Windows-2025-SecurityOptions-FullAudit.j2"
+        dest: "/tmp/{{ report_filename }}"
+      vars:
+        # Pass the full list of objects to the template
+        all_options: "{{ full_audit.output[0].audit_data }}"
+      check_mode: no
+
+    - name: Upload Full Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "security-options-audits/{{ report_filename }}"
+        src: "/tmp/{{ report_filename }}"
+        mode: put
+        region: "{{ s3_region }}"
+      check_mode: no
