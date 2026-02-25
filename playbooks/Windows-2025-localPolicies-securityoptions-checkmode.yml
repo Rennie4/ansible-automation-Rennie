@@ -5,8 +5,7 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # standardizing the output path on the AAP execution node
-    local_report: "/tmp/Security_Options_Report_{{ inventory_hostname }}.html"
+    local_report: "/tmp/Security_Report_{{ inventory_hostname }}.html"
 
   tasks:
     - name: Audit CIS Item 2.52 (Interactive Logon)
@@ -15,22 +14,21 @@
           $path = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
           $name = "DontDisplayLastUserName"
           $val = (Get-ItemProperty -Path $path -Name $name -ErrorAction SilentlyContinue).$name
-          
-          $status = if ($null -eq $val) { "Enabled" } elseif ($val -eq 0) { "Disabled" } else { "Not Defined" }
-          return @{ 
-            scan_results = @(
-              "Interactive logon: Do not display last user name | $status"
-            )
-          }
+          $status = if ($null -eq $val) { "Not Defined" } elseif ($val -eq 1) { "Enabled" } else { "Disabled" }
+          return @{ scan_results = @("Interactive logon: Do not display last user name | $status") }
       register: audit_results
 
     - name: Generate Local HTML
       delegate_to: localhost
       ansible.builtin.template:
-        # FIXED: Using the double-dot to go up from 'playbooks/' to the project root where 'templates/' lives
-        src: "{{ playbook_dir }}/../templates/security_report.j2"
+        # SEARCH LOGIC: This looks one level UP from the playbook folder to find templates
+        src: "{{ lookup('first_found', search_list) }}"
         dest: "{{ local_report }}"
       vars:
+        search_list:
+          - "../templates/security_report.j2" # This is the most likely path in AAP
+          - "templates/security_report.j2"
+          - "security_report.j2"
         scan_lines: "{{ audit_results.output[0].scan_results }}"
 
     - name: Upload Report to S3
