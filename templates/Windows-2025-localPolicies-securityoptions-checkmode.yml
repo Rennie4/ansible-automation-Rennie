@@ -1,0 +1,47 @@
+---
+- name: Apply CIS Windows Server 2025 Security Options Hardening (Audit)
+  hosts: all
+  gather_facts: yes
+  vars:
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short.html"
+
+  tasks:
+    - name: Audit Security Options Registry Settings
+      ansible.windows.win_powershell:
+        script: |
+          $results = @{}
+          $paths = @{
+              "DontDisplayLastUserName" = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+              "LimitBlankPasswordUse"   = "HKLM:\System\CurrentControlSet\Control\Lsa"
+              "RequireSecuritySignature"= "HKLM:\System\CurrentControlSet\Services\LanmanServer\Parameters"
+              "EnableLUA"               = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+          }
+
+          foreach ($name in $paths.Keys) {
+              $val = (Get-ItemProperty -Path $paths[$name] -Name $name -ErrorAction SilentlyContinue).$name
+              $results[$name] = if ($null -ne $val) { $val } else { "Not Defined" }
+          }
+          return $results
+      register: sec_audit
+      check_mode: no
+
+    - name: Render Security Options Report
+      delegate_to: localhost
+      ansible.builtin.template:
+        src: "../templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
+        dest: "/tmp/{{ report_filename }}"
+      vars:
+        audit: "{{ sec_audit.output }}"
+      check_mode: no
+
+    - name: Upload to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "security-options-audits/{{ report_filename }}"
+        src: "/tmp/{{ report_filename }}"
+        mode: put
+        region: "{{ s3_region }}"
+      check_mode: no
