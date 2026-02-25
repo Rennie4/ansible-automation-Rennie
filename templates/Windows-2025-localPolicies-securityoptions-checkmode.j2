@@ -25,7 +25,6 @@
                 {% set status_val = parts[1].strip() %}
                 <tr>
                     <td>{{ parts[0].strip() }}</td>
-                    {# Converts "Not Defined" to "Not-Defined" for CSS #}
                     <td><span class="{{ status_val.replace(' ', '-') }}">{{ status_val }}</span></td>
                 </tr>
                 {% endfor %}
