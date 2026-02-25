@@ -5,7 +5,8 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short.html"
+    # FIXED: Added missing }} before .html
+    report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Audit Security Options Registry Settings
@@ -33,6 +34,7 @@
         src: "../templates/Windows-2025-localPolicies-securityoptions-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
+        # PowerShell output in win_powershell is stored in .output
         audit: "{{ sec_audit.output }}"
       check_mode: no
 
