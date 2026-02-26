@@ -1,0 +1,224 @@
+---
+# =====================================================================
+# Windows-2025-securityoptions-compare-and-publish.yml
+# Compares Security Options (CIS 2.38–2.101 subset), generates HTML,
+# and uploads HTML + Apply playbook to S3.
+# =====================================================================
+
+- name: "CIS Security Options (2.38–2.101): Compare & Publish HTML Report to S3"
+  hosts: windows_hosts
+  gather_facts: no
+
+  vars:
+    # --- Windows paths ---
+    win_temp_dir: "C:\\Temp"
+    inf_path:     "C:\\Temp\\SecExport.inf"
+    html_report:  "C:\\Temp\\CIS_SecOptions_report.html"
+    apply_win:    "C:\\Temp\\Windows-2025-apply-securityoptions.yml"
+
+    # --- AWS / S3 ---
+    region: "eu-west-1"
+    aws_exe_path: "C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe"
+
+    # Bucket + prefixes (HTML goes under security-options/<host>/)
+    s3_bucket_uri:  "s3://oml-s3-automation-sandbox/security-options-reports/"
+    s3_prefix_html: "security-options/{{ inventory_hostname }}/"
+    s3_prefix_apply:"apply/{{ inventory_hostname }}/"
+
+    # --- CIS baseline subset (add more items as needed) ---
+    # Supported types here: special (guest_status) and reg_dword
+    cis_baseline:
+      - { id: "2.38",  type: special,   key: guest_status, desired: "Disabled" }
+      - { id: "2.39",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LimitBlankPasswordUse", desired: 1 }
+      - { id: "2.43",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "CrashOnAuditFail", desired: 0 }
+      - { id: "2.77",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "ForceGuest", desired: 0 }
+      - { id: "2.82",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "NoLMHash", desired: 1 }
+      - { id: "2.84",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LmCompatibilityLevel", desired: 5 }
+
+  tasks:
+
+    # Optional identity banner (useful for troubleshooting)
+    - name: "AWS identity (sanity)"
+      check_mode: no
+      ansible.windows.win_shell: >
+        & "{{ aws_exe_path }}" sts get-caller-identity --region {{ region }}
+      register: sts_id
+    - debug:
+        var: sts_id.stdout
+
+    - name: "Ensure {{ win_temp_dir }} exists"
+      check_mode: no
+      ansible.windows.win_file:
+        path: "{{ win_temp_dir }}"
+        state: directory
+
+    - name: "Export Local Security Policy to INF"
+      check_mode: no
+      ansible.windows.win_shell: |
+        secedit /export /cfg "{{ inf_path }}" | Out-Null
+        Write-Host "{{ inf_path }}"
+      register: secedit_inf_path
+
+    - name: "Parse INF and emit JSON (current values)"
+      check_mode: no
+      ansible.windows.win_shell: |
+        $Inf = "{{ secedit_inf_path.stdout_lines[-1] }}"
+        $raw = Get-Content $Inf -Raw
+        $lines = $raw -split "`r?`n"
+        $start = ($lines | Select-String '^\[Registry Values\]$').LineNumber
+        $next  = $lines | Select-String '^\[.*\]' | ? { $_.LineNumber -gt $start } | Select-Object -First 1
+        $end   = if ($next) { $next.LineNumber - 1 } else { $lines.Count }
+        $block = $lines[($start+1)..$end] | ? { $_ -and $_ -notmatch '^\s*;' }
+
+        $map=@{}
+        foreach ($line in $block) {
+          if ($line -notmatch '=') { continue }
+          $parts=$line -split '=',2
+          $left=$parts[0].Trim()
+          $right=$parts[1].Trim()
+
+          if ($right -match '^(\d+)\s*,\s*(.*)$') {
+            $t=[int]$matches[1]; $d=$matches[2]
+            switch ($t) {
+              4 { if ($d -match '^\d+$') { $val=[int]$d } else { $val=$d } }
+              1 { $val=$d.Trim('"') }
+              default { $val=$d }
+            }
+          } else { $val=$right }
+          $map[$left]=$val
+        }
+
+        $guest = (Get-LocalUser | ? { $_.SID.Value -like '*-501' } | Select-Object -First 1)
+
+        [pscustomobject]@{
+          Registry     = $map
+          GuestEnabled = if ($guest) { [bool]$guest.Enabled } else { $null }
+        } | ConvertTo-Json -Depth 6
+      register: current_json
+
+    - name: "Set facts"
+      ansible.builtin.set_fact:
+        current: "{{ current_json.stdout | from_json }}"
+
+    - name: "Compute non‑compliant items"
+      ansible.builtin.set_fact:
+        non_compliant: >-
+          {%- set out = [] -%}
+          {%- for i in cis_baseline -%}
+            {%- if i.type == 'special' -%}
+              {%- set cur = (current.GuestEnabled | default(None)) -%}
+              {%- set desired = (i.desired == 'Enabled') -%}
+              {%- if cur != desired -%}
+                {%- set _ = out.append(dict(i,current=cur)) -%}
+              {%- endif -%}
+            {%- else -%}
+              {%- set key = 'MACHINE\\' ~ i.path ~ '\\' ~ i.name -%}
+              {%- set cur = current.Registry[key] | default(None) -%}
+              {%- if cur != i.desired -%}
+                {%- set _ = out.append(dict(i,current=cur)) -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    # --------------------------
+    # Generate HTML report file
+    # --------------------------
+    - name: "Generate HTML report"
+      check_mode: no
+      ansible.windows.win_copy:
+        dest: "{{ html_report }}"
+        content: |
+          <html>
+          <head>
+            <meta charset="utf-8" />
+            <style>
+              body { font-family: Arial; font-size: 14px; color: #222; }
+              table { border-collapse: collapse; width: 100%; margin-top:20px; }
+              th, td { border: 1px solid #ccc; padding: 6px; }
+              th { background: #f3f3f3; }
+              .bad { background-color: #ffe0e0; }
+            </style>
+          </head>
+          <body>
+            <h2>CIS Security Options Report ({{ inventory_hostname }})</h2>
+            <p>CIS Microsoft Windows Server 2025 Benchmark – Section 2.38–2.101</p>
+
+            <table>
+              <tr>
+                <th>CIS ID</th>
+                <th>Setting</th>
+                <th>Current</th>
+                <th>Expected</th>
+              </tr>
+          {% for i in non_compliant %}
+              <tr class="bad">
+                <td>{{ i.id }}</td>
+                <td>{{ i.root if i.type != 'special' else 'Special' }}\\{{ i.path if i.type != 'special' else '' }}\\{{ i.name if i.type != 'special' else i.key }}</td>
+                <td>{{ i.current }}</td>
+                <td>{{ i.desired }}</td>
+              </tr>
+          {% endfor %}
+            </table>
+
+            <p>Total non‑compliant: {{ non_compliant | length }}</p>
+          </body>
+          </html>
+
+    # -------------------------------
+    # Upload HTML to S3  (note the &)
+    # -------------------------------
+    - name: "Upload HTML report to S3"
+      check_mode: no
+      ansible.windows.win_shell: >
+        & "{{ aws_exe_path }}" s3 cp "{{ html_report }}"
+        "{{ s3_bucket_uri }}{{ s3_prefix_html }}"
+        --region {{ region }} --storage-class STANDARD
+      register: s3_html
+      failed_when: "'upload:' not in ((s3_html.stdout | default('')) + (s3_html.stderr | default('')))"
+      changed_when: "'upload:' in ((s3_html.stdout | default('')) + (s3_html.stderr | default(''))) "
+
+    # -----------------------------------
+    # Generate per-host APPLY playbook
+    # -----------------------------------
+    - name: "Render APPLY playbook to Windows"
+      check_mode: no
+      ansible.windows.win_copy:
+        dest: "{{ apply_win }}"
+        content: |
+          ---
+          - name: "APPLY – CIS Security Options for {{ inventory_hostname }}"
+            hosts: {{ inventory_hostname }}
+            gather_facts: no
+            tasks:
+          {% if non_compliant | length == 0 %}
+              - name: "Nothing to remediate – compliant with baseline"
+                ansible.builtin.debug:
+                  msg: "No changes required."
+          {% else %}
+          {% for i in non_compliant %}
+            {% if i.type == 'reg_dword' %}
+              - name: "Fix {{ i.id }} – {{ i.root }}\\{{ i.path }}\\{{ i.name }}"
+                ansible.windows.win_regedit:
+                  path: "{{ i.root }}\\{{ i.path }}"
+                  name: "{{ i.name }}"
+                  data: {{ i.desired }}
+                  type: dword
+            {% elif i.type == 'special' and i.key == 'guest_status' %}
+              - name: "Fix {{ i.id }} – Guest account {{ i.desired }}"
+                ansible.windows.win_user:
+                  name: Guest
+                  state: "{{ 'disabled' if i.desired == 'Disabled' else 'present' }}"
+            {% endif %}
+          {% endfor %}
+          {% endif %}
+
+    - name: "Upload APPLY playbook to S3"
+      check_mode: no
+      ansible.windows.win_shell: >
+        & "{{ aws_exe_path }}" s3 cp "{{ apply_win }}"
+        "{{ s3_bucket_uri }}{{ s3_prefix_apply }}"
+        --region {{ region }} --storage-class STANDARD
+      register: s3_apply
+      failed_when: "'upload:' not in ((s3_apply.stdout | default('')) + (s3_apply.stderr | default('')))"
+      changed_when: "'upload:' in ((s3_apply.stdout | default('')) + (s3_apply.stderr | default(''))) "
