@@ -1,14 +1,15 @@
 ---
-# ================================================================
+# =====================================================================
 # Windows-2025-localPolicies-securityoptions-checkmode.yml
-# Gathers CIS Security Options (2.38–2.101) using PowerShell script
-# Outputs HTML and uploads result to your S3 bucket
-# Runs in CHECK MODE (safe, non-intrusive)
-# ================================================================
+# Gathers CIS Security Options (2.38–2.101) from Windows Server 2025
+# Generates HTML report and uploads to S3 bucket
+# Uses WinRM and your existing inventory group: [windows_hosts]
+# =====================================================================
 
 - name: "CIS Security Options - Windows Server 2025 (Check Mode)"
-  hosts: windows
+  hosts: windows_hosts
   gather_facts: no
+
   vars:
     script_path: "C:\\Temp\\Export-CIS-SecurityOptions-2.38-2.101.ps1"
     s3_bucket_uri: "s3://oml-s3-automation-sandbox/security-options-reports/"
@@ -18,27 +19,27 @@
   tasks:
 
     # ------------------------------------------------------------
-    # 1. Ensure C:\Temp exists
+    # Ensure the Temp folder exists
     # ------------------------------------------------------------
-    - name: "Create Temp Directory"
+    - name: "Create C:\\Temp directory"
       ansible.windows.win_file:
         path: C:\Temp
         state: directory
       check_mode: yes
 
     # ------------------------------------------------------------
-    # 2. Copy the PowerShell CIS Script onto the Server
+    # Copy PowerShell script to Windows host
     # ------------------------------------------------------------
-    - name: "Copy CIS Security Options Export Script"
+    - name: "Copy CIS export PowerShell script"
       ansible.windows.win_copy:
         src: "./Export-CIS-SecurityOptions-2.38-2.101.ps1"
         dest: "{{ script_path }}"
       check_mode: yes
 
     # ------------------------------------------------------------
-    # 3. Run The Script (Check Mode: Forces Non-Destructive)
+    # Run the script (Check Mode = safe, non-intrusive)
     # ------------------------------------------------------------
-    - name: "Execute CIS Security Options Script (Check Mode)"
+    - name: "Execute CIS Security Options Export Script (Check Mode)"
       ansible.windows.win_shell: |
         PowerShell -ExecutionPolicy Bypass -File "{{ script_path }}" `
           -S3Uri "{{ s3_bucket_uri }}" `
@@ -50,8 +51,8 @@
       check_mode: yes
 
     # ------------------------------------------------------------
-    # 4. Display Output
+    # Show Task Output
     # ------------------------------------------------------------
-    - name: "Show Script Output"
+    - name: "Display script output"
       debug:
         msg: "{{ script_output.stdout_lines }}"
