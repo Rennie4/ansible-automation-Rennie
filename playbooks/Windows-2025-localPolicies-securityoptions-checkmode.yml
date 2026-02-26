@@ -1,16 +1,11 @@
 ---
-# =====================================================================
-# Single-file AAP-friendly playbook
-# CIS Security Options (2.38–2.101) Export + S3 Upload
-# No external script required
-# =====================================================================
-
 - name: "CIS Security Options - Windows Server 2025 (Check Mode)"
   hosts: windows_hosts
   gather_facts: no
 
   vars:
     script_path: "C:\\Temp\\Export-CIS-SecurityOptions-2.38-2.101.ps1"
+    script_url: "https://raw.githubusercontent.com/Rennie4/ansible-automation-Rennie/main/playbooks/Export-CIS-SecurityOptions-2.38-2.101.ps1"
     s3_bucket_uri: "s3://oml-s3-automation-sandbox/security-options-reports/"
     aws_exe_path: "C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe"
     region: "eu-west-1"
@@ -27,15 +22,8 @@
       ansible.windows.win_copy:
         dest: "{{ script_path }}"
         content: |
-          # ----------------------------------------------------------
           # PASTE YOUR FULL POWERSHELL SCRIPT HERE
-          # Export-CIS-SecurityOptions-2.38-2.101.ps1
-          # ----------------------------------------------------------
-          # Example:
-          Write-Host "Running CIS Security Options Script..."
-          
-          # <--- PASTE SCRIPT BODY HERE ---->
-
+          Write-Host "CIS Script Executed"
       check_mode: yes
 
     - name: "Execute CIS Security Options Script (Check Mode)"
@@ -52,4 +40,4 @@
 
     - name: "Show Script Output"
       debug:
-        msg: "{{ script_output.stdout_lines }}"
+        msg: "{{ script_output.stdout_lines | default('Script did not run (skipped due to check mode).') }}"
