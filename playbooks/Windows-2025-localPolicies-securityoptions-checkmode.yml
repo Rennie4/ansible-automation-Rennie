@@ -1,144 +1,39 @@
----
-# =====================================================================
-# Windows-2025-securityoptions-audit-generate-remediation.yml
-# Phase 1 (CHECK job): Compare Security Options (CIS 2.38–2.101) vs baseline,
-# create a per-host APPLY playbook, and upload both the diff and the apply
-# playbook to S3 from the Windows host (aws.exe).
-# =====================================================================
+SSH password:
+1
 
-- name: "CIS Security Options (2.38–2.101): Audit & Generate Apply Playbook"
-  hosts: windows_hosts
-  gather_facts: no
+2
+PLAY [CIS Security Options (2.38–2.101): Audit & Generate Apply Playbook] ******  
+13:48:36
+3
 
-  vars:
-    # ---- Where artifacts live on controller (downloadable from AAP Job -> Artifacts) ----
-    artifacts_dir: "/runner/artifacts/{{ inventory_hostname }}"
-    diff_artifact: "/runner/artifacts/{{ inventory_hostname }}/CIS_SecOptions_diff.txt"
-    apply_artifact: "/runner/artifacts/{{ inventory_hostname }}/Windows-2025-apply-securityoptions.yml"
+4
+TASK [Create controller artifact dir for win_srv_2025_test1] *******************  
+13:48:36
+5
+changed: [win_srv_2025_test1 -> localhost]
+6
 
-    # ---- Where artifacts live on Windows host ----
-    win_temp_dir: "C:\\Temp"
-    diff_win: "C:\\Temp\\CIS_SecOptions_diff.txt"
-    apply_win: "C:\\Temp\\Windows-2025-apply-securityoptions.yml"
+7
+TASK [Ensure C:\Temp exists] ***************************************************  
+13:48:36
+8
+ok: [win_srv_2025_test1]
+9
 
-    # ---- S3 settings ----
-    s3_bucket_uri: "s3://oml-s3-automation-sandbox/security-options-reports/"
-    s3_prefix_diff: "diffs/{{ inventory_hostname }}/"
-    s3_prefix_apply: "apply/{{ inventory_hostname }}/"
-    region: "eu-west-1"
-    aws_exe_path: "C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe"
+10
+TASK [Export Local Security Policy to INF] *************************************  
+13:48:38
+11
+changed: [win_srv_2025_test1]
+12
 
-    # ---- CIS baseline (subset; extend as needed). Values reflect CIS WS2025 v1.0.0 §2.38–2.101. ----
-    #   type:      reg_dword | reg_sz | special
-    #   root:      HKLM (Security Options live under HKLM)
-    #   path/name: Registry location
-    #   desired:   desired value
-    cis_baseline:
-      # Accounts / specials
-      - { id: "2.38", type: special, key: guest_status, desired: "Disabled" }
-
-      # LSA & core
-      - { id: "2.39", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LimitBlankPasswordUse", desired: 1 }
-      - { id: "2.43", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "CrashOnAuditFail", desired: 0 }
-      - { id: "2.74", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "RestrictNullSessAccess", desired: 1 }
-      - { id: "2.77", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "ForceGuest", desired: 0 }
-      - { id: "2.82", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "NoLMHash", desired: 1 }
-      - { id: "2.84", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LmCompatibilityLevel", desired: 5 }
-      - { id: "2.85", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LDAP", name: "LDAPClientConfidentiality", desired: 2 }   # require sealing
-      - { id: "2.86", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LDAP", name: "LDAPClientIntegrity", desired: 1 }        # negotiate signing
-      - { id: "2.87", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "NTLMMinClientSec", desired: 537395200 }
-      - { id: "2.88", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "NTLMMinServerSec", desired: 537395200 }
-      - { id: "2.90", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "RestrictSendingNTLMTraffic", desired: 1 }
-      - { id: "2.91", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ShutdownWithoutLogon", desired: 0 }
-      - { id: "2.92", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Session Manager\\Kernel", name: "ObCaseInsensitive", desired: 1 }
-      - { id: "2.93", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Session Manager", name: "ProtectionMode", desired: 1 }
-
-      # Domain member secure channel
-      - { id: "2.45", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\Netlogon\\Parameters", name: "RequireSignOrSeal", desired: 1 }
-      - { id: "2.46", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\Netlogon\\Parameters", name: "SealSecureChannel", desired: 1 }
-      - { id: "2.47", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\Netlogon\\Parameters", name: "SignSecureChannel", desired: 1 }
-      - { id: "2.50", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\Netlogon\\Parameters", name: "RequireStrongKey", desired: 1 }
-
-      # Microsoft network client/server (SMB)
-      - { id: "2.59", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters", name: "RequireSecuritySignature", desired: 1 }
-      - { id: "2.60", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters", name: "EnableSecuritySignature", desired: 1 }
-      - { id: "2.61", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters", name: "EnablePlainTextPassword", desired: 0 }
-      - { id: "2.62", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "AutoDisconnect", desired: 15 }
-      - { id: "2.63", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "RequireSecuritySignature", desired: 1 }
-      - { id: "2.64", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "EnableSecuritySignature", desired: 1 }
-      - { id: "2.65", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "EnableForcedLogOff", desired: 1 }
-      - { id: "2.66", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "SmbServerNameHardeningLevel", desired: 1 }
-
-      # Anonymous restrictions
-      - { id: "2.67", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "TurnOffAnonymousBlock", desired: 0 }
-      - { id: "2.68", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "RestrictAnonymous", desired: 1 }
-      - { id: "2.69", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "RestrictAnonymousSAM", desired: 1 }
-      - { id: "2.70", type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "EveryoneIncludesAnonymous", desired: 0 }
-
-      # UAC family
-      - { id: "2.94", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "FilterAdministratorToken", desired: 1 }
-      - { id: "2.95", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ConsentPromptBehaviorAdmin", desired: 5 }
-      - { id: "2.96", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ConsentPromptBehaviorUser", desired: 0 }
-      - { id: "2.97", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableInstallerDetection", desired: 1 }
-      - { id: "2.98", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableSecureUIAPaths", desired: 1 }
-      - { id: "2.99", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableLUA", desired: 1 }
-      - { id: "2.100", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "PromptOnSecureDesktop", desired: 1 }
-      - { id: "2.101", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableVirtualization", desired: 1 }
-
-  tasks:
-
-    # Controller-side artifact dir (still runs in AAP "Check" template)
-    - name: "Create controller artifact dir for {{ inventory_hostname }}"
-      delegate_to: localhost
-      check_mode: no
-      ansible.builtin.file:
-        path: "{{ artifacts_dir }}"
-        state: directory
-        mode: '0755'
-
-    # Ensure Windows temp dir
-    - name: "Ensure {{ win_temp_dir }} exists"
-      check_mode: no
-      ansible.windows.win_file:
-        path: "{{ win_temp_dir }}"
-        state: directory
-
-    # Export local security policy and parse (always run, even in Check job)
-    - name: "Export Local Security Policy to INF"
-      check_mode: no
-      ansible.windows.win_shell: |
-        $TempDir = "{{ win_temp_dir }}"
-        $Inf = Join-Path $TempDir "SecExport.inf"
-        secedit /export /cfg $Inf | Out-Null
-        Write-Host $Inf
-      register: secedit_inf_path
-
-    - name: "Parse [Registry Values] from INF and emit JSON"
-      check_mode: no
-      ansible.windows.win_shell: |
-        $Inf = "{{ secedit_inf_path.stdout_lines[-1] }}"
-        $raw = Get-Content $Inf -Raw
-        $lines = $raw -split "`r?`n"
-        $start = ($lines | Select-String '^\[Registry Values\]$').LineNumber
-        $next  = $lines | Select-String '^\[.*\]' | Where-Object { $_.LineNumber -gt $start } | Select-Object -First 1
-        $end   = if ($next) { $next.LineNumber - 1 } else { $lines.Count }
-        $block = $lines[($start+1)..$end] | Where-Object { $_ -and $_ -notmatch '^\s*;' }
-
-        $map = @{}
-        foreach ($line in $block) {
-          if ($line -notmatch '=') { continue }
-          $parts = $line -split '=', 2
-          $left  = $parts[0].Trim()
-          $right = $parts[1].Trim()
-          if ($right -match '^(\d+)\s*,\s*(.*)$') {
-            $t = [int]$matches[1]; $d = $matches[2]
-            switch ($t) {
-              4 { if ($d -match '^0x[0-9a-fA-F]+$') { $val = [int]$d } elseif ($d -match '^\d+$') { $val = [int]$d } else { $val = $d } }
-              1 { $val = $d.Trim('"') }
-              default { $val = $d }
-            }
-          } else { $val = $right }
-          $map[$left] = $val
-        }
-
-        # specials (built-in)
+13
+TASK [Parse [Registry Values] from INF and emit JSON] **************************  
+13:48:41
+14
+changed: [win_srv_2025_test1]
+15
+16
+PLAY RECAP *********************************************************************
+17
+win_srv_2025_test1 : ok=4 changed=3 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
