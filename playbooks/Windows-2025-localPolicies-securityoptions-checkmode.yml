@@ -1,74 +1,74 @@
 ---
-- name: Windows Server 2025 – Local Policies Security Options Audit
+- name: Windows Server 2025 – Security Options Current State Audit
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Security_Options_Audit_{{ inventory_hostname }}.html"
+    report_filename: "Security_Options_Current_State_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
   tasks:
-    - name: Audit Security Options (Registry & Secedit)
+    - name: Audit Local Policy Security Options (Current Settings)
       check_mode: no
       ansible.windows.win_shell: |
         $results = @()
 
-        # 1. Audit Guest Account Status (Using net user)
-        $guestActive = (net user guest | Select-String "Account active").ToString().Split(':')[1].Trim()
-        $results += [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = $guestActive; Requirement = "Disabled" }
+        # 1. Accounts: Guest account status
+        $guest = (net user guest | Select-String "Account active").ToString().Split(':')[1].Trim()
+        $results += [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = $guest }
 
-        # 2. Audit Interactive Logon: Do not display last user name
-        $logonPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
-        $lastUser = (Get-ItemProperty -Path $logonPath -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue).DontDisplayLastUserName
+        # 2. Accounts: Block Microsoft accounts (Registry check)
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        $blockMS = (Get-ItemProperty -Path $regPath -Name "NoConnectedUser" -ErrorAction SilentlyContinue).NoConnectedUser
+        $blockMSVal = switch ($blockMS) { 1 {"Users can't add MS accounts"} 3 {"Users can't add or log on with MS accounts"} Default {"Not Defined"} }
+        $results += [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = $blockMSVal }
+
+        # 3. Accounts: Administrator account status
+        $admin = (net user administrator | Select-String "Account active").ToString().Split(':')[1].Trim()
+        $results += [PSCustomObject]@{ Policy = "Accounts: Administrator account status"; Current = $admin }
+
+        # 4. Interactive logon: Do not display last user name
+        $lastUser = (Get-ItemProperty -Path $regPath -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue).DontDisplayLastUserName
         $lastUserVal = if ($lastUser -eq 1) { "Enabled" } else { "Disabled" }
-        $results += [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = $lastUserVal; Requirement = "Enabled" }
-
-        # 3. Audit Account Lockout for Administrator
-        $adminLock = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableAdminAccountLockout" -ErrorAction SilentlyContinue).EnableAdminAccountLockout
-        $adminLockVal = if ($adminLock -eq 1) { "Enabled" } else { "Disabled" }
-        $results += [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = $adminLockVal; Requirement = "Enabled" }
+        $results += [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = $lastUserVal }
 
         $results | ConvertTo-Json
-      register: security_audit
+      register: current_settings
 
-    - name: Generate HTML Report Directly
+    - name: Generate Current State Report
       check_mode: no
       delegate_to: localhost
       ansible.builtin.copy:
         dest: "{{ local_temp_report }}"
         content: |
           <!DOCTYPE html>
-          <html lang="en">
+          <html>
           <head>
-              <meta charset="UTF-8">
               <style>
-                  body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
-                  .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-                  h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                  body { font-family: 'Segoe UI', sans-serif; margin: 30px; background: #f4f7f6; }
+                  .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
+                  h1 { color: #455A64; font-size: 22px; border-bottom: 2px solid #455A64; padding-bottom: 10px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                   th { background: #455A64; color: white; text-align: left; padding: 12px; }
-                  td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-                  .status-ok { color: #2E7D32; font-weight: bold; }
-                  .status-fail { color: #C62828; font-weight: bold; }
+                  td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 14px; }
+                  .highlight { color: #1e3a8a; font-weight: bold; }
               </style>
           </head>
           <body>
               <div class="box">
-                  <h1>Security Options Audit: {{ inventory_hostname }}</h1>
-                  {% set audit_data = security_audit.stdout | from_json %}
+                  <h1>Current Settings: Security Options ({{ inventory_hostname }})</h1>
+                  <p>Below are the <strong>default/current</strong> settings retrieved from the server.</p>
+                  {% set settings = current_settings.stdout | from_json %}
                   <table>
                       <thead>
-                          <tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr>
+                          <tr><th>Policy</th><th>Security Setting (Current)</th></tr>
                       </thead>
                       <tbody>
-                          {% for item in audit_data %}
+                          {% for item in settings %}
                           <tr>
                               <td>{{ item.Policy }}</td>
-                              <td class="{{ 'status-ok' if item.Current == item.Requirement else 'status-fail' }}">
-                                  {{ item.Current }}
-                              </td>
-                              <td>{{ item.Requirement }}</td>
+                              <td class="highlight">{{ item.Current }}</td>
                           </tr>
                           {% endfor %}
                       </tbody>
@@ -82,7 +82,7 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "security-options-reports/{{ report_filename }}"
+        object: "current-baseline/{{ report_filename }}"
         src: "{{ local_temp_report }}"
         mode: put
         region: "{{ s3_region }}"
