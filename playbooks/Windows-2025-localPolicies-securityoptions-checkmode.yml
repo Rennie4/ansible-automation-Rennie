@@ -2,8 +2,8 @@
 # =====================================================================
 # Windows-2025-localPolicies-securityoptions-checkmode.yml
 # Gathers CIS Security Options (2.38–2.101) from Windows Server 2025
-# Generates HTML report and uploads to S3 bucket
-# Uses WinRM and your existing inventory group: [windows_hosts]
+# Generates HTML report and uploads to S3
+# Runs in CHECK MODE (non-intrusive)
 # =====================================================================
 
 - name: "CIS Security Options - Windows Server 2025 (Check Mode)"
@@ -19,39 +19,42 @@
   tasks:
 
     # ------------------------------------------------------------
-    # Ensure the Temp folder exists
+    # Ensure C:\Temp exists
     # ------------------------------------------------------------
-    - name: "Create C:\\Temp directory"
+    - name: "Ensure C:\\Temp directory exists"
       ansible.windows.win_file:
         path: C:\Temp
         state: directory
       check_mode: yes
 
     # ------------------------------------------------------------
-    # Copy PowerShell script to Windows host
+    # Copy PS1 script onto Windows host
+    # IMPORTANT:
+    # The src MUST exist inside the playbooks/ directory in Git.
     # ------------------------------------------------------------
-    - name: "Copy CIS export PowerShell script"
+    - name: "Copy CIS Export PowerShell script to host"
       ansible.windows.win_copy:
-        src: "./Export-CIS-SecurityOptions-2.38-2.101.ps1"
+        src: "Export-CIS-SecurityOptions-2.38-2.101.ps1"
         dest: "{{ script_path }}"
       check_mode: yes
 
     # ------------------------------------------------------------
-    # Run the script (Check Mode = safe, non-intrusive)
+    # Run script in CHECK MODE
     # ------------------------------------------------------------
     - name: "Execute CIS Security Options Export Script (Check Mode)"
-      ansible.windows.win_shell: |
-        PowerShell -ExecutionPolicy Bypass -File "{{ script_path }}" `
-          -S3Uri "{{ s3_bucket_uri }}" `
-          -AwsExe "{{ aws_exe_path }}" `
-          -Region "{{ region }}"
+      ansible.windows.win_shell: >
+        PowerShell -ExecutionPolicy Bypass
+        -File "{{ script_path }}"
+        -S3Uri "{{ s3_bucket_uri }}"
+        -AwsExe "{{ aws_exe_path }}"
+        -Region "{{ region }}"
       args:
         executable: powershell.exe
       register: script_output
       check_mode: yes
 
     # ------------------------------------------------------------
-    # Show Task Output
+    # Show script output
     # ------------------------------------------------------------
     - name: "Display script output"
       debug:
