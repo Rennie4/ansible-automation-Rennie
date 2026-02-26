@@ -1,95 +1,57 @@
 ---
-- name: Windows Server 2025 – Security Options Compliance Report
-  hosts: all
-  gather_facts: yes
+# ================================================================
+# Windows-2025-localPolicies-securityoptions-checkmode.yml
+# Gathers CIS Security Options (2.38–2.101) using PowerShell script
+# Outputs HTML and uploads result to your S3 bucket
+# Runs in CHECK MODE (safe, non-intrusive)
+# ================================================================
+
+- name: "CIS Security Options - Windows Server 2025 (Check Mode)"
+  hosts: windows
+  gather_facts: no
   vars:
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
-    report_filename: "Security_Options_CIS_Audit_{{ inventory_hostname }}.html"
-    local_temp_report: "/tmp/{{ report_filename }}"
+    script_path: "C:\\Temp\\Export-CIS-SecurityOptions-2.38-2.101.ps1"
+    s3_bucket_uri: "s3://oml-s3-automation-sandbox/security-options-reports/"
+    aws_exe_path: "C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe"
+    region: "eu-west-1"
 
   tasks:
-    - name: Extract Actual Security Options via Secedit
-      check_mode: no
+
+    # ------------------------------------------------------------
+    # 1. Ensure C:\Temp exists
+    # ------------------------------------------------------------
+    - name: "Create Temp Directory"
+      ansible.windows.win_file:
+        path: C:\Temp
+        state: directory
+      check_mode: yes
+
+    # ------------------------------------------------------------
+    # 2. Copy the PowerShell CIS Script onto the Server
+    # ------------------------------------------------------------
+    - name: "Copy CIS Security Options Export Script"
+      ansible.windows.win_copy:
+        src: "./Export-CIS-SecurityOptions-2.38-2.101.ps1"
+        dest: "{{ script_path }}"
+      check_mode: yes
+
+    # ------------------------------------------------------------
+    # 3. Run The Script (Check Mode: Forces Non-Destructive)
+    # ------------------------------------------------------------
+    - name: "Execute CIS Security Options Script (Check Mode)"
       ansible.windows.win_shell: |
-        $inf = "C:\Windows\Temp\audit.inf"
-        secedit /export /cfg $inf /areas SECURITYPOLICY | Out-Null
-        $data = Get-Content $inf
-        Remove-Item $inf
+        PowerShell -ExecutionPolicy Bypass -File "{{ script_path }}" `
+          -S3Uri "{{ s3_bucket_uri }}" `
+          -AwsExe "{{ aws_exe_path }}" `
+          -Region "{{ region }}"
+      args:
+        executable: powershell.exe
+      register: script_output
+      check_mode: yes
 
-        function Get-Setting($key) {
-            $line = $data | Select-String "^$key\s*="
-            if ($line) {
-                $val = $line.ToString().Split('=')[1].Trim()
-                if ($val -eq "0") { return "Disabled" }
-                if ($val -eq "1") { return "Enabled" }
-                return $val
-            }
-            return "Not Defined"
-        }
-
-        # Creating a list of settings with their CIS requirements
-        $results = @(
-            [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = Get-Setting "EnableGuestAccount"; Requirement = "Disabled" }
-            [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = Get-Setting "NoConnectedUser"; Requirement = "Enabled" }
-            [PSCustomObject]@{ Policy = "Accounts: Limit local account use of blank passwords"; Current = Get-Setting "LimitBlankPasswordUse"; Requirement = "Enabled" }
-            [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = Get-Setting "DontDisplayLastUserName"; Requirement = "Enabled" }
-            [PSCustomObject]@{ Policy = "Interactive logon: Do not require CTRL+ALT+DEL"; Current = Get-Setting "DisableCAD"; Requirement = "Disabled" }
-        )
-        $results | ConvertTo-Json
-      register: audit_results
-
-    - name: Generate CIS Compliance Report
-      check_mode: no
-      delegate_to: localhost
-      ansible.builtin.copy:
-        dest: "{{ local_temp_report }}"
-        content: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <style>
-                  body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #f8f9fa; }
-                  .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-                  h1 { color: #2c3e50; border-bottom: 3px solid #34495e; padding-bottom: 10px; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                  th { background: #34495e; color: white; text-align: left; padding: 12px; }
-                  td { padding: 12px; border-bottom: 1px solid #dee2e6; font-family: 'Consolas', monospace; }
-                  .pass { color: #2ecc71; font-weight: bold; }
-                  .fail { color: #e74c3c; font-weight: bold; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>CIS Security Options Audit: {{ inventory_hostname }}</h1>
-                  <table>
-                      <thead>
-                          <tr><th>Policy Name</th><th>Current Setting</th><th>CIS Requirement</th><th>Status</th></tr>
-                      </thead>
-                      <tbody>
-                          {% for item in audit_results.stdout | from_json %}
-                          <tr>
-                              <td>{{ item.Policy }}</td>
-                              <td>{{ item.Current }}</td>
-                              <td>{{ item.Requirement }}</td>
-                              <td class="{{ 'pass' if item.Current == item.Requirement else 'fail' }}">
-                                  {{ 'PASS' if item.Current == item.Requirement else 'FAIL' }}
-                              </td>
-                          </tr>
-                          {% endfor %}
-                      </tbody>
-                  </table>
-              </div>
-          </body>
-          </html>
-
-    - name: Upload to S3
-      check_mode: no
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "security-options-reports/{{ report_filename }}"
-        src: "{{ local_temp_report }}"
-        mode: put
-        region: "{{ s3_region }}"
-        endpoint_url: "https://s3.{{ s3_region }}.amazonaws.com"
+    # ------------------------------------------------------------
+    # 4. Display Output
+    # ------------------------------------------------------------
+    - name: "Show Script Output"
+      debug:
+        msg: "{{ script_output.stdout_lines }}"
