@@ -1,50 +1,36 @@
 ---
-- name: Apply CIS Windows Server 2025 Account Policy Hardening (Full Suite)
+- name: Windows Server 2025 – Local Policies Security Options Audit
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Full_CIS_Audit_{{ inventory_hostname }}.html"
+    report_filename: "Security_Options_Audit_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
   tasks:
-    - name: Audit All Settings (PowerShell)
+    - name: Audit Security Options (Registry & Secedit)
       check_mode: no
       ansible.windows.win_shell: |
-        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
+        $results = @()
 
-        function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) { return $line.ToString().Split('=')[1].Trim() }
-            return "0"
-        }
+        # 1. Audit Guest Account Status (Using net user)
+        $guestActive = (net user guest | Select-String "Account active").ToString().Split(':')[1].Trim()
+        $results += [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = $guestActive; Requirement = "Disabled" }
 
-        $netAccounts = net accounts
-        function Get-Net($regex) {
-            $line = $netAccounts | Select-String $regex
-            if ($line) { return $line.ToString().Split(':')[1].Trim() }
-            return "Unknown"
-        }
+        # 2. Audit Interactive Logon: Do not display last user name
+        $logonPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
+        $lastUser = (Get-ItemProperty -Path $logonPath -Name "DontDisplayLastUserName" -ErrorAction SilentlyContinue).DontDisplayLastUserName
+        $lastUserVal = if ($lastUser -eq 1) { "Enabled" } else { "Disabled" }
+        $results += [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = $lastUserVal; Requirement = "Enabled" }
 
-        $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
-        $relax = (Get-ItemProperty -Path $regPath -Name "RelaxMinimumPasswordLengthLimits" -ErrorAction SilentlyContinue).RelaxMinimumPasswordLengthLimits
+        # 3. Audit Account Lockout for Administrator
+        $adminLock = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableAdminAccountLockout" -ErrorAction SilentlyContinue).EnableAdminAccountLockout
+        $adminLockVal = if ($adminLock -eq 1) { "Enabled" } else { "Disabled" }
+        $results += [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = $adminLockVal; Requirement = "Enabled" }
 
-        @{
-            PasswordHistory    = Get-Val "PasswordHistorySize"
-            MaxPasswordAge     = Get-Val "MaximumPasswordAge"
-            MinPasswordAge     = Get-Val "MinimumPasswordAge"
-            MinPasswordLength  = Get-Val "MinimumPasswordLength"
-            PasswordComplexity = if (Get-Val "PasswordComplexity" -eq "1") { "Enabled" } else { "Disabled" }
-            RelaxLength        = if ($relax -eq 1) { "Enabled (1)" } else { "Not Defined" }
-            LockoutThreshold   = Get-Net "Lockout threshold"
-            LockoutDuration    = Get-Net "Lockout duration"
-            LockoutWindow      = Get-Net "Lockout observation window"
-        } | ConvertTo-Json
-      register: full_audit
+        $results | ConvertTo-Json
+      register: security_audit
 
     - name: Generate HTML Report Directly
       check_mode: no
@@ -63,23 +49,28 @@
                   table { width: 100%; border-collapse: collapse; margin-top: 10px; }
                   th { background: #455A64; color: white; text-align: left; padding: 12px; }
                   td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-                  .ok { color: #2E7D32; font-weight: bold; }
+                  .status-ok { color: #2E7D32; font-weight: bold; }
+                  .status-fail { color: #C62828; font-weight: bold; }
               </style>
           </head>
           <body>
               <div class="box">
-                  <h1>Full CIS Audit: {{ inventory_hostname }}</h1>
-                  {% set audit = full_audit.stdout | from_json %}
-                  <h2>1. Password Policy Comparison</h2>
+                  <h1>Security Options Audit: {{ inventory_hostname }}</h1>
+                  {% set audit_data = security_audit.stdout | from_json %}
                   <table>
-                      <thead><tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+                      <thead>
+                          <tr><th>Policy Setting Name</th><th>Current State</th><th>CIS Requirement</th></tr>
+                      </thead>
                       <tbody>
-                          <tr><td>Enforce password history</td><td>{{ audit.PasswordHistory }}</td><td>24 or more</td></tr>
-                          <tr><td>Maximum password age</td><td>{{ audit.MaxPasswordAge }}</td><td>1-365 days</td></tr>
-                          <tr><td>Minimum password age</td><td>{{ audit.MinPasswordAge }}</td><td>1 or more</td></tr>
-                          <tr><td>Minimum password length</td><td>{{ audit.MinPasswordLength }}</td><td>14 or more</td></tr>
-                          <tr><td>Relax minimum password length limits</td><td>{{ audit.RelaxLength }}</td><td>Enabled (1)</td></tr>
-                          <tr><td>Password must meet complexity</td><td>{{ audit.PasswordComplexity }}</td><td>Enabled</td></tr>
+                          {% for item in audit_data %}
+                          <tr>
+                              <td>{{ item.Policy }}</td>
+                              <td class="{{ 'status-ok' if item.Current == item.Requirement else 'status-fail' }}">
+                                  {{ item.Current }}
+                              </td>
+                              <td>{{ item.Requirement }}</td>
+                          </tr>
+                          {% endfor %}
                       </tbody>
                   </table>
               </div>
@@ -91,10 +82,8 @@
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/{{ report_filename }}"
+        object: "security-options-reports/{{ report_filename }}"
         src: "{{ local_temp_report }}"
         mode: put
         region: "{{ s3_region }}"
-        # Correct parameter for your collection version
         endpoint_url: "https://s3.{{ s3_region }}.amazonaws.com"
-        validate_certs: yes
