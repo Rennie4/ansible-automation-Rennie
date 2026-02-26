@@ -95,6 +95,6 @@
         src: "{{ local_temp_report }}"
         mode: put
         region: "{{ s3_region }}"
-        # FIX: Explicitly setting the endpoint and dualstack can bypass HeadBucket 400 errors
-        s3_url: "https://s3.{{ s3_region }}.amazonaws.com"
+        # Correct parameter for your collection version
+        endpoint_url: "https://s3.{{ s3_region }}.amazonaws.com"
         validate_certs: yes
