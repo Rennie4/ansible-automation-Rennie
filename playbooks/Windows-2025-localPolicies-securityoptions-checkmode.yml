@@ -1,39 +1,170 @@
-SSH password:
-1
+---
+# =====================================================================
+# Windows-2025-securityoptions-audit-generate-remediation.yml
+# Compare current Security Options (CIS 2.38–2.101 subset) vs baseline,
+# generate per-host APPLY playbook, upload both (diff + apply) to S3.
+# Works even when launched as a Check job (forced tasks use check_mode: no).
+# =====================================================================
 
-2
-PLAY [CIS Security Options (2.38–2.101): Audit & Generate Apply Playbook] ******  
-13:48:36
-3
+- name: "CIS Security Options (2.38–2.101): Audit & Generate Apply Playbook"
+  hosts: windows_hosts
+  gather_facts: no
 
-4
-TASK [Create controller artifact dir for win_srv_2025_test1] *******************  
-13:48:36
-5
-changed: [win_srv_2025_test1 -> localhost]
-6
+  vars:
+    win_temp_dir: "C:\\Temp"
+    inf_path:     "C:\\Temp\\SecExport.inf"
+    diff_win:     "C:\\Temp\\CIS_SecOptions_diff.txt"
+    apply_win:    "C:\\Temp\\Windows-2025-apply-securityoptions.yml"
 
-7
-TASK [Ensure C:\Temp exists] ***************************************************  
-13:48:36
-8
-ok: [win_srv_2025_test1]
-9
+    s3_bucket_uri: "s3://oml-s3-automation-sandbox/security-options-reports/"
+    s3_prefix_diff: "diffs/{{ inventory_hostname }}/"
+    s3_prefix_apply: "apply/{{ inventory_hostname }}/"
+    region: "eu-west-1"
+    aws_exe_path: "C:\\Program Files\\Amazon\\AWSCLIV2\\aws.exe"
 
-10
-TASK [Export Local Security Policy to INF] *************************************  
-13:48:38
-11
-changed: [win_srv_2025_test1]
-12
+    # CIS 2025 v1.0.0 – Security Options subset; extend as needed
+    cis_baseline:
+      - { id: "2.38",  type: special,   key: guest_status, desired: "Disabled" }
+      - { id: "2.39",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LimitBlankPasswordUse", desired: 1 }
+      - { id: "2.43",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "CrashOnAuditFail",       desired: 0 }
+      - { id: "2.74",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LanManServer\\Parameters", name: "RestrictNullSessAccess", desired: 1 }
+      - { id: "2.77",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "ForceGuest", desired: 0 }
+      - { id: "2.82",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "NoLMHash",  desired: 1 }
+      - { id: "2.84",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa", name: "LmCompatibilityLevel", desired: 5 }
+      - { id: "2.85",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LDAP", name: "LDAPClientConfidentiality", desired: 2 }
+      - { id: "2.86",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Services\\LDAP", name: "LDAPClientIntegrity",       desired: 1 }
+      - { id: "2.87",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "NTLMMinClientSec", desired: 537395200 }
+      - { id: "2.88",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "NTLMMinServerSec", desired: 537395200 }
+      - { id: "2.90",  type: reg_dword, root: HKLM, path: "System\\CurrentControlSet\\Control\\Lsa\\MSV1_0", name: "RestrictSendingNTLMTraffic", desired: 1 }
+      - { id: "2.91",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ShutdownWithoutLogon", desired: 0 }
+      - { id: "2.94",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "FilterAdministratorToken", desired: 1 }
+      - { id: "2.95",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ConsentPromptBehaviorAdmin", desired: 5 }
+      - { id: "2.96",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "ConsentPromptBehaviorUser",  desired: 0 }
+      - { id: "2.97",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableInstallerDetection",   desired: 1 }
+      - { id: "2.98",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableSecureUIAPaths",       desired: 1 }
+      - { id: "2.99",  type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableLUA",                  desired: 1 }
+      - { id: "2.100", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "PromptOnSecureDesktop",     desired: 1 }
+      - { id: "2.101", type: reg_dword, root: HKLM, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", name: "EnableVirtualization",      desired: 1 }
 
-13
-TASK [Parse [Registry Values] from INF and emit JSON] **************************  
-13:48:41
-14
-changed: [win_srv_2025_test1]
-15
-16
-PLAY RECAP *********************************************************************
-17
-win_srv_2025_test1 : ok=4 changed=3 unreachable=0 failed=0 skipped=0 rescued=0 ignored=0
+  tasks:
+    - name: "Ensure {{ win_temp_dir }} exists"
+      check_mode: no
+      ansible.windows.win_file:
+        path: "{{ win_temp_dir }}"
+        state: directory
+
+    - name: "Export Local Security Policy to INF"
+      check_mode: no
+      ansible.windows.win_shell: |
+        secedit /export /cfg "{{ inf_path }}" | Out-Null
+        Write-Host "{{ inf_path }}"
+      register: secedit_inf_path
+
+    - name: "Parse INF and emit JSON (current state)"
+      check_mode: no
+      ansible.windows.win_shell: |
+        $Inf = "{{ secedit_inf_path.stdout_lines[-1] }}"
+        $raw = Get-Content $Inf -Raw
+        $lines = $raw -split "`r?`n"
+        $start = ($lines | Select-String '^\[Registry Values\]$').LineNumber
+        $next  = $lines | Select-String '^\[.*\]' | Where-Object { $_.LineNumber -gt $start } | Select-Object -First 1
+        $end   = if ($next) { $next.LineNumber - 1 } else { $lines.Count }
+        $block = $lines[($start+1)..$end] | Where-Object { $_ -and $_ -notmatch '^\s*;' }
+
+        $map = @{}
+        foreach ($line in $block) {
+          if ($line -notmatch '=') { continue }
+          $parts = $line -split '=', 2
+          $left  = $parts[0].Trim()
+          $right = $parts[1].Trim()
+          if ($right -match '^(\d+)\s*,\s*(.*)$') {
+            $t=[int]$matches[1]; $d=$matches[2]
+            switch ($t) {
+              4 { if ($d -match '^0x[0-9a-fA-F]+$') { $val = [int]$d } elseif ($d -match '^\d+$') { $val = [int]$d } else { $val = $d } }
+              1 { $val = $d.Trim('"') }
+              default { $val = $d }
+            }
+          } else { $val = $right }
+          $map[$left] = $val
+        }
+
+        $guest = (Get-LocalUser | ? { $_.SID.Value -like '*-501' } | Select-Object -First 1)
+        [pscustomobject]@{
+          Registry     = $map
+          GuestEnabled = if ($guest) { [bool]$guest.Enabled } else { $null }
+        } | ConvertTo-Json -Depth 6
+      register: current_json
+
+    - name: "Set current facts"
+      ansible.builtin.set_fact:
+        current: "{{ current_json.stdout | from_json }}"
+
+    - name: "Compute non-compliant items"
+      ansible.builtin.set_fact:
+        non_compliant: >-
+          {%- set out = [] -%}
+          {%- for i in cis_baseline -%}
+            {%- if i.type == 'special' and i.key == 'guest_status' -%}
+              {%- set cur = (current.GuestEnabled | default(None)) -%}
+              {%- set desired = (i.desired == 'Enabled') -%}
+              {%- if cur is not none and cur != desired -%}
+                {%- set _ = out.append(dict(i, current=cur)) -%}
+              {%- endif -%}
+            {%- elif i.type in ['reg_dword','reg_sz'] -%}
+              {%- set key = 'MACHINE\\' ~ i.path ~ '\\' ~ i.name -%}
+              {%- set cur = current.Registry[key] | default(None) -%}
+              {%- if cur != i.desired -%}
+                {%- set _ = out.append(dict(i, current=cur)) -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: "Write diff to Windows"
+      check_mode: no
+      ansible.windows.win_copy:
+        dest: "{{ diff_win }}"
+        content: |
+          Host: {{ inventory_hostname }}
+          Checked: {{ cis_baseline | length }}
+          Non-compliant: {{ non_compliant | length }}
+
+          {% for i in non_compliant %}
+          - {{ i.id }} :: {{ i.type == 'special' and ('Special:' ~ i.key) or (i.root ~ '\' ~ i.path ~ '\' ~ i.name) }}
+            desired={{ i.desired }}, current={{ i.current | default('NotDefined') }}
+          {% endfor %}
+
+    - name: "Upload diff to S3"
+      check_mode: no
+      ansible.windows.win_shell: >
+        "{{ aws_exe_path }}" s3 cp "{{ diff_win }}"
+        "{{ s3_bucket_uri }}{{ s3_prefix_diff }}"
+        --region {{ region }} --storage-class STANDARD
+      register: s3_diff_upload
+      changed_when: "'upload:' in (s3_diff_upload.stdout | default('')) or 'upload:' in (s3_diff_upload.stderr | default(''))"
+      failed_when: false
+
+    - name: "Render APPLY playbook to Windows"
+      check_mode: no
+      ansible.windows.win_copy:
+        dest: "{{ apply_win }}"
+        content: |
+          ---
+          - name: "APPLY – CIS Security Options (2.38–2.101) – {{ inventory_hostname }}"
+            hosts: {{ inventory_hostname }}
+            gather_facts: no
+            tasks:
+          {% if non_compliant | length == 0 %}
+              - name: "Nothing to remediate on {{ inventory_hostname }}"
+                ansible.builtin.debug:
+                  msg: "Compliant with the supplied baseline."
+          {% else %}
+          {% for i in non_compliant %}
+          {% if i.type == 'special' and i.key == 'guest_status' %}
+              - name: "{{ i.id }} – Set Guest account status to {{ i.desired }}"
+                ansible.windows.win_user:
+                  name: Guest
+                  state: "{{ 'disabled' if i.desired == 'Disabled' else 'present' }}"
+          {% elif i.type in ['reg_dword','reg_sz'] %}
+              - name: "{{ i.id }} – Set {{ i.root }}\\{{ i.path }}\\{{ i.name }} to {{ i.desired }}"
+                ansible.windows.win_regedit:
