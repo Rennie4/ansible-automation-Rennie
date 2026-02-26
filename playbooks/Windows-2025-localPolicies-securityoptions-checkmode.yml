@@ -1,11 +1,11 @@
 ---
-- name: Windows Server 2025 – Security Options Discovery
+- name: Windows Server 2025 – Security Options Compliance Report
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Security_Options_Discovery_{{ inventory_hostname }}.html"
+    report_filename: "Security_Options_CIS_Audit_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
   tasks:
@@ -25,19 +25,21 @@
                 if ($val -eq "1") { return "Enabled" }
                 return $val
             }
-            return "Not Defined (Default)"
+            return "Not Defined"
         }
 
-        # Mapping to the exact names in your Local Policy UI snippet
-        [PSCustomObject]@{
-            "Accounts: Administrator account status" = Get-Setting "EnableAdminAccount"
-            "Accounts: Guest account status"         = Get-Setting "EnableGuestAccount"
-            "Accounts: Block Microsoft accounts"     = Get-Setting "NoConnectedUser"
-            "Interactive logon: Do not display last user name" = Get-Setting "DontDisplayLastUserName"
-        } | ConvertTo-Json
-      register: raw_policy
+        # Creating a list of settings with their CIS requirements
+        $results = @(
+            [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = Get-Setting "EnableGuestAccount"; Requirement = "Disabled" }
+            [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = Get-Setting "NoConnectedUser"; Requirement = "Enabled" }
+            [PSCustomObject]@{ Policy = "Accounts: Limit local account use of blank passwords"; Current = Get-Setting "LimitBlankPasswordUse"; Requirement = "Enabled" }
+            [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = Get-Setting "DontDisplayLastUserName"; Requirement = "Enabled" }
+            [PSCustomObject]@{ Policy = "Interactive logon: Do not require CTRL+ALT+DEL"; Current = Get-Setting "DisableCAD"; Requirement = "Disabled" }
+        )
+        $results | ConvertTo-Json
+      register: audit_results
 
-    - name: Generate Discovery Report
+    - name: Generate CIS Compliance Report
       check_mode: no
       delegate_to: localhost
       ansible.builtin.copy:
@@ -48,26 +50,31 @@
           <head>
               <style>
                   body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #f8f9fa; }
-                  .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
-                  h1 { color: #2c3e50; border-bottom: 3px solid #34495e; padding-bottom: 10px; font-size: 24px; }
+                  .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+                  h1 { color: #2c3e50; border-bottom: 3px solid #34495e; padding-bottom: 10px; }
                   table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                   th { background: #34495e; color: white; text-align: left; padding: 12px; }
-                  td { padding: 12px; border-bottom: 1px solid #dee2e6; font-family: 'Consolas', monospace; color: #1e3a8a; font-weight: bold; }
-                  .policy-name { color: #333; font-family: 'Segoe UI'; font-weight: normal; }
+                  td { padding: 12px; border-bottom: 1px solid #dee2e6; font-family: 'Consolas', monospace; }
+                  .pass { color: #2ecc71; font-weight: bold; }
+                  .fail { color: #e74c3c; font-weight: bold; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <h1>Current Settings Discovery: {{ inventory_hostname }}</h1>
-                  <p>Source: Local Policies \ Security Options</p>
+                  <h1>CIS Security Options Audit: {{ inventory_hostname }}</h1>
                   <table>
-                      <thead><tr><th>Policy Name</th><th>Current Security Setting</th></tr></thead>
+                      <thead>
+                          <tr><th>Policy Name</th><th>Current Setting</th><th>CIS Requirement</th><th>Status</th></tr>
+                      </thead>
                       <tbody>
-                          {% set p = raw_policy.stdout | from_json %}
-                          {% for key, value in p.items() %}
+                          {% for item in audit_results.stdout | from_json %}
                           <tr>
-                              <td class="policy-name">{{ key }}</td>
-                              <td>{{ value }}</td>
+                              <td>{{ item.Policy }}</td>
+                              <td>{{ item.Current }}</td>
+                              <td>{{ item.Requirement }}</td>
+                              <td class="{{ 'pass' if item.Current == item.Requirement else 'fail' }}">
+                                  {{ 'PASS' if item.Current == item.Requirement else 'FAIL' }}
+                              </td>
                           </tr>
                           {% endfor %}
                       </tbody>
