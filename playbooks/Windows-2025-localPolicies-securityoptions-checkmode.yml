@@ -120,6 +120,7 @@
           {%- endfor -%}
           {{ out }}
 
+    # ---------- FIXED TASK (uses escaped backslashes) ----------
     - name: "Write diff to Windows"
       check_mode: no
       ansible.windows.win_copy:
@@ -130,7 +131,11 @@
           Non-compliant: {{ non_compliant | length }}
 
           {% for i in non_compliant %}
-          - {{ i.id }} :: {{ i.type == 'special' and ('Special:' ~ i.key) or (i.root ~ '\' ~ i.path ~ '\' ~ i.name) }}
+          - {{ i.id }} :: {{
+              ('Special:' ~ i.key)
+              if i.type == 'special'
+              else (i.root ~ '\\' ~ i.path ~ '\\' ~ i.name)
+            }}
             desired={{ i.desired }}, current={{ i.current | default('NotDefined') }}
           {% endfor %}
 
@@ -168,3 +173,20 @@
           {% elif i.type in ['reg_dword','reg_sz'] %}
               - name: "{{ i.id }} – Set {{ i.root }}\\{{ i.path }}\\{{ i.name }} to {{ i.desired }}"
                 ansible.windows.win_regedit:
+                  path: "{{ i.root }}\\{{ i.path }}"
+                  name: "{{ i.name }}"
+                  data: {{ i.desired | to_nice_json }}
+                  type: "{{ 'dword' if i.type == 'reg_dword' else 'string' }}"
+          {% endif %}
+          {% endfor %}
+          {% endif %}
+
+    - name: "Upload APPLY playbook to S3"
+      check_mode: no
+      ansible.windows.win_shell: >
+        "{{ aws_exe_path }}" s3 cp "{{ apply_win }}"
+        "{{ s3_bucket_uri }}{{ s3_prefix_apply }}"
+        --region {{ region }} --storage-class STANDARD
+      register: s3_apply_upload
+      changed_when: "'upload:' in (s3_apply_upload.stdout | default('')) or 'upload:' in (s3_apply_upload.stderr | default(''))"
+      failed_when: false
