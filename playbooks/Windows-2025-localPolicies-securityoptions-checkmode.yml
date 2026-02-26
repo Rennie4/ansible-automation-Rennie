@@ -1,47 +1,43 @@
 ---
-- name: Windows Server 2025 – Security Options Current Settings Audit
+- name: Windows Server 2025 – Security Options Discovery
   hosts: all
   gather_facts: yes
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "Security_Options_Current_State_{{ inventory_hostname }}.html"
+    report_filename: "Security_Options_Discovery_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
   tasks:
-    - name: Audit Security Options (Current Settings)
+    - name: Extract Actual Security Options via Secedit
       check_mode: no
       ansible.windows.win_shell: |
-        $tempFile = "C:\Windows\Temp\security_options.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $rawConfig = Get-Content $tempFile
-        Remove-Item $tempFile
+        $inf = "C:\Windows\Temp\audit.inf"
+        secedit /export /cfg $inf /areas SECURITYPOLICY | Out-Null
+        $data = Get-Content $inf
+        Remove-Item $inf
 
         function Get-Setting($key) {
-            $line = $rawConfig | Select-String "^$key\s*="
+            $line = $data | Select-String "^$key\s*="
             if ($line) {
                 $val = $line.ToString().Split('=')[1].Trim()
-                # Mapping common binary values to UI text
-                if ($val -eq "0") { return "Disabled / Not Defined" }
+                if ($val -eq "0") { return "Disabled" }
                 if ($val -eq "1") { return "Enabled" }
                 return $val
             }
-            return "Not Defined"
+            return "Not Defined (Default)"
         }
 
-        # Mapping keys to the human-readable UI names in your image
-        $results = @(
-            [PSCustomObject]@{ Policy = "Accounts: Administrator account status"; Current = Get-Setting "EnableAdminAccount" }
-            [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = Get-Setting "EnableGuestAccount" }
-            [PSCustomObject]@{ Policy = "Accounts: Block Microsoft accounts"; Current = Get-Setting "NoConnectedUser" }
-            [PSCustomObject]@{ Policy = "Accounts: Limit local account use of blank passwords"; Current = Get-Setting "LimitBlankPasswordUse" }
-            [PSCustomObject]@{ Policy = "Interactive logon: Do not display last user name"; Current = Get-Setting "DontDisplayLastUserName" }
-        )
+        # Mapping to the exact names in your Local Policy UI snippet
+        [PSCustomObject]@{
+            "Accounts: Administrator account status" = Get-Setting "EnableAdminAccount"
+            "Accounts: Guest account status"         = Get-Setting "EnableGuestAccount"
+            "Accounts: Block Microsoft accounts"     = Get-Setting "NoConnectedUser"
+            "Interactive logon: Do not display last user name" = Get-Setting "DontDisplayLastUserName"
+        } | ConvertTo-Json
+      register: raw_policy
 
-        $results | ConvertTo-Json
-      register: current_settings
-
-    - name: Generate HTML Report
+    - name: Generate Discovery Report
       check_mode: no
       delegate_to: localhost
       ansible.builtin.copy:
@@ -51,26 +47,27 @@
           <html>
           <head>
               <style>
-                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 30px; background: #f4f7f6; }
-                  .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
-                  h1 { color: #455A64; font-size: 20px; border-bottom: 2px solid #455A64; padding-bottom: 10px; margin-bottom: 20px; }
-                  table { width: 100%; border-collapse: collapse; }
-                  th { background: #455A64; color: white; text-align: left; padding: 12px; font-size: 14px; }
-                  td { padding: 12px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; font-size: 13px; }
-                  .val { color: #1e3a8a; font-weight: bold; }
+                  body { font-family: 'Segoe UI', sans-serif; margin: 40px; background: #f8f9fa; }
+                  .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 900px; margin: auto; }
+                  h1 { color: #2c3e50; border-bottom: 3px solid #34495e; padding-bottom: 10px; font-size: 24px; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                  th { background: #34495e; color: white; text-align: left; padding: 12px; }
+                  td { padding: 12px; border-bottom: 1px solid #dee2e6; font-family: 'Consolas', monospace; color: #1e3a8a; font-weight: bold; }
+                  .policy-name { color: #333; font-family: 'Segoe UI'; font-weight: normal; }
               </style>
           </head>
           <body>
-              <div class="box">
-                  <h1>Current Settings: Local Policies\Security Options</h1>
-                  <p>Server: <strong>{{ inventory_hostname }}</strong></p>
+              <div class="container">
+                  <h1>Current Settings Discovery: {{ inventory_hostname }}</h1>
+                  <p>Source: Local Policies \ Security Options</p>
                   <table>
-                      <thead><tr><th>Policy Name</th><th>Security Setting (Current)</th></tr></thead>
+                      <thead><tr><th>Policy Name</th><th>Current Security Setting</th></tr></thead>
                       <tbody>
-                          {% for item in current_settings.stdout | from_json %}
+                          {% set p = raw_policy.stdout | from_json %}
+                          {% for key, value in p.items() %}
                           <tr>
-                              <td>{{ item.Policy }}</td>
-                              <td class="val">{{ item.Current }}</td>
+                              <td class="policy-name">{{ key }}</td>
+                              <td>{{ value }}</td>
                           </tr>
                           {% endfor %}
                       </tbody>
