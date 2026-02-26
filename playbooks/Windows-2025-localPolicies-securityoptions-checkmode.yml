@@ -5,6 +5,7 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
+    # Unified report filename
     report_filename: "Security_Options_Current_State_{{ inventory_hostname }}.html"
     local_temp_report: "/tmp/{{ report_filename }}"
 
@@ -18,7 +19,7 @@
         $guest = (net user guest | Select-String "Account active").ToString().Split(':')[1].Trim()
         $results += [PSCustomObject]@{ Policy = "Accounts: Guest account status"; Current = $guest }
 
-        # 2. Accounts: Block Microsoft accounts (Registry check)
+        # 2. Accounts: Block Microsoft accounts
         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $blockMS = (Get-ItemProperty -Path $regPath -Name "NoConnectedUser" -ErrorAction SilentlyContinue).NoConnectedUser
         $blockMSVal = switch ($blockMS) { 1 {"Users can't add MS accounts"} 3 {"Users can't add or log on with MS accounts"} Default {"Not Defined"} }
@@ -58,11 +59,11 @@
           <body>
               <div class="box">
                   <h1>Current Settings: Security Options ({{ inventory_hostname }})</h1>
-                  <p>Below are the <strong>default/current</strong> settings retrieved from the server.</p>
+                  <p>Below are the <strong>actual current settings</strong> retrieved from the server.</p>
                   {% set settings = current_settings.stdout | from_json %}
                   <table>
                       <thead>
-                          <tr><th>Policy</th><th>Security Setting (Current)</th></tr>
+                          <tr><th>Policy Name</th><th>Current Security Setting</th></tr>
                       </thead>
                       <tbody>
                           {% for item in settings %}
@@ -77,12 +78,13 @@
           </body>
           </html>
 
-    - name: Upload to S3
+    - name: Upload to S3 (Unified Location)
       check_mode: no
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "current-baseline/{{ report_filename }}"
+        # This keeps all reports in one folder
+        object: "security-options-reports/{{ report_filename }}"
         src: "{{ local_temp_report }}"
         mode: put
         region: "{{ s3_region }}"
