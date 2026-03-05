@@ -11,30 +11,33 @@
     - name: Run CIS Security Options Audit (2.38 - 2.44)
       win_shell: |
         $LsaPath = "HKLM:\System\CurrentControlSet\Control\Lsa"
-        $MSVPath = "HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0"
         
-        @{
-            # 2.38 (L1) Ensure 'Accounts: Guest account status' is set to 'Disabled'
-            "2.38_GuestAccountStatus" = (Get-LocalUser -SID "S-1-5-21-*-501" | Select-Object -ExpandProperty Enabled)
+        # Fixed 2.38: Find Guest account by checking for the -501 RID suffix
+        $GuestAccount = Get-LocalUser | Where-Object { $_.SID -match '-501$' }
+        
+        $results = @{
+            # 2.38 (L1) Accounts: Guest account status
+            "2.38_GuestAccountStatus"  = if ($GuestAccount) { $GuestAccount.Enabled } else { "Not Found" }
             
-            # 2.39 (L1) Ensure 'Accounts: Limit local account use of blank passwords to console logon only' is set to 'Enabled'
-            "2.39_LimitBlankPassword" = (Get-ItemProperty $LsaPath).LimitBlankPasswordUse
+            # 2.39 (L1) Accounts: Limit local account use of blank passwords
+            "2.39_LimitBlankPassword"  = (Get-ItemProperty $LsaPath -Name "LimitBlankPasswordUse" -ErrorAction SilentlyContinue).LimitBlankPasswordUse
             
-            # 2.40 (L1) Ensure 'Audit: Force logoff when session expires' is set to 'Enabled'
-            "2.40_AuditForceLogoff"   = (Get-ItemProperty $LsaPath).AuditLogonEvents # Mapping from CIS spec
+            # 2.40 (L1) Audit: Force logoff when session expires
+            "2.40_AuditForceLogoff"    = (Get-ItemProperty $LsaPath -Name "AuditLogonEvents" -ErrorAction SilentlyContinue).AuditLogonEvents
             
-            # 2.41 (L1) Ensure 'Audit: Shut down system immediately if unable to log security audits' is set to 'Disabled'
-            "2.41_ShutDownOnAuditFail" = (Get-ItemProperty $LsaPath).CrashOnAuditFail
+            # 2.41 (L1) Audit: Shut down system immediately if unable to log security audits
+            "2.41_ShutDownOnAuditFail" = (Get-ItemProperty $LsaPath -Name "CrashOnAuditFail" -ErrorAction SilentlyContinue).CrashOnAuditFail
             
-            # 2.42 (L1) Ensure 'Devices: Allowed to format and eject removable media' is set to 'Administrators'
-            "2.42_MediaEject"         = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon").AllocateDASD
+            # 2.42 (L1) Devices: Allowed to format and eject removable media
+            "2.42_MediaEject"          = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AllocateDASD" -ErrorAction SilentlyContinue).AllocateDASD
             
-            # 2.43 (L1) Ensure 'Devices: Allow undock without having to log on' is set to 'Disabled'
-            "2.43_UndockWithoutLogon" = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System").UndockWithoutLogon
+            # 2.43 (L1) Devices: Allow undock without having to log on
+            "2.43_UndockWithoutLogon"  = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "UndockWithoutLogon" -ErrorAction SilentlyContinue).UndockWithoutLogon
             
-            # 2.44 (L1) Ensure 'Devices: Prevent users from installing printer drivers' is set to 'Enabled'
-            "2.44_PreventPrintDrivers" = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers").AddPrinterDrivers
-        } | ConvertTo-Json
+            # 2.44 (L1) Devices: Prevent users from installing printer drivers
+            "2.44_PreventPrintDrivers" = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers" -Name "AddPrinterDrivers" -ErrorAction SilentlyContinue).AddPrinterDrivers
+        }
+        $results | ConvertTo-Json
       register: full_audit
       check_mode: no
 
