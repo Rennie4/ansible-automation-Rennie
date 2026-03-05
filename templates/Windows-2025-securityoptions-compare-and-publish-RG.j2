@@ -17,6 +17,7 @@
     <div class="container">
         <h1>CIS Security Options Audit (2.38 - 2.44)</h1>
         <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+        <p><strong>Reference:</strong> CIS Benchmark for Microsoft Windows Server 2025 v1.0.0</p>
         <table>
             <thead>
                 <tr>
@@ -32,19 +33,14 @@
                     <td>{{ value }}</td>
                     <td>
                         {% set status = "pass" %}
-                        {# 2.38 must be False (Disabled) #}
                         {% if key == "2.38_GuestAccountStatus" and value == true %}{% set status = "fail" %}{% endif %}
-                        {# 2.39 must be 1 (Enabled) #}
                         {% if key == "2.39_LimitBlankPassword" and value == 0 %}{% set status = "fail" %}{% endif %}
-                        {# 2.41 must be 0 (Disabled) #}
                         {% if key == "2.41_ShutDownOnAuditFail" and value == 1 %}{% set status = "fail" %}{% endif %}
-                        
                         <span class="{{ status }}">{{ "COMPLIANT" if status == "pass" else "NON-COMPLIANT" }}</span>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
-        </tbody>
         </table>
     </div>
 </body>
