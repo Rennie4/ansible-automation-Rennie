@@ -5,35 +5,35 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    # Dynamic filename ensures no overwrites and survives reboots
-    report_filename: "Security_Options_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "CIS_Audit_2.38_2.44_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Run Unified Audit (Security Options)
+    - name: Run CIS Security Options Audit (2.38 - 2.44)
       win_shell: |
-        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
-
-        # Helper to parse secedit lines
-        function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) { return $line.ToString().Split('=')[1].Trim() }
-            return "Not Defined"
-        }
-
-        # Gather Account and Security Options
+        $LsaPath = "HKLM:\System\CurrentControlSet\Control\Lsa"
+        $MSVPath = "HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0"
+        
         @{
-            GuestAccountStatus   = Get-Val "EnableGuestAccount"
-            PasswordHistory      = Get-Val "PasswordHistorySize"
-            MaxPasswordAge       = Get-Val "MaximumPasswordAge"
-            MinPasswordAge       = Get-Val "MinimumPasswordAge"
-            MinPasswordLength    = Get-Val "MinimumPasswordLength"
-            LimitBlankPassword   = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
-            AuditCrash           = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "CrashOnAuditFail").CrashOnAuditFail
-            LmCompatibility      = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel").LmCompatibilityLevel
-            # Add additional keys as needed for the 107 items
+            # 2.38 (L1) Ensure 'Accounts: Guest account status' is set to 'Disabled'
+            "2.38_GuestAccountStatus" = (Get-LocalUser -SID "S-1-5-21-*-501" | Select-Object -ExpandProperty Enabled)
+            
+            # 2.39 (L1) Ensure 'Accounts: Limit local account use of blank passwords to console logon only' is set to 'Enabled'
+            "2.39_LimitBlankPassword" = (Get-ItemProperty $LsaPath).LimitBlankPasswordUse
+            
+            # 2.40 (L1) Ensure 'Audit: Force logoff when session expires' is set to 'Enabled'
+            "2.40_AuditForceLogoff"   = (Get-ItemProperty $LsaPath).AuditLogonEvents # Mapping from CIS spec
+            
+            # 2.41 (L1) Ensure 'Audit: Shut down system immediately if unable to log security audits' is set to 'Disabled'
+            "2.41_ShutDownOnAuditFail" = (Get-ItemProperty $LsaPath).CrashOnAuditFail
+            
+            # 2.42 (L1) Ensure 'Devices: Allowed to format and eject removable media' is set to 'Administrators'
+            "2.42_MediaEject"         = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon").AllocateDASD
+            
+            # 2.43 (L1) Ensure 'Devices: Allow undock without having to log on' is set to 'Disabled'
+            "2.43_UndockWithoutLogon" = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System").UndockWithoutLogon
+            
+            # 2.44 (L1) Ensure 'Devices: Prevent users from installing printer drivers' is set to 'Enabled'
+            "2.44_PreventPrintDrivers" = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers").AddPrinterDrivers
         } | ConvertTo-Json
       register: full_audit
       check_mode: no
