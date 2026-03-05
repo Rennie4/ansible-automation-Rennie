@@ -32,7 +32,7 @@
       vars:
         audit: "{{ full_audit.stdout | from_json }}"
 
-    - name: Upload to S3
+    - name: Upload to S3 (Bypassing HeadBucket 400)
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
@@ -40,6 +40,6 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
-        # This prevents the 400 error by pointing directly to Dublin
-        endpoint_url: "https://s3.eu-west-1.amazonaws.com"
+        # This is the critical fix for AAP 400 errors:
+        validate_bucket: no
       register: s3_result
