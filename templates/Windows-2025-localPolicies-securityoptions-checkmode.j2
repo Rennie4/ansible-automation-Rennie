@@ -1,31 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
+    <title>CIS Audit: {{ inventory_hostname }}</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f9; padding: 40px; }
-        .card { max-width: 900px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #1e3a8a; border-bottom: 3px solid #3b82f6; padding-bottom: 15px; margin-top: 0; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; padding: 30px; background-color: #f8f9fa; }
+        .container { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #003366; border-bottom: 2px solid #003366; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th { background: #1e3a8a; color: white; text-align: left; padding: 12px; }
-        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
-        .Enabled { color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px 8px; border-radius: 4px; }
-        .Disabled { color: #dc2626; font-weight: bold; background: #fef2f2; padding: 4px 8px; border-radius: 4px; }
-        .Not-Defined { color: #94a3b8; font-style: italic; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #003366; color: white; }
+        .pass { color: #28a745; font-weight: bold; }
+        .fail { color: #dc3545; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>CIS 2025 Security Audit: {{ inventory_hostname }}</h1>
+    <div class="container">
+        <h1>CIS Security Options Audit (2.38 - 2.44)</h1>
+        <p><strong>Target Host:</strong> {{ inventory_hostname }}</p>
+        <p><strong>Benchmark:</strong> CIS Microsoft Windows Server 2025 v1.0.0</p>
         <table>
-            <thead><tr><th>Policy Item</th><th>Status</th></tr></thead>
-            <tbody>
-                {% for line in scan_lines %}
-                {% set parts = line.split('|') %}
-                {% set status_val = parts[1].strip() %}
+            <thead>
                 <tr>
-                    <td>{{ parts[0].strip() }}</td>
-                    <td><span class="{{ status_val.replace(' ', '-') }}">{{ status_val }}</span></td>
+                    <th>CIS ID</th>
+                    <th>Current Value</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, value in audit.items() %}
+                <tr>
+                    <td>{{ key.split('_')[0] }}</td>
+                    <td>{{ value }}</td>
+                    <td>
+                        {% set status = "pass" %}
+                        {% if key == "2.38_GuestAccountStatus" and value == true %}{% set status = "fail" %}{% endif %}
+                        {% if key == "2.39_LimitBlankPassword" and value == 0 %}{% set status = "fail" %}{% endif %}
+                        {% if key == "2.41_ShutDownOnAuditFail" and value == 1 %}{% set status = "fail" %}{% endif %}
+                        
+                        <span class="{{ status }}">{{ "COMPLIANT" if status == "pass" else "NON-COMPLIANT" }}</span>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
