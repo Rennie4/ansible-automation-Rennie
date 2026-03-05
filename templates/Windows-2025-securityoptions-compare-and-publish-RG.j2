@@ -1,47 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Security Audit: {{ inventory_hostname }}</title>
+    <title>CIS Audit: 2.38 - 2.44</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; background-color: #f9f9f9; }
-        .header { background: #232f3e; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; background: white; }
-        th, td { border: 1px solid #dddddd; text-align: left; padding: 12px; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        .pass { color: #2d862d; font-weight: bold; }
-        .fail { color: #d9534f; font-weight: bold; }
+        body { font-family: 'Segoe UI', Arial; padding: 20px; background-color: #f4f4f4; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #004a99; color: white; }
+        .pass { background-color: #d4edda; color: #155724; font-weight: bold; padding: 4px 8px; border-radius: 4px; }
+        .fail { background-color: #f8d7da; color: #721c24; font-weight: bold; padding: 4px 8px; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Windows Server 2025 - Security Options Audit</h1>
-        <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Date:</strong> {{ ansible_date_time.date }}</p>
+    <div class="card">
+        <h2>CIS Windows Server 2025 Security Audit (2.38 - 2.44)</h2>
+        <p><strong>Host:</strong> {{ inventory_hostname }} | <strong>Audit Time:</strong> {{ ansible_date_time.iso8601 }}</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>CIS ID & Description</th>
+                    <th>Current Value</th>
+                    <th>Compliance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, value in audit.items() %}
+                <tr>
+                    <td>{{ key.replace('_', ' ') }}</td>
+                    <td>{{ value }}</td>
+                    <td>
+                        {# Simple logic for guest and blank password compliance #}
+                        {% if (key == "2.38_GuestAccountStatus" and value == true) or (key == "2.39_LimitBlankPassword" and value == 0) %}
+                            <span class="fail">NON-COMPLIANT</span>
+                        {% else %}
+                            <span class="pass">COMPLIANT</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Security Setting</th>
-                <th>Current Value</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for key, value in audit.items() %}
-            <tr>
-                <td>{{ key }}</td>
-                <td>{{ value }}</td>
-                <td>
-                    {% if value == "Not Defined" or value == 0 %}
-                    <span class="fail">ACTION REQUIRED</span>
-                    {% else %}
-                    <span class="pass">VERIFIED</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
 </body>
 </html>
