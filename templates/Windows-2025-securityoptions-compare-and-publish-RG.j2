@@ -1,45 +1,48 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Security Options Audit: {{ inventory_hostname }}</title>
+    <title>CIS NTLM Audit: {{ inventory_hostname }}</title>
     <style>
-        body { font-family: sans-serif; margin: 20px; color: #333; }
-        .header { background-color: #1a365d; color: white; padding: 15px; border-radius: 5px; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 30px; background-color: #f4f7f9; }
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #004a99; border-bottom: 2px solid #004a99; padding-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #cbd5e0; padding: 10px; text-align: left; }
-        th { background-color: #edf2f7; color: #2d3748; }
-        .meta { font-size: 0.85em; color: #718096; margin-top: 5px; }
+        th, td { text-align: left; padding: 12px; border: 1px solid #dee2e6; }
+        th { background-color: #004a99; color: white; }
+        .meta { color: #6c757d; font-size: 0.9em; margin-bottom: 20px; }
+        .value-box { font-family: monospace; background: #f8f9fa; padding: 4px; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Windows 2025 Security Audit (2.38 - 2.44)</h1>
+    <div class="container">
+        <h1>CIS Microsoft Windows Server 2025 Audit</h1>
         <div class="meta">
-            Host: {{ inventory_hostname }} | Date: {{ ansible_date_time.iso8601 }}
+            <strong>Host:</strong> {{ inventory_hostname }}<br>
+            <strong>Date:</strong> {{ ansible_date_time.iso8601 }}<br>
+            <strong>Scope:</strong> Network Security: Restrict NTLM (2.38 - 2.41)
         </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>CIS ID</th>
+                    <th>Policy Setting</th>
+                    <th>Registry Value (Current)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, value in audit.items() %}
+                <tr>
+                    <td>{{ key.split('_')[0] }} ({{ key.split('_')[1] }})</td>
+                    <td>{{ key.split('_')[2] | replace('NTLM', ' NTLM') }}</td>
+                    <td><span class="value-box">{{ value if value is not none else "Not Defined" }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p style="font-size: 0.8em; color: #999; margin-top: 20px;">
+            Note: This report is generated dynamically and contains no hardcoded volume or infrastructure identifiers.
+        </p>
     </div>
-
-    <table>
-        <thead>
-            <tr>
-                <th>CIS ID</th>
-                <th>Security Setting</th>
-                <th>Current State</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for key, value in audit.items() %}
-            <tr>
-                <td>{{ key.split('_')[0] }}</td>
-                <td>{{ key.split('_')[1] | replace('Status', '') }}</td>
-                <td><strong>{{ value }}</strong></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <p style="font-size: 0.8em; color: #a0aec0; margin-top: 30px;">
-        * This report is generated dynamically. No hardcoded EBS or Volume IDs were used.
-    </p>
 </body>
 </html>
