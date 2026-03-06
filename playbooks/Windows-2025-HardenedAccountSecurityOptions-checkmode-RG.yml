@@ -9,7 +9,7 @@
 
   tasks:
 
-    - name: Audit Account Security Options (Display Names, No Hardcoding)
+    - name: Audit Account Security Options (Correct Key Names)
       win_shell: |
         $ErrorActionPreference = "Stop"
 
@@ -25,39 +25,38 @@
             return $null
         }
 
-        # -------- Get raw values --------
-        $adminStatus = Get-Val "EnableAdminAccount"
-        $guestStatus = Get-Val "EnableGuestAccount"
-        $renameAdmin = Get-Val "NewAdministratorName"
+        # -------- Raw values from secedit --------
+        $adminRaw  = Get-Val "EnableAdminAccount"
+        $guestRaw  = Get-Val "EnableGuestAccount"
+        $renameRaw = Get-Val "NewAdministratorName"
 
-        # -------- Windows UI style conversion --------
-        function To-DisplayName($val) {
-            if ($null -eq $val) { return "Not Defined" }
-            if ($val -as [int]) {
-                if ([int]$val -eq 1) { return "Enabled" }
-                if ([int]$val -eq 0) { return "Disabled" }
+        # -------- Windows-friendly display names --------
+        function To-Display($v) {
+            if ($null -eq $v) { return "Not Defined" }
+            if ($v -as [int]) {
+                if ([int]$v -eq 1) { return "Enabled" }
+                if ([int]$v -eq 0) { return "Disabled" }
             }
-            return $val  # For names like "Administrator"
+            return $v
         }
 
-        # -------- LimitBlankPasswordUse lives in registry --------
+        # -------- LimitBlankPasswordUse (registry only) --------
         try {
             $limit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
-            $limitDisplay = To-DisplayName $limit
+            $limitDisplay = To-Display $limit
         } catch {
             $limitDisplay = "Not Defined"
         }
 
+        # -------- FINAL JSON (matching template key names EXACTLY) --------
         @{
-            AdministratorStatus = To-DisplayName $adminStatus
-            GuestStatus         = To-DisplayName $guestStatus
-            RenameAdmin         = $renameAdmin
+            AdministratorStatus = To-Display $adminRaw
+            GuestStatus         = To-Display $guestRaw
+            RenameAdmin         = $renameRaw
             LimitBlankPasswords = $limitDisplay
             GeneratedAt         = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         } | ConvertTo-Json
       register: secopt_audit
-      check_mode: no
-      tags: ['audit','security_options']
 
     - name: Render Security Options Report
       delegate_to: localhost
@@ -66,8 +65,6 @@
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit: "{{ secopt_audit.stdout | from_json }}"
-      check_mode: no
-      tags: ['report','security_options']
 
     - name: Upload to S3
       delegate_to: localhost
@@ -77,11 +74,9 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
-      check_mode: no
-      tags: ['upload','security_options']
 
-    - name: Show S3 location of the report
+    - name: Show S3 location
       delegate_to: localhost
       debug:
         msg: "Uploaded: s3://{{ s3_bucket_name }}/cis-baseline-files/security-options/{{ report_filename }}"
-      tags: ['upload','security_options']
+``
