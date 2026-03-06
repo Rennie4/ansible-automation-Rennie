@@ -9,7 +9,6 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -17,41 +16,42 @@
 
         <h1>Security Options CIS Audit: {{ inventory_hostname }}</h1>
 
-        <h2>1. Account Security Options</h2>
+        <h2>1. ACCOUNT SECURITY OPTIONS</h2>
         <table>
             <thead>
                 <tr>
                     <th>Policy Setting</th>
-                    <th>Current State</th>
+                    <th>Current State (Raw)</th>
                     <th>CIS Requirement</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td>Administrator Account Status</td>
-                    <td>{{ audit.AdministratorStatus }}</td>
+                    <td>{{ audit.AdministratorStatusRaw }}</td>
                     <td>Disabled</td>
                 </tr>
 
                 <tr>
                     <td>Guest Account Status</td>
-                    <td>{{ audit.GuestStatus }}</td>
+                    <td>{{ audit.GuestStatusRaw }}</td>
                     <td>Disabled</td>
                 </tr>
 
                 <tr>
                     <td>Rename Administrator Account</td>
-                    <td>{{ audit.RenameAdmin }}</td>
-                    <td>Not &quot;Administrator&quot;</td>
+                    <td>{{ audit.RenameAdminRaw }}</td>
+                    <td>Not "Administrator"</td>
                 </tr>
 
                 <tr>
                     <td>Limit local account use of blank passwords</td>
-                    <td>{{ audit.LimitBlankPasswords }}</td>
+                    <td>{{ audit.LimitBlankPasswordsRaw }}</td>
                     <td>Enabled</td>
                 </tr>
             </tbody>
         </table>
+
     </div>
 </body>
 </html>
