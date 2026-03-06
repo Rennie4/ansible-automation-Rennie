@@ -9,57 +9,50 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .meta { color: #666; font-size: 12px; margin-top: 6px; }
-        .note { color: #444; font-size: 12px; margin-top: 4px; }
+        .ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
-  <div class="box">
+    <div class="box">
 
-    <h1>CIS 2.38–2.41 Enforcement Report: {{ inventory_hostname }}</h1>
-    <div class="meta">Generated: {{ audit.GeneratedAt }}</div>
+        <h1>Security Options CIS Audit: {{ inventory_hostname }}</h1>
 
-    {% if not apply_cis_240 or not apply_cis_241 %}
-    <div class="note">
-      Note: Enforcement of renaming defaults is <strong>disabled per org policy</strong>
-      {% if not apply_cis_240 %}(2.40){% endif %}{% if (not apply_cis_240) and (not apply_cis_241) %}, {% endif %}{% if not apply_cis_241 %}(2.41){% endif %}.
-      Current names are shown for visibility only.
+        <h2>1. Account Security Options</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Policy Setting</th>
+                    <th>Current State</th>
+                    <th>CIS Requirement</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Administrator Account Status</td>
+                    <td>{{ audit.AdministratorStatus }}</td>
+                    <td>Disabled</td>
+                </tr>
+
+                <tr>
+                    <td>Guest Account Status</td>
+                    <td>{{ audit.GuestStatus }}</td>
+                    <td>Disabled</td>
+                </tr>
+
+                <tr>
+                    <td>Rename Administrator Account</td>
+                    <td>{{ audit.RenameAdmin }}</td>
+                    <td>Not &quot;Administrator&quot;</td>
+                </tr>
+
+                <tr>
+                    <td>Limit local account use of blank passwords</td>
+                    <td>{{ audit.LimitBlankPasswords }}</td>
+                    <td>Enabled</td>
+                </tr>
+            </tbody>
+        </table>
+
     </div>
-    {% endif %}
-
-    <h2>1. Account Security Options</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Policy Setting (CIS)</th>
-          <th>Current State</th>
-          <th>CIS Requirement</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>2.38 — Accounts: Guest account status</td>
-          <td>{{ audit.GuestAccountStatus }}</td>
-          <td>Disabled</td>
-        </tr>
-        <tr>
-          <td>2.39 — Accounts: Limit local account use of blank passwords to console logon only</td>
-          <td>{{ audit.LimitBlankPw }}</td>
-          <td>Enabled</td>
-        </tr>
-        <tr>
-          <td>2.40 — Accounts: Rename administrator account</td>
-          <td>{{ audit.AdminDisplayName }}</td>
-          <td>Account Renamed (not "Administrator")</td>
-        </tr>
-        <tr>
-          <td>2.41 — Accounts: Rename guest account</td>
-          <td>{{ audit.GuestDisplayName }}</td>
-          <td>Account Renamed (not "Guest")</td>
-        </tr>
-      </tbody>
-    </table>
-
-  </div>
 </body>
 </html>
