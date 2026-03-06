@@ -15,8 +15,8 @@
     # Artifact name
     report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
-    # --- Path to your existing top-level template file (from your repo screenshots) ---
-    report_template_path: "{{ playbook_dir }}/../templates/Windows-2025-HardenedAccountSecurityOptions-checkmode.j2"
+    # Report template path (top-level templates/ in your repo)
+    report_template_path: "{{ playbook_dir }}/../templates/CIS-2.38-2.41-ENFORCE-report.j2"
 
   tasks:
 
@@ -95,7 +95,7 @@
           } | ConvertTo-Json
       register: secopt_post_audit
 
-    # ===== Pre-check the J2 path on the controller (avoids NoneType errors) =====
+    # ===== Pre-check the J2 path on the controller =====
     - name: "Verify report template exists on controller"
       delegate_to: localhost
       ansible.builtin.stat:
@@ -118,4 +118,3 @@
         audit: "{{ secopt_post_audit.stdout | from_json }}"
         apply_cis_240: "{{ apply_cis_240 | default(false) }}"
         apply_cis_241: "{{ apply_cis_241 | default(false) }}"
-``
