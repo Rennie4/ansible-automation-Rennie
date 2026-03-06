@@ -29,13 +29,12 @@
         # Rename Administrator Account
         $renameAdmin = Get-Val "NewAdministratorName"
 
-        # Limit local account use of blank passwords
-        # FIX: Windows Server 2025 registry value overrides/hides secedit export.
+        # FIXED — LimitBlankPasswordUse (Windows Server 2025 uses REGISTRY, NOT secedit)
         try {
             $blankLimit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
         }
         catch {
-            # fallback to secedit value if registry missing
+            # fallback to secedit if registry missing (older OS compatibility)
             $blankLimit = Get-Val "LimitBlankPasswordUse"
         }
 
