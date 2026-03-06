@@ -4,30 +4,29 @@
   gather_facts: yes
 
   vars:
-    # === Customize these safely before running in production ===
-    cis_admin_new_name: "LocalAdmin_Renamed"      # CIS 2.40 – must not be "Administrator"
-    cis_guest_new_name: "LocalGuest_Renamed"      # CIS 2.41 – must not be "Guest"
+    # === Org policy: Do NOT rename built-in accounts by default ===
+    apply_cis_240: false   # Rename Administrator (CIS 2.40) -> OFF
+    apply_cis_241: false   # Rename Guest (CIS 2.41) -> OFF
 
-    # Optional report upload (leave commented if you don't want S3)
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
+    # If you ever allow renaming later, set the above to true and set these:
+    cis_admin_new_name: "LocalAdmin_Renamed"
+    cis_guest_new_name: "LocalGuest_Renamed"
+
+    # (Optional) artifact naming
     report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
 
     # ----------------------------------------------------------------
-    # ENFORCE: CIS 2.38 – Accounts: Guest account status = Disabled
+    # ENFORCE: CIS 2.38 — Guest account Disabled (idempotent)
     # ----------------------------------------------------------------
     - name: "CIS 2.38 | Disable built-in Guest account"
       ansible.windows.win_user:
         name: Guest
         account_disabled: yes
-      register: enforce_guest_disabled
-      # CIS 2.38 requires Guest to be Disabled. 
 
     # ----------------------------------------------------------------
-    # ENFORCE: CIS 2.39 – Limit local account use of blank passwords = Enabled
-    #   NOTE: On Server 2025 this lives in the registry and is more reliable than secedit export
+    # ENFORCE: CIS 2.39 — LimitBlankPasswordUse Enabled (registry authority on 2025)
     # ----------------------------------------------------------------
     - name: "CIS 2.39 | Enable 'Limit local account use of blank passwords' (registry)"
       ansible.windows.win_regedit:
@@ -35,34 +34,32 @@
         name: LimitBlankPasswordUse
         data: 1
         type: dword
-      register: enforce_limit_blank_pw
-      # CIS 2.39 requires Enabled (console-only logon if blank PW). 
 
     # ----------------------------------------------------------------
-    # ENFORCE: CIS 2.40 – Rename Administrator account (must be non-default)
+    # (OPTIONAL) CIS 2.40 — Rename Administrator (OFF by default)
     # ----------------------------------------------------------------
-    - name: "CIS 2.40 | Rename built-in Administrator account (if still default)"
-      ansible.windows.win_user:
-        name: Administrator
-        new_name: "{{ cis_admin_new_name }}"
-      register: enforce_rename_admin
-      failed_when: >
-        (enforce_rename_admin is failed) and
-        ('The specified account name is already in use' not in (enforce_rename_admin.msg | default('')))
-      # CIS 2.40 requires the built-in Administrator to be renamed. 
+    - name: "CIS 2.40 | Rename built-in Administrator (optional, disabled by org policy)"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+          $current = Get-LocalUser | Where-Object { $_.SID.Value -match "-500$" }
+          if ($null -ne $current -and $current.Name -ne "{{ cis_admin_new_name }}") {
+            Rename-LocalUser -Name $current.Name -NewName "{{ cis_admin_new_name }}"
+          }
+      when: apply_cis_240 | bool
 
     # ----------------------------------------------------------------
-    # ENFORCE: CIS 2.41 – Rename Guest account (must be non-default)
+    # (OPTIONAL) CIS 2.41 — Rename Guest (OFF by default)
     # ----------------------------------------------------------------
-    - name: "CIS 2.41 | Rename built-in Guest account (if still default)"
-      ansible.windows.win_user:
-        name: Guest
-        new_name: "{{ cis_guest_new_name }}"
-      register: enforce_rename_guest
-      failed_when: >
-        (enforce_rename_guest is failed) and
-        ('The specified account name is already in use' not in (enforce_rename_guest.msg | default('')))
-      # CIS 2.41 requires the built-in Guest to be renamed. 
+    - name: "CIS 2.41 | Rename built-in Guest (optional, disabled by org policy)"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+          $current = Get-LocalUser | Where-Object { $_.SID.Value -match "-501$" }
+          if ($null -ne $current -and $current.Name -ne "{{ cis_guest_new_name }}") {
+            Rename-LocalUser -Name $current.Name -NewName "{{ cis_guest_new_name }}"
+          }
+      when: apply_cis_241 | bool
 
     # ===================== AUDIT (post-change) ======================
     - name: "Audit post-change values for CIS 2.38–2.41"
@@ -70,33 +67,15 @@
         script: |
           $ErrorActionPreference = "Stop"
 
-          # Detect current built-in account names by SID (well-known SIDs)
-          function Get-LocalNameBySid([string]$sid) {
-            try {
-              $acct = New-Object System.Security.Principal.SecurityIdentifier($sid)
-              $nt   = $acct.Translate([System.Security.Principal.NTAccount])
-              # Return the simple local name portion
-              ($nt.Value -split '\\')[-1]
-            } catch {
-              return "Not Found"
-            }
-          }
+          # Resolve built-in account display names by well-known RIDs
+          $admin = Get-LocalUser | Where-Object { $_.SID.Value -match "-500$" }
+          $guest = Get-LocalUser | Where-Object { $_.SID.Value -match "-501$" }
 
-          $adminName = Get-LocalNameBySid "S-1-5-21-*-500"  # Built-in Administrator RID 500
-          $guestName = Get-LocalNameBySid "S-1-5-21-*-501"  # Built-in Guest RID 501
+          $adminName = if ($admin) { $admin.Name } else { "Not Found" }
+          $guestName = if ($guest) { $guest.Name } else { "Not Found" }
+          $guestStatus = if ($guest) { if ($guest.Enabled) { "Enabled" } else { "Disabled" } } else { "Not Found" }
 
-          # Account status (enabled/disabled) – use ADSI to read 'UserFlags'
-          function Get-LocalAccountStatus([string]$name) {
-            try {
-              $user = [ADSI]"WinNT://./$name,user"
-              # UF_ACCOUNTDISABLE = 0x0002
-              if (($user.UserFlags[0] -band 2) -eq 2) { return "Disabled" } else { return "Enabled" }
-            } catch { return "Not Found" }
-          }
-
-          $guestStatus = Get-LocalAccountStatus $guestName
-
-          # LimitBlankPasswordUse – registry (authoritative on Server 2025)
+          # LimitBlankPasswordUse — authoritative in registry on Server 2025
           try {
             $lbpu = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction Stop).LimitBlankPasswordUse
             $lbpu_disp = if ([int]$lbpu -eq 1) { "Enabled" } else { "Disabled" }
@@ -120,13 +99,5 @@
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit: "{{ secopt_post_audit.stdout | from_json }}"
-
-    # (Optional) Upload artifact to S3
-    # - name: Upload to S3
-    #   delegate_to: localhost
-    #   amazon.aws.s3_object:
-    #     bucket: "{{ s3_bucket_name }}"
-    #     object: "cis-baseline-files/security-options/{{ report_filename }}"
-    #     src: "/tmp/{{ report_filename }}"
-    #     mode: put
-    #     region: "{{ s3_region }}"
+        apply_cis_240: "{{ apply_cis_240 | default(false) }}"
+        apply_cis_241: "{{ apply_cis_241 | default(false) }}"
