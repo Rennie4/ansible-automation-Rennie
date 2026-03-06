@@ -95,7 +95,8 @@
     - name: Render Enforcement Report
       delegate_to: localhost
       template:
-        src: "{{ playbook_dir }}/templates/CIS-2.38-2.41-ENFORCE-report.j2"
+        # NOTE: templates folder is at the REPO ROOT (sibling of playbooks)
+        src: "{{ playbook_dir }}/../templates/CIS-2.38-2.41-ENFORCE-report.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit: "{{ secopt_post_audit.stdout | from_json }}"
