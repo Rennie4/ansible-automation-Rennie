@@ -1,67 +1,130 @@
 ---
-- name: Apply CIS Windows Server 2025 Account Security Options Audit (Partial Suite)
+- name: Apply CIS Windows Server 2025 Security Options (Enforce 2.38–2.41) - RG
   hosts: all
   gather_facts: yes
+
   vars:
+    # === Customize these two safely before running in production ===
+    cis_admin_new_name: "LocalAdmin_Renamed"      # CIS 2.40 – must not be "Administrator"
+    cis_guest_new_name: "LocalGuest_Renamed"      # CIS 2.41 – must not be "Guest"
+
+    # Optional report upload (kept here if you want to re-enable S3 step later)
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "SecurityOptions_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
 
-    - name: Audit Account Security Options (Force Run)
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.38 – Accounts: Guest account status = Disabled
+    # ----------------------------------------------------------------
+    - name: "CIS 2.38 | Disable built-in Guest account"
+      ansible.windows.win_user:
+        name: Guest
+        account_disabled: yes
+      register: enforce_guest_disabled
+
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.39 – Limit local account use of blank passwords = Enabled
+    #   NOTE: On Server 2025 this lives in the registry and is not always reliable via secedit export
+    # ----------------------------------------------------------------
+    - name: "CIS 2.39 | Enable 'Limit local account use of blank passwords' (registry)"
+      ansible.windows.win_regedit:
+        path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+        name: LimitBlankPasswordUse
+        data: 1
+        type: dword
+      register: enforce_limit_blank_pw
+
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.40 – Rename Administrator account (must be non-default)
+    # ----------------------------------------------------------------
+    - name: "CIS 2.40 | Rename built-in Administrator account (if still default)"
+      ansible.windows.win_user:
+        name: Administrator
+        new_name: "{{ cis_admin_new_name }}"
+      register: enforce_rename_admin
+      failed_when: >
+        (enforce_rename_admin is failed) and
+        ('The specified account name is already in use' not in (enforce_rename_admin.msg | default('')))
+      # Above lets the task fail only for unexpected errors. If already renamed to that value by policy, it won't error.
+
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.41 – Rename Guest account (must be non-default)
+    #   We already disabled the Guest (2.38). Renaming still applies for obscurity.
+    # ----------------------------------------------------------------
+    - name: "CIS 2.41 | Rename built-in Guest account (if still default)"
+      ansible.windows.win_user:
+        name: Guest
+        new_name: "{{ cis_guest_new_name }}"
+      register: enforce_rename_guest
+      failed_when: >
+        (enforce_rename_guest is failed) and
+        ('The specified account name is already in use' not in (enforce_rename_guest.msg | default('')))
+
+    # ===================== AUDIT (post-change) ======================
+
+    - name: "Audit post-change values for CIS 2.38–2.41"
       win_shell: |
-        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
+        $ErrorActionPreference = "Stop"
 
-        function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) { return $line.ToString().Split('=')[1].Trim() }
-            return "Not Defined"
+        # Detect current built-in account names by SID (well-known SIDs)
+        function Get-LocalNameBySid([string]$sid) {
+          try {
+            $acct = New-Object System.Security.Principal.SecurityIdentifier($sid)
+            $nt   = $acct.Translate([System.Security.Principal.NTAccount])
+            # Return the simple local name portion
+            ($nt.Value -split '\\')[-1]
+          } catch {
+            return "Not Found"
+          }
         }
 
-        # Administrator & Guest Account Status (0=Disabled, 1=Enabled)
-        $adminStatus = Get-Val "EnableAdminAccount"
-        $guestStatus = Get-Val "EnableGuestAccount"
+        $adminName = Get-LocalNameBySid "S-1-5-21-*-500"  # Built-in Administrator RID 500
+        $guestName = Get-LocalNameBySid "S-1-5-21-*-501"  # Built-in Guest RID 501
 
-        # Rename Administrator Account
-        $renameAdmin = Get-Val "NewAdministratorName"
+        # Account status (enabled/disabled) – use ADSI to read 'UserFlags'
+        function Get-LocalAccountStatus([string]$name) {
+          try {
+            $user = [ADSI]"WinNT://./$name,user"
+            # UF_ACCOUNTDISABLE = 0x0002
+            if (($user.UserFlags[0] -band 2) -eq 2) { return "Disabled" } else { return "Enabled" }
+          } catch { return "Not Found" }
+        }
 
-        # FIXED — LimitBlankPasswordUse (Windows Server 2025 uses REGISTRY, NOT secedit)
+        $guestStatus = Get-LocalAccountStatus $guestName
+
+        # LimitBlankPasswordUse – registry (authoritative on Server 2025)
         try {
-            $blankLimit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
-        }
-        catch {
-            # fallback to secedit if registry missing (older OS compatibility)
-            $blankLimit = Get-Val "LimitBlankPasswordUse"
+          $lbpu = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction Stop).LimitBlankPasswordUse
+          $lbpu_disp = if ([int]$lbpu -eq 1) { "Enabled" } else { "Disabled" }
+        } catch {
+          $lbpu_disp = "Not Defined"
         }
 
         @{
-            AdministratorStatus = if ($adminStatus -eq "1") { "Enabled" } else { "Disabled" }
-            GuestStatus         = if ($guestStatus -eq "1") { "Enabled" } else { "Disabled" }
-            RenameAdmin         = $renameAdmin
-            LimitBlankPasswords = if ($blankLimit -eq "1") { "Enabled" } else { "Disabled" }
+          AdminDisplayName   = $adminName
+          GuestDisplayName   = $guestName
+          GuestAccountStatus = $guestStatus
+          LimitBlankPw       = $lbpu_disp
+          GeneratedAt        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         } | ConvertTo-Json
-      register: secopt_audit
-      check_mode: no
+      register: secopt_post_audit
 
-    - name: Render Security Options Report
+    - name: Render Enforcement Report
       delegate_to: localhost
       template:
-        src: "../templates/Windows-2025-HardenedAccountSecurityOptions-checkmode.j2"
+        src: "../templates/CIS-2.38-2.41-ENFORCE-report.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        audit: "{{ secopt_audit.stdout | from_json }}"
-      check_mode: no
+        audit: "{{ secopt_post_audit.stdout | from_json }}"
 
-    - name: Upload to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/{{ report_filename }}"
-        src: "/tmp/{{ report_filename }}"
-        mode: put
-        region: "{{ s3_region }}"
-      check_mode: no
+    # (Optional) Re-enable this if you want the artifact on S3 again
+    # - name: Upload to S3
+    #   delegate_to: localhost
+    #   amazon.aws.s3_object:
+    #     bucket: "{{ s3_bucket_name }}"
+    #     object: "cis-baseline-files/security-options/{{ report_filename }}"
+    #     src: "/tmp/{{ report_filename }}"
+    #     mode: put
+    #     region: "{{ s3_region }}"
