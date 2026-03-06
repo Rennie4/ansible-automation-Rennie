@@ -10,6 +10,7 @@
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
         .meta { color: #666; font-size: 12px; margin-top: 6px; }
+        .note { color: #444; font-size: 12px; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -18,7 +19,15 @@
     <h1>CIS 2.38–2.41 Enforcement Report: {{ inventory_hostname }}</h1>
     <div class="meta">Generated: {{ audit.GeneratedAt }}</div>
 
-    <h2>1. Account Security Options (Applied)</h2>
+    {% if not apply_cis_240 or not apply_cis_241 %}
+    <div class="note">
+      Note: Enforcement of renaming defaults is <strong>disabled per org policy</strong>
+      {% if not apply_cis_240 %}(2.40){% endif %}{% if (not apply_cis_240) and (not apply_cis_241) %}, {% endif %}{% if not apply_cis_241 %}(2.41){% endif %}.
+      Current names are shown for visibility only.
+    </div>
+    {% endif %}
+
+    <h2>1. Account Security Options</h2>
     <table>
       <thead>
         <tr>
@@ -54,3 +63,4 @@
   </div>
 </body>
 </html>
+``
