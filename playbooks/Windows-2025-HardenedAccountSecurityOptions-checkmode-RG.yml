@@ -95,10 +95,4 @@
     - name: Render Enforcement Report
       delegate_to: localhost
       template:
-        # NOTE: templates folder is at the REPO ROOT (sibling of playbooks)
-        src: "{{ playbook_dir }}/../templates/CIS-2.38-2.41-ENFORCE-report.j2"
-        dest: "/tmp/{{ report_filename }}"
-      vars:
-        audit: "{{ secopt_post_audit.stdout | from_json }}"
-        apply_cis_240: "{{ apply_cis_240 | default(false) }}"
-        apply_cis_241: "{{ apply_cis_241 | default(false) }}"
+        # Your repo keeps report templates at the TOP-LEVEL templates/ folder
