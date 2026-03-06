@@ -5,26 +5,23 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "CIS_Audit_2.38_2.44_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "CIS_NTLM_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
-    - name: Run CIS Security Options Audit (2.38 - 2.44)
+    - name: Run CIS Security Options Audit (2.38 - 2.41)
       win_shell: |
-        $LsaPath = "HKLM:\System\CurrentControlSet\Control\Lsa"
-        $GuestAccount = Get-LocalUser | Where-Object { $_.SID -match '-501$' }
+        $LsaPath = "HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0"
         
+        # Mapping CIS IDs to Registry Values
         @{
-            "2.38_GuestAccountStatus"  = if ($GuestAccount) { $GuestAccount.Enabled } else { "Not Found" }
-            "2.39_LimitBlankPassword"  = (Get-ItemProperty $LsaPath -Name "LimitBlankPasswordUse" -ErrorAction SilentlyContinue).LimitBlankPasswordUse
-            "2.40_AuditForceLogoff"    = (Get-ItemProperty $LsaPath -Name "AuditLogonEvents" -ErrorAction SilentlyContinue).AuditLogonEvents
-            "2.41_ShutDownOnAuditFail" = (Get-ItemProperty $LsaPath -Name "CrashOnAuditFail" -ErrorAction SilentlyContinue).CrashOnAuditFail
-            "2.42_MediaEject"          = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "AllocateDASD" -ErrorAction SilentlyContinue).AllocateDASD
-            "2.43_UndockWithoutLogon"  = (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "UndockWithoutLogon" -ErrorAction SilentlyContinue).UndockWithoutLogon
-            "2.44_PreventPrintDrivers" = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers" -Name "AddPrinterDrivers" -ErrorAction SilentlyContinue).AddPrinterDrivers
+            "2.38_8364_RestrictIncomingNTLM" = (Get-ItemProperty $LsaPath -Name "RestrictReceivingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictReceivingNTLMTraffic
+            "2.39_8365_RestrictOutgoingNTLM" = (Get-ItemProperty $LsaPath -Name "RestrictSendingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictSendingNTLMTraffic
+            "2.40_8366_AuditIncomingNTLM"   = (Get-ItemProperty $LsaPath -Name "AuditReceivingNTLMTraffic" -ErrorAction SilentlyContinue).AuditReceivingNTLMTraffic
+            "2.41_8367_AuditNTLMInDomain"   = (Get-ItemProperty $LsaPath -Name "RestrictNTLMInDomain" -ErrorAction SilentlyContinue).RestrictNTLMInDomain
         } | ConvertTo-Json
-      register: full_audit
+      register: ntlm_audit
 
-    - name: Render and Upload Security Options Report
+    - name: Render and Upload CIS Report
       delegate_to: localhost
       block:
         - name: Generate HTML Report
@@ -32,7 +29,7 @@
             src: "../templates/Windows-2025-securityoptions-compare-and-publish-RG.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
-            audit: "{{ full_audit.stdout | from_json }}"
+            audit: "{{ ntlm_audit.stdout | from_json }}"
 
         - name: Upload to S3
           amazon.aws.s3_object:
@@ -41,11 +38,9 @@
             src: "/tmp/{{ report_filename }}"
             mode: put
             region: "{{ s3_region }}"
+            # Fixed: Using standard validation to prevent 400 errors
+            validate_bucket_name: no
           register: s3_status
-
-        - name: Show S3 Result
-          debug:
-            var: s3_status.msg
 
         - name: Cleanup Local Temp File
           ansible.builtin.file:
