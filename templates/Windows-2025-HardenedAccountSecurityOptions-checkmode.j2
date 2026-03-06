@@ -9,44 +9,46 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
+        .meta { color: #666; font-size: 12px; margin-top: 6px; }
     </style>
 </head>
 <body>
     <div class="box">
 
         <h1>Security Options CIS Audit: {{ inventory_hostname }}</h1>
+        <div class="meta">Generated: {{ audit.GeneratedAt }}</div>
 
         <h2>1. ACCOUNT SECURITY OPTIONS</h2>
         <table>
             <thead>
                 <tr>
                     <th>Policy Setting</th>
-                    <th>Current State (Raw)</th>
+                    <th>Current State</th>
                     <th>CIS Requirement</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td>Administrator Account Status</td>
-                    <td>{{ audit.AdministratorStatusRaw }}</td>
+                    <td>{{ audit.AdministratorStatus }}</td>
                     <td>Disabled</td>
                 </tr>
 
                 <tr>
                     <td>Guest Account Status</td>
-                    <td>{{ audit.GuestStatusRaw }}</td>
+                    <td>{{ audit.GuestStatus }}</td>
                     <td>Disabled</td>
                 </tr>
 
                 <tr>
                     <td>Rename Administrator Account</td>
-                    <td>{{ audit.RenameAdminRaw }}</td>
+                    <td>{{ audit.RenameAdmin }}</td>
                     <td>Not "Administrator"</td>
                 </tr>
 
                 <tr>
                     <td>Limit local account use of blank passwords</td>
-                    <td>{{ audit.LimitBlankPasswordsRaw }}</td>
+                    <td>{{ audit.LimitBlankPasswords }}</td>
                     <td>Enabled</td>
                 </tr>
             </tbody>
