@@ -9,57 +9,37 @@
 
   tasks:
 
-    - name: Audit Account Security Options (Correct Display Values)
+    - name: Audit Account Security Options (Force Run)
       win_shell: |
-        $ErrorActionPreference = "Stop"
-
-        # --- Export SECURITYPOLICY ---
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile -Raw -Encoding Unicode
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        $policy = Get-Content $tempFile
+        Remove-Item $tempFile
 
-        # Helper: read values from secedit output
         function Get-Val($key) {
-            $m = [regex]::Match($policy, "^(?:\s*)$([regex]::Escape($key))\s*=\s*(.*)$", 'Multiline, IgnoreCase')
-            if ($m.Success) { return $m.Groups[2].Value.Trim() }
-            return $null
+            $line = $policy | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return "Not Defined"
         }
 
-        # Helper: convert to GUI-style display name
-        function To-Display($v) {
-            if ($null -eq $v) { return "Not Defined" }
-            if ($v -as [int]) {
-                if ([int]$v -eq 1) { return "Enabled" }
-                if ([int]$v -eq 0) { return "Disabled" }
-            }
-            return $v
-        }
+        # Administrator & Guest Account Status (0=Disabled, 1=Enabled)
+        $adminStatus = Get-Val "EnableAdminAccount"
+        $guestStatus = Get-Val "EnableGuestAccount"
 
-        # --- secedit values ---
-        $adminRaw  = Get-Val "EnableAdminAccount"
-        $guestRaw  = Get-Val "EnableGuestAccount"
-        $renameRaw = Get-Val "NewAdministratorName"
+        # Rename Administrator Account
+        $renameAdmin = Get-Val "NewAdministratorName"
 
-        # --- registry value (not in secedit) ---
-        try {
-            $limit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
-            $limitDisplay = To-Display $limit
-        } catch {
-            $limitDisplay = "Not Defined"
-        }
+        # Limit local account use of blank passwords
+        $blankLimit = Get-Val "LimitBlankPasswordUse"
 
-        # --- FINAL JSON (keys MUST match J2 template EXACTLY) ---
         @{
-            AdministratorStatus = To-Display $adminRaw
-            GuestStatus         = To-Display $guestRaw
-            RenameAdmin         = $renameRaw
-            LimitBlankPasswords = $limitDisplay
-            GeneratedAt         = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            AdministratorStatus = if ($adminStatus -eq "1") { "Enabled" } else { "Disabled" }
+            GuestStatus         = if ($guestStatus -eq "1") { "Enabled" } else { "Disabled" }
+            RenameAdmin         = $renameAdmin
+            LimitBlankPasswords = if ($blankLimit -eq "1") { "Enabled" } else { "Disabled" }
         } | ConvertTo-Json
       register: secopt_audit
       check_mode: no
-      tags: ['audit','security_options']
 
     - name: Render Security Options Report
       delegate_to: localhost
@@ -69,21 +49,13 @@
       vars:
         audit: "{{ secopt_audit.stdout | from_json }}"
       check_mode: no
-      tags: ['report','security_options']
 
     - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/security-options/{{ report_filename }}"
+        object: "cis-baseline-files/{{ report_filename }}"
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
       check_mode: no
-      tags: ['upload','security_options']
-
-    - name: Show S3 location
-      delegate_to: localhost
-      debug:
-        msg: "Uploaded: s3://{{ s3_bucket_name }}/cis-baseline-files/security-options/{{ report_filename }}"
-      tags: ['upload','security_options']
