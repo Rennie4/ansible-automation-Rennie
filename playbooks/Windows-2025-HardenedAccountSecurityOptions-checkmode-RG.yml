@@ -4,11 +4,11 @@
   gather_facts: yes
 
   vars:
-    # === Customize these two safely before running in production ===
+    # === Customize these safely before running in production ===
     cis_admin_new_name: "LocalAdmin_Renamed"      # CIS 2.40 – must not be "Administrator"
     cis_guest_new_name: "LocalGuest_Renamed"      # CIS 2.41 – must not be "Guest"
 
-    # Optional report upload (kept here if you want to re-enable S3 step later)
+    # Optional report upload (leave commented if you don't want S3)
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
     report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
@@ -26,7 +26,7 @@
 
     # ----------------------------------------------------------------
     # ENFORCE: CIS 2.39 – Limit local account use of blank passwords = Enabled
-    #   NOTE: On Server 2025 this lives in the registry and is not always reliable via secedit export
+    #   NOTE: On Server 2025 this lives in the registry and is more reliable than secedit export
     # ----------------------------------------------------------------
     - name: "CIS 2.39 | Enable 'Limit local account use of blank passwords' (registry)"
       ansible.windows.win_regedit:
@@ -47,11 +47,9 @@
       failed_when: >
         (enforce_rename_admin is failed) and
         ('The specified account name is already in use' not in (enforce_rename_admin.msg | default('')))
-      # Above lets the task fail only for unexpected errors. If already renamed to that value by policy, it won't error.
 
     # ----------------------------------------------------------------
     # ENFORCE: CIS 2.41 – Rename Guest account (must be non-default)
-    #   We already disabled the Guest (2.38). Renaming still applies for obscurity.
     # ----------------------------------------------------------------
     - name: "CIS 2.41 | Rename built-in Guest account (if still default)"
       ansible.windows.win_user:
@@ -63,9 +61,9 @@
         ('The specified account name is already in use' not in (enforce_rename_guest.msg | default('')))
 
     # ===================== AUDIT (post-change) ======================
-
     - name: "Audit post-change values for CIS 2.38–2.41"
-      win_shell: |
+      win_shell: |-
+        {% raw %}
         $ErrorActionPreference = "Stop"
 
         # Detect current built-in account names by SID (well-known SIDs)
@@ -109,6 +107,7 @@
           LimitBlankPw       = $lbpu_disp
           GeneratedAt        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         } | ConvertTo-Json
+        {% endraw %}
       register: secopt_post_audit
 
     - name: Render Enforcement Report
@@ -119,7 +118,7 @@
       vars:
         audit: "{{ secopt_post_audit.stdout | from_json }}"
 
-    # (Optional) Re-enable this if you want the artifact on S3 again
+    # (Optional) Upload artifact to S3
     # - name: Upload to S3
     #   delegate_to: localhost
     #   amazon.aws.s3_object:
