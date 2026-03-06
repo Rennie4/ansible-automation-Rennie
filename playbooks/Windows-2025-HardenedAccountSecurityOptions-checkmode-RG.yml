@@ -9,7 +9,7 @@
 
   tasks:
 
-    - name: Audit Account Security Options (Correct Key Names)
+    - name: Audit Account Security Options (Correct Display Values)
       win_shell: |
         $ErrorActionPreference = "Stop"
 
@@ -19,18 +19,14 @@
         $policy = Get-Content $tempFile -Raw -Encoding Unicode
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
 
+        # Helper: read values from secedit output
         function Get-Val($key) {
             $m = [regex]::Match($policy, "^(?:\s*)$([regex]::Escape($key))\s*=\s*(.*)$", 'Multiline, IgnoreCase')
             if ($m.Success) { return $m.Groups[2].Value.Trim() }
             return $null
         }
 
-        # -------- Raw values from secedit --------
-        $adminRaw  = Get-Val "EnableAdminAccount"
-        $guestRaw  = Get-Val "EnableGuestAccount"
-        $renameRaw = Get-Val "NewAdministratorName"
-
-        # -------- Windows-friendly display names --------
+        # Helper: convert to GUI-style display name
         function To-Display($v) {
             if ($null -eq $v) { return "Not Defined" }
             if ($v -as [int]) {
@@ -40,7 +36,12 @@
             return $v
         }
 
-        # -------- LimitBlankPasswordUse (registry only) --------
+        # --- secedit values ---
+        $adminRaw  = Get-Val "EnableAdminAccount"
+        $guestRaw  = Get-Val "EnableGuestAccount"
+        $renameRaw = Get-Val "NewAdministratorName"
+
+        # --- registry value (not in secedit) ---
         try {
             $limit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
             $limitDisplay = To-Display $limit
@@ -48,7 +49,7 @@
             $limitDisplay = "Not Defined"
         }
 
-        # -------- FINAL JSON (matching template key names EXACTLY) --------
+        # --- FINAL JSON (keys MUST match J2 template EXACTLY) ---
         @{
             AdministratorStatus = To-Display $adminRaw
             GuestStatus         = To-Display $guestRaw
@@ -57,6 +58,8 @@
             GeneratedAt         = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         } | ConvertTo-Json
       register: secopt_audit
+      check_mode: no
+      tags: ['audit','security_options']
 
     - name: Render Security Options Report
       delegate_to: localhost
@@ -65,6 +68,8 @@
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit: "{{ secopt_audit.stdout | from_json }}"
+      check_mode: no
+      tags: ['report','security_options']
 
     - name: Upload to S3
       delegate_to: localhost
@@ -74,9 +79,11 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
+      check_mode: no
+      tags: ['upload','security_options']
 
     - name: Show S3 location
       delegate_to: localhost
       debug:
         msg: "Uploaded: s3://{{ s3_bucket_name }}/cis-baseline-files/security-options/{{ report_filename }}"
-``
+      tags: ['upload','security_options']
