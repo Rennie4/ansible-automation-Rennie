@@ -9,16 +9,15 @@
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th { background: #455A64; color: white; text-align: left; padding: 12px; }
         td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .meta { color: #666; font-size: 12px; margin-top: 6px; }
+        .ok { color: #2E7D32; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
 
         <h1>Security Options CIS Audit: {{ inventory_hostname }}</h1>
-        <div class="meta">Generated: {{ audit.GeneratedAt }}</div>
 
-        <h2>1. ACCOUNT SECURITY OPTIONS</h2>
+        <h2>1. Account Security Options</h2>
         <table>
             <thead>
                 <tr>
@@ -27,7 +26,6 @@
                     <th>CIS Requirement</th>
                 </tr>
             </thead>
-
             <tbody>
                 <tr>
                     <td>Administrator Account Status</td>
@@ -44,7 +42,7 @@
                 <tr>
                     <td>Rename Administrator Account</td>
                     <td>{{ audit.RenameAdmin }}</td>
-                    <td>Not "Administrator"</td>
+                    <td>Not &quot;Administrator&quot;</td>
                 </tr>
 
                 <tr>
@@ -54,4 +52,6 @@
                 </tr>
             </tbody>
         </table>
-
+    </div>
+</body>
+</html>
