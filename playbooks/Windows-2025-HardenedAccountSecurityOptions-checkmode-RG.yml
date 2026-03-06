@@ -9,32 +9,51 @@
 
   tasks:
 
-    - name: Audit Account Security Options (RAW Values Only)
+    - name: Audit Account Security Options (Display Names, No Hardcoding)
       win_shell: |
+        $ErrorActionPreference = "Stop"
+
+        # --- Export SECURITYPOLICY ---
         $tempFile = "C:\Windows\Temp\secedit_audit.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
+        $policy = Get-Content $tempFile -Raw -Encoding Unicode
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
 
         function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) {
-                return ($line.ToString().Split('=')[1]).Trim()
-            }
-            return "Not Defined"
+            $m = [regex]::Match($policy, "^(?:\s*)$([regex]::Escape($key))\s*=\s*(.*)$", 'Multiline, IgnoreCase')
+            if ($m.Success) { return $m.Groups[2].Value.Trim() }
+            return $null
         }
 
-        # Raw values exactly as Windows stores them
-        $adminStatus       = Get-Val "EnableAdminAccount"
-        $guestStatus       = Get-Val "EnableGuestAccount"
-        $renameAdmin       = Get-Val "NewAdministratorName"
-        $limitBlank        = Get-Val "LimitBlankPasswordUse"
+        # -------- Get raw values --------
+        $adminStatus = Get-Val "EnableAdminAccount"
+        $guestStatus = Get-Val "EnableGuestAccount"
+        $renameAdmin = Get-Val "NewAdministratorName"
+
+        # -------- Windows UI style conversion --------
+        function To-DisplayName($val) {
+            if ($null -eq $val) { return "Not Defined" }
+            if ($val -as [int]) {
+                if ([int]$val -eq 1) { return "Enabled" }
+                if ([int]$val -eq 0) { return "Disabled" }
+            }
+            return $val  # For names like "Administrator"
+        }
+
+        # -------- LimitBlankPasswordUse lives in registry --------
+        try {
+            $limit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
+            $limitDisplay = To-DisplayName $limit
+        } catch {
+            $limitDisplay = "Not Defined"
+        }
 
         @{
-            AdministratorStatusRaw = $adminStatus
-            GuestStatusRaw         = $guestStatus
-            RenameAdminRaw         = $renameAdmin
-            LimitBlankPasswordsRaw = $limitBlank
+            AdministratorStatus = To-DisplayName $adminStatus
+            GuestStatus         = To-DisplayName $guestStatus
+            RenameAdmin         = $renameAdmin
+            LimitBlankPasswords = $limitDisplay
+            GeneratedAt         = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         } | ConvertTo-Json
       register: secopt_audit
       check_mode: no
