@@ -1,65 +1,98 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
-        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th { background: #455A64; color: white; text-align: left; padding: 12px; }
-        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
-        .meta { color: #666; font-size: 12px; margin-top: 6px; }
-        .note { color: #444; font-size: 12px; margin-top: 4px; }
-    </style>
-</head>
-<body>
-  <div class="box">
+---
+- name: Apply CIS Windows Server 2025 Security Options (Enforce 2.38–2.41) - RG
+  hosts: all
+  gather_facts: yes
 
-    <h1>CIS 2.38–2.41 Enforcement Report: {{ inventory_hostname }}</h1>
-    <div class="meta">Generated: {{ audit.GeneratedAt }}</div>
+  vars:
+    # === Org policy: Do NOT rename built-in accounts by default ===
+    apply_cis_240: false   # Rename Administrator (CIS 2.40) -> OFF
+    apply_cis_241: false   # Rename Guest (CIS 2.41) -> OFF
 
-    {% if not apply_cis_240 or not apply_cis_241 %}
-    <div class="note">
-      Note: Enforcement of renaming defaults is <strong>disabled per org policy</strong>
-      {% if not apply_cis_240 %}(2.40){% endif %}{% if (not apply_cis_240) and (not apply_cis_241) %}, {% endif %}{% if not apply_cis_241 %}(2.41){% endif %}.
-      Current names are shown for visibility only.
-    </div>
-    {% endif %}
+    # If you ever allow renaming later, set the above to true and set these:
+    cis_admin_new_name: "LocalAdmin_Renamed"
+    cis_guest_new_name: "LocalGuest_Renamed"
 
-    <h2>1. Account Security Options</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Policy Setting (CIS)</th>
-          <th>Current State</th>
-          <th>CIS Requirement</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>2.38 — Accounts: Guest account status</td>
-          <td>{{ audit.GuestAccountStatus }}</td>
-          <td>Disabled</td>
-        </tr>
-        <tr>
-          <td>2.39 — Accounts: Limit local account use of blank passwords to console logon only</td>
-          <td>{{ audit.LimitBlankPw }}</td>
-          <td>Enabled</td>
-        </tr>
-        <tr>
-          <td>2.40 — Accounts: Rename administrator account</td>
-          <td>{{ audit.AdminDisplayName }}</td>
-          <td>Account Renamed (not "Administrator")</td>
-        </tr>
-        <tr>
-          <td>2.41 — Accounts: Rename guest account</td>
-          <td>{{ audit.GuestDisplayName }}</td>
-          <td>Account Renamed (not "Guest")</td>
-        </tr>
-      </tbody>
-    </table>
+    # Artifact name
+    report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
-  </div>
-</body>
-</html>
+  tasks:
+
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.38 — Guest account Disabled (idempotent)
+    # ----------------------------------------------------------------
+    - name: "CIS 2.38 | Disable built-in Guest account"
+      ansible.windows.win_user:
+        name: Guest
+        account_disabled: yes
+
+    # ----------------------------------------------------------------
+    # ENFORCE: CIS 2.39 — LimitBlankPasswordUse Enabled (registry authority on 2025)
+    # ----------------------------------------------------------------
+    - name: "CIS 2.39 | Enable 'Limit local account use of blank passwords' (registry)"
+      ansible.windows.win_regedit:
+        path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+        name: LimitBlankPasswordUse
+        data: 1
+        type: dword
+
+    # ----------------------------------------------------------------
+    # (OPTIONAL) CIS 2.40 — Rename Administrator (OFF by default)
+    # ----------------------------------------------------------------
+    - name: "CIS 2.40 | Rename built-in Administrator (optional, disabled by org policy)"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+          $current = Get-LocalUser | Where-Object { $_.SID.Value -match "-500$" }
+          if ($null -ne $current -and $current.Name -ne "{{ cis_admin_new_name }}") {
+            Rename-LocalUser -Name $current.Name -NewName "{{ cis_admin_new_name }}"
+          }
+      when: apply_cis_240 | bool
+
+    # ----------------------------------------------------------------
+    # (OPTIONAL) CIS 2.41 — Rename Guest (OFF by default)
+    # ----------------------------------------------------------------
+    - name: "CIS 2.41 | Rename built-in Guest (optional, disabled by org policy)"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+          $current = Get-LocalUser | Where-Object { $_.SID.Value -match "-501$" }
+          if ($null -ne $current -and $current.Name -ne "{{ cis_guest_new_name }}") {
+            Rename-LocalUser -Name $current.Name -NewName "{{ cis_guest_new_name }}"
+          }
+      when: apply_cis_241 | bool
+
+    # ===================== AUDIT (post-change) ======================
+    - name: "Audit post-change values for CIS 2.38–2.41"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
+
+          # Resolve built-in account display names by well-known RIDs
+          $admin = Get-LocalUser | Where-Object { $_.SID.Value -match "-500$" }
+          $guest = Get-LocalUser | Where-Object { $_.SID.Value -match "-501$" }
+
+          $adminName   = if ($admin) { $admin.Name } else { "Not Found" }
+          $guestName   = if ($guest) { $guest.Name } else { "Not Found" }
+          $guestStatus = if ($guest) { if ($guest.Enabled) { "Enabled" } else { "Disabled" } } else { "Not Found" }
+
+          # LimitBlankPasswordUse — authoritative in registry on Server 2025
+          try {
+            $lbpu = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction Stop).LimitBlankPasswordUse
+            $lbpu_disp = if ([int]$lbpu -eq 1) { "Enabled" } else { "Disabled" }
+          } catch {
+            $lbpu_disp = "Not Defined"
+          }
+
+          @{
+            AdminDisplayName   = $adminName
+            GuestDisplayName   = $guestName
+            GuestAccountStatus = $guestStatus
+            LimitBlankPw       = $lbpu_disp
+            GeneratedAt        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+          } | ConvertTo-Json
+      register: secopt_post_audit
+
+    - name: Render Enforcement Report
+      delegate_to: localhost
+      template:
+        # Your repo keeps report templates at the TOP-LEVEL templates/ folder
