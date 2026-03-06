@@ -23,6 +23,7 @@
         name: Guest
         account_disabled: yes
       register: enforce_guest_disabled
+      # CIS 2.38 requires Guest to be Disabled. 
 
     # ----------------------------------------------------------------
     # ENFORCE: CIS 2.39 – Limit local account use of blank passwords = Enabled
@@ -35,6 +36,7 @@
         data: 1
         type: dword
       register: enforce_limit_blank_pw
+      # CIS 2.39 requires Enabled (console-only logon if blank PW). 
 
     # ----------------------------------------------------------------
     # ENFORCE: CIS 2.40 – Rename Administrator account (must be non-default)
@@ -47,6 +49,7 @@
       failed_when: >
         (enforce_rename_admin is failed) and
         ('The specified account name is already in use' not in (enforce_rename_admin.msg | default('')))
+      # CIS 2.40 requires the built-in Administrator to be renamed. 
 
     # ----------------------------------------------------------------
     # ENFORCE: CIS 2.41 – Rename Guest account (must be non-default)
@@ -59,55 +62,55 @@
       failed_when: >
         (enforce_rename_guest is failed) and
         ('The specified account name is already in use' not in (enforce_rename_guest.msg | default('')))
+      # CIS 2.41 requires the built-in Guest to be renamed. 
 
     # ===================== AUDIT (post-change) ======================
     - name: "Audit post-change values for CIS 2.38–2.41"
-      win_shell: |-
-        {% raw %}
-        $ErrorActionPreference = "Stop"
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = "Stop"
 
-        # Detect current built-in account names by SID (well-known SIDs)
-        function Get-LocalNameBySid([string]$sid) {
-          try {
-            $acct = New-Object System.Security.Principal.SecurityIdentifier($sid)
-            $nt   = $acct.Translate([System.Security.Principal.NTAccount])
-            # Return the simple local name portion
-            ($nt.Value -split '\\')[-1]
-          } catch {
-            return "Not Found"
+          # Detect current built-in account names by SID (well-known SIDs)
+          function Get-LocalNameBySid([string]$sid) {
+            try {
+              $acct = New-Object System.Security.Principal.SecurityIdentifier($sid)
+              $nt   = $acct.Translate([System.Security.Principal.NTAccount])
+              # Return the simple local name portion
+              ($nt.Value -split '\\')[-1]
+            } catch {
+              return "Not Found"
+            }
           }
-        }
 
-        $adminName = Get-LocalNameBySid "S-1-5-21-*-500"  # Built-in Administrator RID 500
-        $guestName = Get-LocalNameBySid "S-1-5-21-*-501"  # Built-in Guest RID 501
+          $adminName = Get-LocalNameBySid "S-1-5-21-*-500"  # Built-in Administrator RID 500
+          $guestName = Get-LocalNameBySid "S-1-5-21-*-501"  # Built-in Guest RID 501
 
-        # Account status (enabled/disabled) – use ADSI to read 'UserFlags'
-        function Get-LocalAccountStatus([string]$name) {
+          # Account status (enabled/disabled) – use ADSI to read 'UserFlags'
+          function Get-LocalAccountStatus([string]$name) {
+            try {
+              $user = [ADSI]"WinNT://./$name,user"
+              # UF_ACCOUNTDISABLE = 0x0002
+              if (($user.UserFlags[0] -band 2) -eq 2) { return "Disabled" } else { return "Enabled" }
+            } catch { return "Not Found" }
+          }
+
+          $guestStatus = Get-LocalAccountStatus $guestName
+
+          # LimitBlankPasswordUse – registry (authoritative on Server 2025)
           try {
-            $user = [ADSI]"WinNT://./$name,user"
-            # UF_ACCOUNTDISABLE = 0x0002
-            if (($user.UserFlags[0] -band 2) -eq 2) { return "Disabled" } else { return "Enabled" }
-          } catch { return "Not Found" }
-        }
+            $lbpu = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction Stop).LimitBlankPasswordUse
+            $lbpu_disp = if ([int]$lbpu -eq 1) { "Enabled" } else { "Disabled" }
+          } catch {
+            $lbpu_disp = "Not Defined"
+          }
 
-        $guestStatus = Get-LocalAccountStatus $guestName
-
-        # LimitBlankPasswordUse – registry (authoritative on Server 2025)
-        try {
-          $lbpu = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse" -ErrorAction Stop).LimitBlankPasswordUse
-          $lbpu_disp = if ([int]$lbpu -eq 1) { "Enabled" } else { "Disabled" }
-        } catch {
-          $lbpu_disp = "Not Defined"
-        }
-
-        @{
-          AdminDisplayName   = $adminName
-          GuestDisplayName   = $guestName
-          GuestAccountStatus = $guestStatus
-          LimitBlankPw       = $lbpu_disp
-          GeneratedAt        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        } | ConvertTo-Json
-        {% endraw %}
+          @{
+            AdminDisplayName   = $adminName
+            GuestDisplayName   = $guestName
+            GuestAccountStatus = $guestStatus
+            LimitBlankPw       = $lbpu_disp
+            GeneratedAt        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+          } | ConvertTo-Json
       register: secopt_post_audit
 
     - name: Render Enforcement Report
