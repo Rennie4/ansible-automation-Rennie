@@ -5,23 +5,36 @@
   vars:
     s3_bucket_name: "oml-s3-automation-sandbox"
     s3_region: "eu-west-1"
-    report_filename: "CIS_NTLM_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+    report_filename: "CIS_2025_Audit_2.38_2.41_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
     - name: Run CIS Security Options Audit (2.38 - 2.41)
       win_shell: |
         $LsaPath = "HKLM:\System\CurrentControlSet\Control\Lsa\MSV1_0"
         
-        # Mapping CIS IDs to Registry Values
-        @{
-            "2.38_8364_RestrictIncomingNTLM" = (Get-ItemProperty $LsaPath -Name "RestrictReceivingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictReceivingNTLMTraffic
-            "2.39_8365_RestrictOutgoingNTLM" = (Get-ItemProperty $LsaPath -Name "RestrictSendingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictSendingNTLMTraffic
-            "2.40_8366_AuditIncomingNTLM"   = (Get-ItemProperty $LsaPath -Name "AuditReceivingNTLMTraffic" -ErrorAction SilentlyContinue).AuditReceivingNTLMTraffic
-            "2.41_8367_AuditNTLMInDomain"   = (Get-ItemProperty $LsaPath -Name "RestrictNTLMInDomain" -ErrorAction SilentlyContinue).RestrictNTLMInDomain
-        } | ConvertTo-Json
-      register: ntlm_audit
+        # Mapping to CIS Windows 2025 v1.0.0 Standards
+        $results = @{
+            "2.38_8364" = @{
+                Name  = "Network security: Restrict NTLM: Incoming NTLM traffic"
+                Value = (Get-ItemProperty $LsaPath -Name "RestrictReceivingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictReceivingNTLMTraffic
+            }
+            "2.39_8365" = @{
+                Name  = "Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers"
+                Value = (Get-ItemProperty $LsaPath -Name "RestrictSendingNTLMTraffic" -ErrorAction SilentlyContinue).RestrictSendingNTLMTraffic
+            }
+            "2.40_8366" = @{
+                Name  = "Network security: Restrict NTLM: Audit Incoming NTLM traffic"
+                Value = (Get-ItemProperty $LsaPath -Name "AuditReceivingNTLMTraffic" -ErrorAction SilentlyContinue).AuditReceivingNTLMTraffic
+            }
+            "2.41_8367" = @{
+                Name  = "Network security: Restrict NTLM: Audit NTLM authentication in this domain"
+                Value = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "AuditNTLMInDomain" -ErrorAction SilentlyContinue).AuditNTLMInDomain
+            }
+        }
+        $results | ConvertTo-Json
+      register: full_audit
 
-    - name: Render and Upload CIS Report
+    - name: Render and Upload Security Report
       delegate_to: localhost
       block:
         - name: Generate HTML Report
@@ -29,7 +42,7 @@
             src: "../templates/Windows-2025-securityoptions-compare-and-publish-RG.j2"
             dest: "/tmp/{{ report_filename }}"
           vars:
-            audit: "{{ ntlm_audit.stdout | from_json }}"
+            audit_data: "{{ full_audit.stdout | from_json }}"
 
         - name: Upload to S3
           amazon.aws.s3_object:
@@ -38,7 +51,6 @@
             src: "/tmp/{{ report_filename }}"
             mode: put
             region: "{{ s3_region }}"
-            # Fixed: Using standard validation to prevent 400 errors
             validate_bucket_name: no
           register: s3_status
 
