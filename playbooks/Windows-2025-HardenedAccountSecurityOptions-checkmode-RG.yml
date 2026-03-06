@@ -12,7 +12,7 @@
     cis_admin_new_name: "LocalAdmin_Renamed"
     cis_guest_new_name: "LocalGuest_Renamed"
 
-    # (Optional) artifact naming
+    # Artifact name
     report_filename: "CIS_2.38-2.41_Enforcement_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
@@ -71,8 +71,8 @@
           $admin = Get-LocalUser | Where-Object { $_.SID.Value -match "-500$" }
           $guest = Get-LocalUser | Where-Object { $_.SID.Value -match "-501$" }
 
-          $adminName = if ($admin) { $admin.Name } else { "Not Found" }
-          $guestName = if ($guest) { $guest.Name } else { "Not Found" }
+          $adminName   = if ($admin) { $admin.Name } else { "Not Found" }
+          $guestName   = if ($guest) { $guest.Name } else { "Not Found" }
           $guestStatus = if ($guest) { if ($guest.Enabled) { "Enabled" } else { "Disabled" } } else { "Not Found" }
 
           # LimitBlankPasswordUse — authoritative in registry on Server 2025
@@ -95,7 +95,7 @@
     - name: Render Enforcement Report
       delegate_to: localhost
       template:
-        src: "../templates/CIS-2.38-2.41-ENFORCE-report.j2"
+        src: "{{ playbook_dir }}/templates/CIS-2.38-2.41-ENFORCE-report.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
         audit: "{{ secopt_post_audit.stdout | from_json }}"
