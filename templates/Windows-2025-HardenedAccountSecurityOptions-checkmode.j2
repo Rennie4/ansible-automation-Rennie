@@ -1,205 +1,137 @@
-security_options:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Segoe UI', Arial; margin: 30px; background: #f4f7f6; color: #333; }
+        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h1 { margin-top: 0; }
+        h2 { background: #E9ECEF; padding: 10px; font-size: 13px; text-transform: uppercase; border-left: 5px solid #455A64; margin-top: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #455A64; color: white; text-align: left; padding: 12px; }
+        td { padding: 11px; border-bottom: 1px solid #eee; font-family: 'Consolas', monospace; }
+        .ok { color: #2E7D32; font-weight: bold; }
+        .bad { color: #C62828; font-weight: bold; }
+        .note { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="box">
 
-  # 1) Accounts
-  accounts:
-    # Limit local account use of blank passwords to console logon only = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
-      name: LimitBlankPasswordUse
-      type: dword
-      data: 1
+        <h1>Security Options CIS Audit: {{ inventory_hostname }}</h1>
 
-    # Administrator account status = Disabled
-    - provider: secedit
-      section: "System Access"
-      policy_name: "Accounts: Administrator account status"
-      value: "Disabled"
+        <!-- 1. Accounts -->
+        <h2>1. Accounts</h2>
+        <table>
+            <thead>
+                <tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Administrator Account Status</td><td>{{ audit.Accounts.AdministratorStatus }}</td><td>Disabled</td></tr>
+                <tr><td>Guest Account Status</td><td>{{ audit.Accounts.GuestStatus }}</td><td>Disabled</td></tr>
+                <tr><td>Rename Administrator Account</td><td>{{ audit.Accounts.RenameAdmin }}</td><td>Not "Administrator"</td></tr>
+                <tr><td>Rename Guest Account</td><td>{{ audit.Accounts.RenameGuest }}</td><td>Not "Guest"</td></tr>
+                <tr><td>Limit local account use of blank passwords</td><td>{{ audit.Accounts.LimitBlankPasswords }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-    # Guest account status = Disabled
-    - provider: secedit
-      section: "System Access"
-      policy_name: "Accounts: Guest account status"
-      value: "Disabled"
+        <!-- 2. Interactive logon -->
+        <h2>2. Interactive Logon</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Do Not Display Last Username</td><td>{{ audit.InteractiveLogon.DoNotDisplayLastUserName }}</td><td>Enabled</td></tr>
+                <tr><td>Require CTRL+ALT+DEL</td><td>{{ audit.InteractiveLogon.RequireCtrlAltDel }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-    # Rename Administrator (example value)
-    - provider: secedit
-      section: "System Access"
-      policy_name: "Accounts: Rename administrator account"
-      value: "LocalAdmin-RG"
+        <!-- 3. Network security -->
+        <h2>3. Network Security</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>LAN Manager Authentication Level</td><td>{{ audit.NetworkSecurity.LanManagerAuthenticationLevel }}</td><td>Send NTLMv2 only</td></tr>
+                <tr><td>NTLM SSP Client Min Security</td><td>{{ audit.NetworkSecurity.NtlmMinClientSec }}</td><td>NTLMv2 + 128-bit</td></tr>
+                <tr><td>NTLM SSP Server Min Security</td><td>{{ audit.NetworkSecurity.NtlmMinServerSec }}</td><td>NTLMv2 + 128-bit</td></tr>
+            </tbody>
+        </table>
 
-    # Rename Guest (example value)
-    - provider: secedit
-      section: "System Access"
-      policy_name: "Accounts: Rename guest account"
-      value: "Guest-RG"
+        <!-- 4. Microsoft Network Client -->
+        <h2>4. Microsoft Network Client</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Digitally Sign Always</td><td>{{ audit.MsNetworkClient.DigitallySignAlways }}</td><td>Enabled</td></tr>
+                <tr><td>Digitally Sign If Client Agrees</td><td>{{ audit.MsNetworkClient.DigitallySignIfClientAgrees }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-  # 2) Interactive logon
-  interactive_logon:
-    # Do not display last user name = Enabled
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: DontDisplayLastUserName
-      type: dword
-      data: 1
+        <!-- 5. Microsoft Network Server -->
+        <h2>5. Microsoft Network Server</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Digitally Sign Always</td><td>{{ audit.MsNetworkServer.DigitallySignAlways }}</td><td>Enabled</td></tr>
+                <tr><td>Digitally Sign If Client Agrees</td><td>{{ audit.MsNetworkServer.DigitallySignIfClientAgrees }}</td><td>Enabled</td></tr>
+                <tr><td>SMBv1 Protocol</td><td>{{ audit.MsNetworkServer.SMB1Protocol }}</td><td>Disabled</td></tr>
+            </tbody>
+        </table>
 
-    # Require CTRL+ALT+DEL (DisableCAD = 0)
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: DisableCAD
-      type: dword
-      data: 0
+        <!-- 6. Domain Member -->
+        <h2>6. Domain Member</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Require Sign or Seal</td><td>{{ audit.DomainMember.RequireSignOrSeal }}</td><td>Enabled</td></tr>
+                <tr><td>Seal Secure Channel</td><td>{{ audit.DomainMember.SealSecureChannel }}</td><td>Enabled</td></tr>
+                <tr><td>Sign Secure Channel</td><td>{{ audit.DomainMember.SignSecureChannel }}</td><td>Enabled</td></tr>
+                <tr><td>Require Strong Key</td><td>{{ audit.DomainMember.RequireStrongKey }}</td><td>Enabled</td></tr>
+                <tr><td>Disable Machine Password Change</td><td>{{ audit.DomainMember.DisablePasswordChange }}</td><td>Disabled</td></tr>
+            </tbody>
+        </table>
 
-  # 3) Network security
-  network_security:
-    # LAN Manager authentication level = Send NTLMv2 only; Refuse LM & NTLM (5)
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
-      name: LmCompatibilityLevel
-      type: dword
-      data: 5
+        <!-- 7. Devices -->
+        <h2>7. Devices</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Prevent Users Installing Printer Drivers</td><td>{{ audit.Devices.PreventUsersInstallingPrinterDrivers }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-    # Minimum session security for NTLM SSP clients = Require NTLMv2 + 128-bit (0x82000 = 532480)
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
-      name: NTLMMinClientSec
-      type: dword
-      data: 532480
+        <!-- 8. UAC -->
+        <h2>8. User Account Control (UAC)</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Run Admins in Admin Approval Mode</td><td>{{ audit.UAC.RunAllAdministratorsInAdminApprovalMode }}</td><td>Enabled</td></tr>
+                <tr><td>Admin Approval Mode for Built-in Administrator</td><td>{{ audit.UAC.AdminApprovalModeForBuiltInAdministrator }}</td><td>Enabled</td></tr>
+                <tr><td>Elevation Prompt Behavior</td><td>{{ audit.UAC.ElevationPromptBehaviorForAdmins }}</td><td>Prompt for consent on secure desktop</td></tr>
+                <tr><td>Prompt on Secure Desktop</td><td>{{ audit.UAC.SwitchToSecureDesktopWhenPrompting }}</td><td>Enabled</td></tr>
+                <tr><td>Detect App Installs and Prompt</td><td>{{ audit.UAC.DetectAppInstallsAndPromptForElevation }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-    # Minimum session security for NTLM SSP servers = Require NTLMv2 + 128-bit (0x82000 = 532480)
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
-      name: NTLMMinServerSec
-      type: dword
-      data: 532480
+        <!-- 9. LDAP Client Signing -->
+        <h2>9. LDAP Client Signing</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>LDAP Client Signing Requirement</td><td>{{ audit.LDAPClient.SigningRequirement }}</td><td>Require signing</td></tr>
+            </tbody>
+        </table>
 
-  # 4) Microsoft network client
-  microsoft_network_client:
-    # Digitally sign communications (always) = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters
-      name: RequireSecuritySignature
-      type: dword
-      data: 1
+        <!-- 10. Network Access -->
+        <h2>10. Network Access</h2>
+        <table>
+            <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
+            <tbody>
+                <tr><td>Restrict Anonymous Access</td><td>{{ audit.NetworkAccess.RestrictAnonymousAccess }}</td><td>Enabled</td></tr>
+            </tbody>
+        </table>
 
-    # Digitally sign communications (if client agrees) = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters
-      name: EnableSecuritySignature
-      type: dword
-      data: 1
+        <p class="note">Note: “Not Defined” values may come from GPO inheritance.</p>
 
-  # 5) Microsoft network server
-  microsoft_network_server:
-    # Digitally sign communications (always) = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
-      name: RequireSecuritySignature
-      type: dword
-      data: 1
-
-    # Digitally sign communications (if client agrees) = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
-      name: EnableSecuritySignature
-      type: dword
-      data: 1
-
-    # Disable SMBv1 server component
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
-      name: SMB1
-      type: dword
-      data: 0
-
-  # 6) Domain member
-  domain_member:
-    # Secure channel signing & sealing / strong keys
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
-      name: RequireSignOrSeal
-      type: dword
-      data: 1
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
-      name: SealSecureChannel
-      type: dword
-      data: 1
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
-      name: SignSecureChannel
-      type: dword
-      data: 1
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
-      name: RequireStrongKey
-      type: dword
-      data: 1
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
-      name: DisablePasswordChange
-      type: dword
-      data: 0
-
-  # 7) Devices
-  devices:
-    # Prevent users from installing printer drivers = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers
-      name: AddPrinterDrivers
-      type: dword
-      data: 1
-
-  # 8) UAC
-  uac:
-    # Run all administrators in Admin Approval Mode = Enabled
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: EnableLUA
-      type: dword
-      data: 1
-
-    # Admin Approval Mode for built-in Administrator = Enabled
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: FilterAdministratorToken
-      type: dword
-      data: 1
-
-    # Behavior of the elevation prompt for admins = Prompt for consent on the secure desktop (2)
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: ConsentPromptBehaviorAdmin
-      type: dword
-      data: 2
-
-    # Switch to the secure desktop when prompting = Enabled
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: PromptOnSecureDesktop
-      type: dword
-      data: 1
-
-    # Detect application installations and prompt for elevation = Enabled
-    - provider: registry
-      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
-      name: EnableInstallerDetection
-      type: dword
-      data: 1
-
-  # 9) LDAP client signing
-  ldap_client_signing:
-    # LDAP client signing requirements = Require signing (2)
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LDAP
-      name: LDAPClientIntegrity
-      type: dword
-      data: 2
-
-  # 10) Network access (anonymous restrictions / shares / named pipes)
-  network_access:
-    # Restrict anonymous access to Named Pipes and Shares = Enabled
-    - provider: registry
-      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
-      name: RestrictNullSessAccess
-      type: dword
-      data: 1
+    </div>
+</body>
+</html>
