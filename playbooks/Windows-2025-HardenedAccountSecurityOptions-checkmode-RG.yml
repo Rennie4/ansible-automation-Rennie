@@ -1,249 +1,237 @@
 ---
-- name: Windows 2025 Hardened Account Security Options (CIS L1) - CHECK MODE - RG
-  hosts: windows
+- name: CIS Windows Server 2025 Security Options Audit (CIS L1) - RG
+  hosts: all
   gather_facts: yes
-  any_errors_fatal: true
 
-  # NOTE: Although this file has a .j2 extension, we keep it as a plain YAML vars file.
-  vars_files:
-    - Windows-2025-HardenedAccountSecurityOptions-checkmode.j2
-
-  # Summary message used after each section
   vars:
-    _section_summary: |
-      Section '{{ section_name }}' → Total={{ section_items | length }},
-      Changed={{ (section_results.results | selectattr('changed') | list) | length }},
-      Failed={{ (section_results.results | selectattr('failed', 'defined') | selectattr('failed') | list) | length }}
+    s3_bucket_name: "oml-s3-automation-sandbox"
+    s3_region: "eu-west-1"
+    report_filename: "SecurityOptions_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
 
   tasks:
 
-    # ---------------------------
-    # 1) ACCOUNTS
-    # ---------------------------
-    - name: "Section 1: Accounts - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.accounts | default([]) | selectattr('provider', 'equalto', 'registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
+    - name: Audit Security Options (Force Run, Read-Only)
+      win_shell: |
+        $ErrorActionPreference = "Stop"
+
+        # Export current security policy (secedit-backed keys)
+        $tempFile = "C:\Windows\Temp\secedit_security.inf"
+        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
+        $policy = Get-Content $tempFile -ErrorAction SilentlyContinue
+        if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
+
+        function Get-Val($key) {
+            $line = $policy | Select-String "^$key\s*=" -ErrorAction SilentlyContinue
+            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            return $null
+        }
+
+        function Get-REGDWORD($Path, $Name) {
+            try {
+                $value = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
+                if ($value -is [int]) { return $value }
+                if ($null -ne $value) { return [int]$value }
+            } catch { }
+            return $null
+        }
+
+        function Map-BoolToEnabledDisabled($val, [switch]$Invert) {
+            if ($val -eq $null) { return "Not Defined" }
+            if ($Invert) { if ($val -eq 0) { return "Enabled" } elseif ($val -eq 1) { return "Disabled" } else { return "Not Defined" } }
+            if ($val -eq 1) { return "Enabled" } elseif ($val -eq 0) { return "Disabled" } else { "Not Defined" }
+        }
+
+        # ---------------------------
+        # 1) Accounts (secedit + registry)
+        # ---------------------------
+        $EnableAdminAccount   = Get-Val "EnableAdminAccount"      # 0=Disabled, 1=Enabled
+        $EnableGuestAccount   = Get-Val "EnableGuestAccount"      # 0=Disabled, 1=Enabled
+        $NewAdministratorName = Get-Val "NewAdministratorName"
+        $NewGuestName         = Get-Val "NewGuestName"
+        $LimitBlankPasswordUse= Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LimitBlankPasswordUse" # 1=Enabled
+
+        $Accounts = [PSCustomObject]@{
+            AdministratorStatus = if ($EnableAdminAccount -eq "1") { "Enabled" } elseif ($EnableAdminAccount -eq "0") { "Disabled" } else { "Not Defined" }
+            GuestStatus         = if ($EnableGuestAccount -eq "1") { "Enabled" } elseif ($EnableGuestAccount -eq "0") { "Disabled" } else { "Not Defined" }
+            RenameAdmin         = if ([string]::IsNullOrWhiteSpace($NewAdministratorName)) { "Not Defined" } else { $NewAdministratorName }
+            RenameGuest         = if ([string]::IsNullOrWhiteSpace($NewGuestName)) { "Not Defined" } else { $NewGuestName }
+            LimitBlankPasswords = Map-BoolToEnabledDisabled $LimitBlankPasswordUse
+        }
+
+        # ---------------------------
+        # 2) Interactive logon (registry)
+        # ---------------------------
+        $DontDisplayLastUserName = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "DontDisplayLastUserName" # 1=Enabled
+        $DisableCAD              = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "DisableCAD"              # 0=Require Ctrl+Alt+Del
+
+        $InteractiveLogon = [PSCustomObject]@{
+            DoNotDisplayLastUserName = Map-BoolToEnabledDisabled $DontDisplayLastUserName
+            RequireCtrlAltDel        = if ($DisableCAD -eq $null) { "Not Defined" } elseif ($DisableCAD -eq 0) { "Enabled" } else { "Disabled" }
+        }
+
+        # ---------------------------
+        # 3) Network security (registry)
+        # ---------------------------
+        $LmCompatibilityLevel = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
+        switch ($LmCompatibilityLevel) {
+          5 { $LmString = "Send NTLMv2 response only. Refuse LM & NTLM" }
+          3 { $LmString = "Send NTLMv2 response only" }
+          2 { $LmString = "Send NTLM response only" }
+          1 { $LmString = "Send LM & NTLM responses" }
+          0 { $LmString = "Send LM & NTLM responses" }
+          default { $LmString = "Not Defined" }
+        }
+
+        # NTLM Min Sec bitmask (commonly 0x82000 = 532480 for NTLMv2 + 128-bit)
+        $NTLMMinClientSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinClientSec"
+        $NTLMMinServerSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinServerSec"
+        function Describe-NtlmMinSec($val) {
+            if ($val -eq $null) { return "Not Defined" }
+            $parts = @()
+            if (($val -band 0x00020000) -ne 0) { $parts += "Require NTLMv2" }
+            if (($val -band 0x00800000) -ne 0 -or ($val -band 0x00200000) -ne 0) { $parts += "Require 128-bit" }
+            if (($val -band 0x00080000) -ne 0) { $parts += "Require 56-bit" }
+            if ($parts.Count -eq 0) { return "$val (unrecognized flags)" }
+            return ($parts | Select-Object -Unique) -join ", "
+        }
+
+        $NetworkSecurity = [PSCustomObject]@{
+            LanManagerAuthenticationLevel = $LmString
+            NtlmMinClientSec              = Describe-NtlmMinSec $NTLMMinClientSec
+            NtlmMinServerSec              = Describe-NtlmMinSec $NTLMMinServerSec
+        }
+
+        # ---------------------------
+        # 4) Microsoft network client (registry)
+        # ---------------------------
+        $CltRequireSig = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "RequireSecuritySignature"
+        $CltEnableSig  = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "EnableSecuritySignature"
+
+        $MsNetworkClient = [PSCustomObject]@{
+            DigitallySignAlways          = Map-BoolToEnabledDisabled $CltRequireSig
+            DigitallySignIfClientAgrees  = Map-BoolToEnabledDisabled $CltEnableSig
+        }
+
+        # ---------------------------
+        # 5) Microsoft network server (registry)
+        # ---------------------------
+        $SrvRequireSig = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "RequireSecuritySignature"
+        $SrvEnableSig  = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "EnableSecuritySignature"
+        $SMB1          = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "SMB1"
+
+        $MsNetworkServer = [PSCustomObject]@{
+            DigitallySignAlways           = Map-BoolToEnabledDisabled $SrvRequireSig
+            DigitallySignIfClientAgrees   = Map-BoolToEnabledDisabled $SrvEnableSig
+            SMB1Protocol                  = if ($SMB1 -eq $null) { "Not Defined" } elseif ($SMB1 -eq 0) { "Disabled" } elseif ($SMB1 -eq 1) { "Enabled" } else { "$SMB1" }
+        }
+
+        # ---------------------------
+        # 6) Domain member (secure channel / registry)
+        # ---------------------------
+        $RequireSignOrSeal     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "RequireSignOrSeal"
+        $SealSecureChannel     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "SealSecureChannel"
+        $SignSecureChannel     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "SignSecureChannel"
+        $RequireStrongKey      = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "RequireStrongKey"
+        $DisablePasswordChange = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "DisablePasswordChange"
+
+        $DomainMember = [PSCustomObject]@{
+            RequireSignOrSeal     = Map-BoolToEnabledDisabled $RequireSignOrSeal
+            SealSecureChannel     = Map-BoolToEnabledDisabled $SealSecureChannel
+            SignSecureChannel     = Map-BoolToEnabledDisabled $SignSecureChannel
+            RequireStrongKey      = Map-BoolToEnabledDisabled $RequireStrongKey
+            DisablePasswordChange = if ($DisablePasswordChange -eq $null) { "Not Defined" } elseif ($DisablePasswordChange -eq 1) { "Enabled" } else { "Disabled" }
+        }
+
+        # ---------------------------
+        # 7) Devices
+        # ---------------------------
+        $AddPrinterDrivers = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers" "AddPrinterDrivers"
+        $Devices = [PSCustomObject]@{
+            PreventUsersInstallingPrinterDrivers = Map-BoolToEnabledDisabled $AddPrinterDrivers
+        }
+
+        # ---------------------------
+        # 8) UAC (registry)
+        # ---------------------------
+        $EnableLUA                 = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "EnableLUA"
+        $FilterAdministratorToken  = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "FilterAdministratorToken"
+        $ConsentPromptBehaviorAdmin= Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "ConsentPromptBehaviorAdmin"
+        $PromptOnSecureDesktop     = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "PromptOnSecureDesktop"
+        $EnableInstallerDetection  = Get-REGDWORD "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "EnableInstallerDetection"
+
+        switch ($ConsentPromptBehaviorAdmin) {
+          0 { $ConsentStr = "No prompt" }
+          1 { $ConsentStr = "Prompt for credentials on the secure desktop" }
+          2 { $ConsentStr = "Prompt for consent on the secure desktop" }
+          3 { $ConsentStr = "Prompt for credentials" }
+          4 { $ConsentStr = "Prompt for consent" }
+          5 { $ConsentStr = "Prompt for consent for non-Windows binaries" }
+          default { $ConsentStr = "Not Defined" }
+        }
+
+        $UAC = [PSCustomObject]@{
+            RunAllAdministratorsInAdminApprovalMode = Map-BoolToEnabledDisabled $EnableLUA
+            AdminApprovalModeForBuiltInAdministrator = Map-BoolToEnabledDisabled $FilterAdministratorToken
+            ElevationPromptBehaviorForAdmins         = $ConsentStr
+            SwitchToSecureDesktopWhenPrompting       = Map-BoolToEnabledDisabled $PromptOnSecureDesktop
+            DetectAppInstallsAndPromptForElevation   = Map-BoolToEnabledDisabled $EnableInstallerDetection
+        }
+
+        # ---------------------------
+        # 9) LDAP Client Signing (registry)
+        # ---------------------------
+        $LDAPClientIntegrity = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LDAP" "LDAPClientIntegrity"
+        switch ($LDAPClientIntegrity) {
+          2 { $LdapStr = "Require signing" }
+          1 { $LdapStr = "Negotiate signing" }
+          0 { $LdapStr = "None" }
+          default { $LdapStr = "Not Defined" }
+        }
+        $LDAPClient = [PSCustomObject]@{
+            SigningRequirement = $LdapStr
+        }
+
+        # ---------------------------
+        # 10) Network access (anonymous restrictions)
+        # ---------------------------
+        $RestrictNullSessAccess = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "RestrictNullSessAccess"
+        $NetworkAccess = [PSCustomObject]@{
+            RestrictAnonymousAccess = Map-BoolToEnabledDisabled $RestrictNullSessAccess
+        }
+
+        # Combine all sections into one object
+        $Audit = [PSCustomObject]@{
+            Accounts          = $Accounts
+            InteractiveLogon  = $InteractiveLogon
+            NetworkSecurity   = $NetworkSecurity
+            MsNetworkClient   = $MsNetworkClient
+            MsNetworkServer   = $MsNetworkServer
+            DomainMember      = $DomainMember
+            Devices           = $Devices
+            UAC               = $UAC
+            LDAPClient        = $LDAPClient
+            NetworkAccess     = $NetworkAccess
+        }
+
+        $Audit | ConvertTo-Json -Depth 6
+      register: security_audit
+      check_mode: no
+
+    - name: Render Security Options HTML Report
+      delegate_to: localhost
+      template:
+        src: "../templates/Windows-2025-HardenedAccountSecurityOptions-checkmode.j2"
+        dest: "/tmp/{{ report_filename }}"
       vars:
-        section_name: "Accounts"
-        section_items: "{{ security_options.accounts | default([]) }}"
-    - name: "Section 1 Summary"
-      debug:
-        msg: "{{ _section_summary }}"
+        audit: "{{ security_audit.stdout | from_json }}"
+      check_mode: no
 
-    - name: "Section 1: Accounts - secedit (CHECK MODE)"
-      ansible.windows.win_security_policy:
-        section: "{{ item.section }}"
-        name: "{{ item.policy_name }}"
-        value: "{{ item.value }}"
-      loop: "{{ security_options.accounts | default([]) | selectattr('provider', 'equalto', 'secedit') | list }}"
-      loop_control:
-        label: "{{ item.section }} :: {{ item.policy_name }} => {{ item.value }}"
-      check_mode: yes
-
-    # ---------------------------
-    # 2) INTERACTIVE LOGON
-    # ---------------------------
-    - name: "Section 2: Interactive logon - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.interactive_logon | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Interactive logon"
-        section_items: "{{ security_options.interactive_logon | default([]) }}"
-    - name: "Section 2 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    - name: "Section 2: Interactive logon - secedit (CHECK MODE)"
-      ansible.windows.win_security_policy:
-        section: "{{ item.section }}"
-        name: "{{ item.policy_name }}"
-        value: "{{ item.value }}"
-      loop: "{{ security_options.interactive_logon | default([]) | selectattr('provider','equalto','secedit') | list }}"
-      loop_control:
-        label: "{{ item.section }} :: {{ item.policy_name }} => {{ item.value }}"
-      check_mode: yes
-
-    # ---------------------------
-    # 3) NETWORK SECURITY
-    # ---------------------------
-    - name: "Section 3: Network security - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.network_security | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Network security"
-        section_items: "{{ security_options.network_security | default([]) }}"
-    - name: "Section 3 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    - name: "Section 3: Network security - secedit (CHECK MODE)"
-      ansible.windows.win_security_policy:
-        section: "{{ item.section }}"
-        name: "{{ item.policy_name }}"
-        value: "{{ item.value }}"
-      loop: "{{ security_options.network_security | default([]) | selectattr('provider','equalto','secedit') | list }}"
-      loop_control:
-        label: "{{ item.section }} :: {{ item.policy_name }} => {{ item.value }}"
-      check_mode: yes
-
-    # ---------------------------
-    # 4) MICROSOFT NETWORK CLIENT
-    # ---------------------------
-    - name: "Section 4: Microsoft network client - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.microsoft_network_client | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Microsoft network client"
-        section_items: "{{ security_options.microsoft_network_client | default([]) }}"
-    - name: "Section 4 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 5) MICROSOFT NETWORK SERVER
-    # ---------------------------
-    - name: "Section 5: Microsoft network server - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.microsoft_network_server | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Microsoft network server"
-        section_items: "{{ security_options.microsoft_network_server | default([]) }}"
-    - name: "Section 5 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 6) DOMAIN MEMBER
-    # ---------------------------
-    - name: "Section 6: Domain member - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.domain_member | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Domain member"
-        section_items: "{{ security_options.domain_member | default([]) }}"
-    - name: "Section 6 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 7) DEVICES
-    # ---------------------------
-    - name: "Section 7: Devices - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.devices | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Devices"
-        section_items: "{{ security_options.devices | default([]) }}"
-    - name: "Section 7 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 8) UAC (User Account Control)
-    # ---------------------------
-    - name: "Section 8: UAC - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.uac | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "UAC"
-        section_items: "{{ security_options.uac | default([]) }}"
-    - name: "Section 8 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 9) LDAP CLIENT SIGNING
-    # ---------------------------
-    - name: "Section 9: LDAP client signing - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.ldap_client_signing | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "LDAP client signing"
-        section_items: "{{ security_options.ldap_client_signing | default([]) }}"
-    - name: "Section 9 Summary"
-      debug: { msg: "{{ _section_summary }}" }
-
-    # ---------------------------
-    # 10) NETWORK ACCESS
-    # ---------------------------
-    - name: "Section 10: Network access - registry (CHECK MODE)"
-      ansible.windows.win_regedit:
-        path: "{{ item.path }}"
-        name: "{{ item.name }}"
-        data: "{{ item.data }}"
-        type: "{{ item.type | default('dword') }}"
-      loop: "{{ security_options.network_access | default([]) | selectattr('provider','equalto','registry') | list }}"
-      loop_control:
-        label: "{{ item.path }}\\{{ item.name }} => {{ item.data }}"
-      check_mode: yes
-      register: section_results
-      vars:
-        section_name: "Network access"
-        section_items: "{{ security_options.network_access | default([]) }}"
-    - name: "Section 10 Summary"
-      debug: { msg: "{{ _section_summary }}" }
+    - name: Upload Security Options Report to S3
+      delegate_to: localhost
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "cis-baseline-files/{{ report_filename }}"
+        src: "/tmp/{{ report_filename }}"
+        mode: put
+        region: "{{ s3_region }}"
+      check_mode: no
