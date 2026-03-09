@@ -1,67 +1,222 @@
----
-- name: Apply CIS Windows Server 2025 Account Security Options Audit (Partial Suite)
-  hosts: all
-  gather_facts: yes
-  vars:
-    s3_bucket_name: "oml-s3-automation-sandbox"
-    s3_region: "eu-west-1"
-    report_filename: "SecurityOptions_CIS_Audit_{{ inventory_hostname }}_{{ ansible_date_time.iso8601_basic_short }}.html"
+security_options:
 
-  tasks:
+  # 1) Accounts
+  accounts:
+    # Example: Limit local account use of blank passwords to console logon only = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+      name: LimitBlankPasswordUse
+      type: dword
+      data: 1
 
-    - name: Audit Account Security Options (Force Run)
-      win_shell: |
-        $tempFile = "C:\Windows\Temp\secedit_audit.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile
-        Remove-Item $tempFile
+    # Example: Administrator account status = Disabled (secedit-backed)
+    - provider: secedit
+      section: "System Access"
+      policy_name: "Accounts: Administrator account status"
+      value: "Disabled"
 
-        function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*="
-            if ($line) { return $line.ToString().Split('=')[1].Trim() }
-            return "Not Defined"
-        }
+    # Example: Guest account status = Disabled (secedit-backed)
+    - provider: secedit
+      section: "System Access"
+      policy_name: "Accounts: Guest account status"
+      value: "Disabled"
 
-        # Administrator & Guest Account Status (0=Disabled, 1=Enabled)
-        $adminStatus = Get-Val "EnableAdminAccount"
-        $guestStatus = Get-Val "EnableGuestAccount"
+    # Example: Rename administrator account = LocalAdmin-RG
+    - provider: secedit
+      section: "System Access"
+      policy_name: "Accounts: Rename administrator account"
+      value: "LocalAdmin-RG"
 
-        # Rename Administrator Account
-        $renameAdmin = Get-Val "NewAdministratorName"
+    # Example: Rename guest account = Guest-RG
+    - provider: secedit
+      section: "System Access"
+      policy_name: "Accounts: Rename guest account"
+      value: "Guest-RG"
 
-        # FIXED — LimitBlankPasswordUse (Windows Server 2025 uses REGISTRY, NOT secedit)
-        try {
-            $blankLimit = (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" -Name "LimitBlankPasswordUse").LimitBlankPasswordUse
-        }
-        catch {
-            # fallback to secedit if registry missing (older OS compatibility)
-            $blankLimit = Get-Val "LimitBlankPasswordUse"
-        }
+  # 2) Interactive logon
+  interactive_logon:
+    # Do not display last user name = Enabled
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: DontDisplayLastUserName
+      type: dword
+      data: 1
 
-        @{
-            AdministratorStatus = if ($adminStatus -eq "1") { "Enabled" } else { "Disabled" }
-            GuestStatus         = if ($guestStatus -eq "1") { "Enabled" } else { "Disabled" }
-            RenameAdmin         = $renameAdmin
-            LimitBlankPasswords = if ($blankLimit -eq "1") { "Enabled" } else { "Disabled" }
-        } | ConvertTo-Json
-      register: secopt_audit
-      check_mode: no
+    # Do not require CTRL+ALT+DEL = Disabled (so require CTRL+ALT+DEL)
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: DisableCAD
+      type: dword
+      data: 0
 
-    - name: Render Security Options Report
-      delegate_to: localhost
-      template:
-        src: "../templates/Windows-2025-HardenedAccountSecurityOptions-checkmode.j2"
-        dest: "/tmp/{{ report_filename }}"
-      vars:
-        audit: "{{ secopt_audit.stdout | from_json }}"
-      check_mode: no
+  # 3) Network security
+  network_security:
+    # LAN Manager authentication level = Send NTLMv2 response only. Refuse LM & NTLM (DWORD 5)
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa
+      name: LmCompatibilityLevel
+      type: dword
+      data: 5
 
-    - name: Upload to S3
-      delegate_to: localhost
-      amazon.aws.s3_object:
-        bucket: "{{ s3_bucket_name }}"
-        object: "cis-baseline-files/{{ report_filename }}"
-        src: "/tmp/{{ report_filename }}"
-        mode: put
-        region: "{{ s3_region }}"
-      check_mode: no
+    # Minimum session security for NTLM SSP based clients = Require NTLMv2 + 128-bit
+    # Bitmask: 0x20000 (NTLMv2) + 0x800000 (128-bit) = 0x82000
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+      name: NTLMMinClientSec
+      type: dword
+      data: 532480  # 0x82000
+
+    # Minimum session security for NTLM SSP based servers = Require NTLMv2 + 128-bit
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0
+      name: NTLMMinServerSec
+      type: dword
+      data: 532480  # 0x82000
+
+  # 4) Microsoft network client
+  microsoft_network_client:
+    # Digitally sign communications (always) = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters
+      name: RequireSecuritySignature
+      type: dword
+      data: 1
+
+    # Digitally sign communications (if client agrees) = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters
+      name: EnableSecuritySignature
+      type: dword
+      data: 1
+
+  # 5) Microsoft network server
+  microsoft_network_server:
+    # Digitally sign communications (always) = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+      name: RequireSecuritySignature
+      type: dword
+      data: 1
+
+    # Digitally sign communications (if client agrees) = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+      name: EnableSecuritySignature
+      type: dword
+      data: 1
+
+    # Disable SMBv1 (Server)
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+      name: SMB1
+      type: dword
+      data: 0
+
+  # 6) Domain member (secure channel)
+  domain_member:
+    # Digitally encrypt or sign secure channel data (always) and hardening flags
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
+      name: RequireSignOrSeal
+      type: dword
+      data: 1
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
+      name: SealSecureChannel
+      type: dword
+      data: 1
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
+      name: SignSecureChannel
+      type: dword
+      data: 1
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
+      name: RequireStrongKey
+      type: dword
+      data: 1
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters
+      name: DisablePasswordChange
+      type: dword
+      data: 0
+
+  # 7) Devices
+  devices:
+    # Prevent users from installing printer drivers = Enabled
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Control\Print\Providers\LanMan Print Services\Servers
+      name: AddPrinterDrivers
+      type: dword
+      data: 1
+
+  # 8) UAC (User Account Control)
+  uac:
+    # Run all administrators in Admin Approval Mode = Enabled
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: EnableLUA
+      type: dword
+      data: 1
+
+    # Admin Approval Mode for built-in Administrator = Enabled
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: FilterAdministratorToken
+      type: dword
+      data: 1
+
+    # Behavior of the elevation prompt for admins = Prompt for consent on the secure desktop
+    # ConsentPromptBehaviorAdmin: 0=No prompt, 1=Prompt on secure desktop for credentials, 2=Prompt for consent on secure desktop, 5/Prompt variations
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: ConsentPromptBehaviorAdmin
+      type: dword
+      data: 2
+
+    # Switch to secure desktop when prompting = Enabled
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: PromptOnSecureDesktop
+      type: dword
+      data: 1
+
+    # Detect application installations and prompt for elevation = Enabled
+    - provider: registry
+      path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+      name: EnableInstallerDetection
+      type: dword
+      data: 1
+
+  # 9) LDAP client signing
+  ldap_client_signing:
+    # LDAP client signing requirements = Require signing (2)
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LDAP
+      name: LDAPClientIntegrity
+      type: dword
+      data: 2
+
+  # 10) Network access (anonymous restrictions / shares / named pipes)
+  network_access:
+    # Restrict anonymous access to Named Pipes and Shares = Enabled (RestrictNullSessAccess=1)
+    - provider: registry
+      path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+      name: RestrictNullSessAccess
+      type: dword
+      data: 1
+
+    # NullSessionPipes = (empty) — represent empty REG_MULTI_SZ as [] using win_regedit (not all versions support multi_sz well in one line; keep for reference)
+    # - provider: registry
+    #   path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+    #   name: NullSessionPipes
+    #   type: multistring
+    #   data: []
+
+    # NullSessionShares = (empty)
+    # - provider: registry
+    #   path: HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters
+    #   name: NullSessionShares
+    #   type: multistring
+    #   data: []
+``
