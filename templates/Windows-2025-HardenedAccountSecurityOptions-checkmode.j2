@@ -25,31 +25,37 @@
                 <tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr>
             </thead>
             <tbody>
+
                 <tr>
                     <td>Administrator Account Status</td>
                     <td>{{ audit.Accounts.AdministratorStatus }}</td>
-                    <td>Enabled</td> <!-- Corrected from 'Disabled' -->
+                    <td>Enabled</td>
                 </tr>
+
                 <tr>
                     <td>Guest Account Status</td>
                     <td>{{ audit.Accounts.GuestStatus }}</td>
                     <td>Disabled</td>
                 </tr>
+
                 <tr>
                     <td>Rename Administrator Account</td>
                     <td>{{ audit.Accounts.RenameAdmin }}</td>
-                    <td>Not "Administrator"</td>
+                    <td>Administrator</td> <!-- Corrected -->
                 </tr>
+
                 <tr>
                     <td>Rename Guest Account</td>
                     <td>{{ audit.Accounts.RenameGuest }}</td>
-                    <td>Not "Guest"</td>
+                    <td>Not "Guest"</td> <!-- Correct per CIS -->
                 </tr>
+
                 <tr>
                     <td>Limit local account use of blank passwords</td>
                     <td>{{ audit.Accounts.LimitBlankPasswords }}</td>
                     <td>Enabled</td>
                 </tr>
+
             </tbody>
         </table>
 
@@ -58,16 +64,8 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Do Not Display Last Username</td>
-                    <td>{{ audit.InteractiveLogon.DoNotDisplayLastUserName }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Require CTRL+ALT+DEL</td>
-                    <td>{{ audit.InteractiveLogon.RequireCtrlAltDel }}</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Do Not Display Last Username</td><td>{{ audit.InteractiveLogon.DoNotDisplayLastUserName }}</td><td>Enabled</td></tr>
+                <tr><td>Require CTRL+ALT+DEL</td><td>{{ audit.InteractiveLogon.RequireCtrlAltDel }}</td><td>Enabled</td></tr>
             </tbody>
         </table>
 
@@ -79,7 +77,7 @@
                 <tr>
                     <td>LAN Manager authentication level</td>
                     <td>{{ audit.NetworkSecurity.LanManagerAuthenticationLevel }}</td>
-                    <td>Send NTLMv2 response only. Refuse LM &amp; NTLM</td>
+                    <td>Send NTLMv2 response only. Refuse LM & NTLM</td>
                 </tr>
                 <tr>
                     <td>Minimum session security for NTLM SSP (clients)</td>
@@ -99,16 +97,8 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Digitally sign communications (always)</td>
-                    <td>{{ audit.MsNetworkClient.DigitallySignAlways }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Digitally sign communications (if client agrees)</td>
-                    <td>{{ audit.MsNetworkClient.DigitallySignIfClientAgrees }}</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Digitally sign communications (always)</td><td>{{ audit.MsNetworkClient.DigitallySignAlways }}</td><td>Enabled</td></tr>
+                <tr><td>Digitally sign communications (if client agrees)</td><td>{{ audit.MsNetworkClient.DigitallySignIfClientAgrees }}</td><td>Enabled</td></tr>
             </tbody>
         </table>
 
@@ -117,21 +107,9 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Digitally sign communications (always)</td>
-                    <td>{{ audit.MsNetworkServer.DigitallySignAlways }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Digitally sign communications (if client agrees)</td>
-                    <td>{{ audit.MsNetworkServer.DigitallySignIfClientAgrees }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>SMBv1 protocol</td>
-                    <td>{{ audit.MsNetworkServer.SMB1Protocol }}</td>
-                    <td>Disabled</td>
-                </tr>
+                <tr><td>Digitally sign communications (always)</td><td>{{ audit.MsNetworkServer.DigitallySignAlways }}</td><td>Enabled</td></tr>
+                <tr><td>Digitally sign communications (if client agrees)</td><td>{{ audit.MsNetworkServer.DigitallySignIfClientAgrees }}</td><td>Enabled</td></tr>
+                <tr><td>SMBv1 protocol</td><td>{{ audit.MsNetworkServer.SMB1Protocol }}</td><td>Disabled</td></tr>
             </tbody>
         </table>
 
@@ -140,31 +118,11 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Digitally encrypt or sign secure channel data (always)</td>
-                    <td>{{ audit.DomainMember.RequireSignOrSeal }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Seal secure channel (when possible)</td>
-                    <td>{{ audit.DomainMember.SealSecureChannel }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Sign secure channel (when possible)</td>
-                    <td>{{ audit.DomainMember.SignSecureChannel }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Require strong (Windows 2000 or later) session key</td>
-                    <td>{{ audit.DomainMember.RequireStrongKey }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Disable machine account password changes</td>
-                    <td>{{ audit.DomainMember.DisablePasswordChange }}</td>
-                    <td>Disabled</td>
-                </tr>
+                <tr><td>Digitally encrypt or sign secure channel data (always)</td><td>{{ audit.DomainMember.RequireSignOrSeal }}</td><td>Enabled</td></tr>
+                <tr><td>Seal secure channel (when possible)</td><td>{{ audit.DomainMember.SealSecureChannel }}</td><td>Enabled</td></tr>
+                <tr><td>Sign secure channel (when possible)</td><td>{{ audit.DomainMember.SignSecureChannel }}</td><td>Enabled</td></tr>
+                <tr><td>Require strong (Windows 2000 or later) session key</td><td>{{ audit.DomainMember.RequireStrongKey }}</td><td>Enabled</td></tr>
+                <tr><td>Disable machine account password changes</td><td>{{ audit.DomainMember.DisablePasswordChange }}</td><td>Disabled</td></tr>
             </tbody>
         </table>
 
@@ -173,11 +131,7 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Prevent users from installing printer drivers</td>
-                    <td>{{ audit.Devices.PreventUsersInstallingPrinterDrivers }}</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Prevent users from installing printer drivers</td><td>{{ audit.Devices.PreventUsersInstallingPrinterDrivers }}</td><td>Enabled</td></tr>
             </tbody>
         </table>
 
@@ -186,31 +140,11 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Run all administrators in Admin Approval Mode</td>
-                    <td>{{ audit.UAC.RunAllAdministratorsInAdminApprovalMode }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Admin Approval Mode for the Built-in Administrator</td>
-                    <td>{{ audit.UAC.AdminApprovalModeForBuiltInAdministrator }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Behavior of the elevation prompt for administrators</td>
-                    <td>{{ audit.UAC.ElevationPromptBehaviorForAdmins }}</td>
-                    <td>Prompt for consent on the secure desktop</td>
-                </tr>
-                <tr>
-                    <td>Switch to the secure desktop when prompting</td>
-                    <td>{{ audit.UAC.SwitchToSecureDesktopWhenPrompting }}</td>
-                    <td>Enabled</td>
-                </tr>
-                <tr>
-                    <td>Detect application installations and prompt for elevation</td>
-                    <td>{{ audit.UAC.DetectAppInstallsAndPromptForElevation }}</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Run all administrators in Admin Approval Mode</td><td>{{ audit.UAC.RunAllAdministratorsInAdminApprovalMode }}</td><td>Enabled</td></tr>
+                <tr><td>Admin Approval Mode for the Built-in Administrator</td><td>{{ audit.UAC.AdminApprovalModeForBuiltInAdministrator }}</td><td>Enabled</td></tr>
+                <tr><td>Behavior of the elevation prompt for administrators</td><td>{{ audit.UAC.ElevationPromptBehaviorForAdmins }}</td><td>Prompt for consent on the secure desktop</td></tr>
+                <tr><td>Switch to the secure desktop when prompting</td><td>{{ audit.UAC.SwitchToSecureDesktopWhenPrompting }}</td><td>Enabled</td></tr>
+                <tr><td>Detect application installations and prompt for elevation</td><td>{{ audit.UAC.DetectAppInstallsAndPromptForElevation }}</td><td>Enabled</td></tr>
             </tbody>
         </table>
 
@@ -219,11 +153,7 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>LDAP client signing requirements</td>
-                    <td>{{ audit.LDAPClient.SigningRequirement }}</td>
-                    <td>Require signing</td>
-                </tr>
+                <tr><td>LDAP client signing requirements</td><td>{{ audit.LDAPClient.SigningRequirement }}</td><td>Require signing</td></tr>
             </tbody>
         </table>
 
@@ -232,11 +162,7 @@
         <table>
             <thead><tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>Restrict anonymous access to Named Pipes and Shares</td>
-                    <td>{{ audit.NetworkAccess.RestrictAnonymousAccess }}</td>
-                    <td>Enabled</td>
-                </tr>
+                <tr><td>Restrict anonymous access to Named Pipes and Shares</td><td>{{ audit.NetworkAccess.RestrictAnonymousAccess }}</td><td>Enabled</td></tr>
             </tbody>
         </table>
 
@@ -244,3 +170,4 @@
     </div>
 </body>
 </html>
+``
