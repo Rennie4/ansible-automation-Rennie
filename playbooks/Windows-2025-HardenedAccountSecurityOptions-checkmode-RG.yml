@@ -10,14 +10,10 @@
 
   tasks:
 
-    ######################################################################
-    # 1) ACCOUNTS AUDIT (WinRM‑safe block)
-    ######################################################################
     - name: Audit Accounts CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
-        # Export secedit section
         $tmp = "C:\Windows\Temp\accts.inf"
         secedit /export /cfg $tmp /areas SECURITYPOLICY | Out-Null
         $pol = Get-Content $tmp -ErrorAction SilentlyContinue
@@ -30,11 +26,10 @@
         }
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
             catch { return $null }
         }
 
-        # CIS: Administrator / Guest / Rename / Blank PW enforcement
         $EnableAdmin = Get-Val "EnableAdminAccount"
         $EnableGuest = Get-Val "EnableGuestAccount"
         $RenameAdmin = Get-Val "NewAdministratorName"
@@ -51,27 +46,23 @@
       register: accounts_audit
       check_mode: no
 
-    ######################################################################
-    # 2) INTERACTIVE LOGON AUDIT (WinRM‑safe block)
-    ######################################################################
     - name: Audit Interactive Logon CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
             catch { return $null }
         }
 
         function Get-SZ($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
             catch { return $null }
         }
 
         $polSys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $ntWin  = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 
-        # CIS 2.51 – 2.58 + related
         $DisableCAD      = Get-DWORD $polSys "DisableCAD"
         $ShowLastUser    = Get-DWORD $polSys "DontDisplayLastUserName"
         $ShowLastSignin  = Get-DWORD $polSys "DontDisplayLastSignin"
@@ -104,19 +95,15 @@
       register: ilogon_audit
       check_mode: no
 
-    ######################################################################
-    # 3) NETWORK SECURITY AUDIT (WinRM‑safe block)
-    ######################################################################
     - name: Audit Network Security CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
             catch { return $null }
         }
 
-        # LAN Manager / NTLM Min Sec
         $Lm = Get-DWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
         switch ($Lm) {
           5 { $LmStr = "Send NTLMv2 response only. Refuse LM & NTLM" }
@@ -147,19 +134,13 @@
       register: netsec_audit
       check_mode: no
 
-    ######################################################################
-    # 4) Merge JSON (Accounts + Interactive Logon + Network Security)
-    ######################################################################
-    - name: Merge audits
+    - name: Merge results
       set_fact:
         audit_merged:
           Accounts: "{{ accounts_audit.stdout | from_json }}"
           InteractiveLogon: "{{ ilogon_audit.stdout | from_json }}"
           NetworkSecurity: "{{ netsec_audit.stdout | from_json }}"
 
-    ######################################################################
-    # 5) Render report
-    ######################################################################
     - name: Render HTML report
       delegate_to: localhost
       template:
@@ -169,9 +150,6 @@
         audit: "{{ audit_merged }}"
       check_mode: no
 
-    ######################################################################
-    # 6) Upload to S3
-    ######################################################################
     - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
@@ -181,4 +159,3 @@
         mode: put
         region: "{{ s3_region }}"
       check_mode: no
-``
