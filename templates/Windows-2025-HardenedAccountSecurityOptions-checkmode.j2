@@ -24,18 +24,13 @@
         <tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr>
         </thead>
         <tbody>
-
         <tr><td>Administrator Account Status</td><td>{{ audit.Accounts.AdministratorStatus }}</td><td>Enabled</td></tr>
         <tr><td>Guest Account Status</td><td>{{ audit.Accounts.GuestStatus }}</td><td>Disabled</td></tr>
-
         <tr><td>Rename Administrator Account</td><td>{{ audit.Accounts.RenameAdmin }}</td><td>Administrator</td></tr>
         <tr><td>Rename Guest Account</td><td>{{ audit.Accounts.RenameGuest }}</td><td>Not "Guest"</td></tr>
-
         <tr><td>Limit local account use of blank passwords</td><td>{{ audit.Accounts.LimitBlankPasswords }}</td><td>Enabled</td></tr>
-
         </tbody>
     </table>
-
 
     <!-- 2. INTERACTIVE LOGON -->
     <h2>2. Interactive Logon</h2>
@@ -44,7 +39,6 @@
         <tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr>
         </thead>
         <tbody>
-
         <tr><td>Do not require CTRL+ALT+DEL</td><td>{{ audit.InteractiveLogon.DoNotRequireCtrlAltDel }}</td><td>Disabled</td></tr>
         <tr><td>Do Not Display Last User Name</td><td>{{ audit.InteractiveLogon.DoNotDisplayLastUserName }}</td><td>Enabled</td></tr>
         <tr><td>Don't display last signed-in</td><td>{{ audit.InteractiveLogon.DontDisplayLastSignin }}</td><td>Enabled</td></tr>
@@ -54,10 +48,8 @@
         <tr><td>Password expiry warning (days)</td><td>{{ audit.InteractiveLogon.PasswordExpiryWarningDays }}</td><td>5–14</td></tr>
         <tr><td>Require DC authentication to unlock workstation</td><td>{{ audit.InteractiveLogon.RequireDCAuthToUnlock }}</td><td>Enabled</td></tr>
         <tr><td>Smart card removal behavior</td><td>{{ audit.InteractiveLogon.SmartCardRemovalBehavior }}</td><td>Lock workstation</td></tr>
-
         </tbody>
     </table>
-
 
     <!-- 3. NETWORK SECURITY -->
     <h2>3. Network Security</h2>
@@ -66,11 +58,9 @@
         <tr><th>Policy Setting</th><th>Current State</th><th>CIS Requirement</th></tr>
         </thead>
         <tbody>
-
-        <tr><td>LAN Manager authentication level</td><td>{{ audit.NetworkSecurity.LanManagerAuthenticationLevel }}</td><td>Send NTLMv2 only; refuse LM & NTLM</td></tr>
+        <tr><td>LAN Manager authentication level</td><td>{{ audit.NetworkSecurity.LanManagerAuthenticationLevel }}</td><td>Send NTLMv2 only; refuse LM &amp; NTLM</td></tr>
         <tr><td>Minimum session security (NTLM SSP clients)</td><td>{{ audit.NetworkSecurity.NtlmMinClientSec }}</td><td>NTLMv2 + 128-bit</td></tr>
         <tr><td>Minimum session security (NTLM SSP servers)</td><td>{{ audit.NetworkSecurity.NtlmMinServerSec }}</td><td>NTLMv2 + 128-bit</td></tr>
-
         </tbody>
     </table>
 
