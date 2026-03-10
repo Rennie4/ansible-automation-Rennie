@@ -10,6 +10,9 @@
 
   tasks:
 
+    # ---------------------------
+    # 1) ACCOUNTS
+    # ---------------------------
     - name: Audit Accounts CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
@@ -26,7 +29,7 @@
         }
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
@@ -46,17 +49,20 @@
       register: accounts_audit
       check_mode: no
 
+    # ---------------------------
+    # 2) INTERACTIVE LOGON
+    # ---------------------------
     - name: Audit Interactive Logon CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
         function Get-SZ($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
@@ -95,12 +101,15 @@
       register: ilogon_audit
       check_mode: no
 
+    # ---------------------------
+    # 3) NETWORK SECURITY
+    # ---------------------------
     - name: Audit Network Security CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
@@ -134,6 +143,9 @@
       register: netsec_audit
       check_mode: no
 
+    # ---------------------------
+    # 4) Merge → 5) Render → 6) Upload
+    # ---------------------------
     - name: Merge results
       set_fact:
         audit_merged:
