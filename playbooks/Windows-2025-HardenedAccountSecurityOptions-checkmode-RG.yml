@@ -20,17 +20,17 @@
         # Export secedit section
         $tmp = "C:\Windows\Temp\accts.inf"
         secedit /export /cfg $tmp /areas SECURITYPOLICY | Out-Null
-        $pol = Get-Content $tmp
-        Remove-Item $tmp -ErrorAction SilentlyContinue
+        $pol = Get-Content $tmp -ErrorAction SilentlyContinue
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
 
         function Get-Val($key) {
-            $line = $pol | Select-String "^$key\s*="
+            $line = $pol | Select-String "^$key\s*=" -ErrorAction SilentlyContinue
             if ($line) { return $line.ToString().Split("=")[1].Trim() }
             return $null
         }
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
@@ -51,7 +51,6 @@
       register: accounts_audit
       check_mode: no
 
-
     ######################################################################
     # 2) INTERACTIVE LOGON AUDIT (WinRM‑safe block)
     ######################################################################
@@ -60,19 +59,19 @@
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
         function Get-SZ($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
         $polSys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $ntWin  = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 
-        # CIS 2.51 – 2.58
+        # CIS 2.51 – 2.58 + related
         $DisableCAD      = Get-DWORD $polSys "DisableCAD"
         $ShowLastUser    = Get-DWORD $polSys "DontDisplayLastUserName"
         $ShowLastSignin  = Get-DWORD $polSys "DontDisplayLastSignin"
@@ -95,16 +94,15 @@
             DoNotRequireCtrlAltDel        = if ($DisableCAD -eq 1) {"Enabled"} else {"Disabled"}
             DoNotDisplayLastUserName      = if ($ShowLastUser -eq 1) {"Enabled"} else {"Disabled"}
             DontDisplayLastSignin         = if ($ShowLastSignin -eq 1) {"Enabled"} else {"Disabled"}
-            MachineInactivityLimitSeconds = if ($Inactivity) {$Inactivity} else {"Not Defined"}
+            MachineInactivityLimitSeconds = if ($Inactivity -ne $null) {$Inactivity} else {"Not Defined"}
             LogonBannerTitle              = if ($Title) {"Configured"} else {"Not Configured"}
-            LogonBannerText               = if ($Text) {"Configured"} else {"Not Configured"}
-            PasswordExpiryWarningDays     = if ($PwWarn) {$PwWarn} else {"Not Defined"}
+            LogonBannerText               = if ($Text)  {"Configured"} else {"Not Configured"}
+            PasswordExpiryWarningDays     = if ($PwWarn -ne $null) {$PwWarn} else {"Not Defined"}
             RequireDCAuthToUnlock         = if ($ForceUnlock -eq 1) {"Enabled"} else {"Disabled"}
             SmartCardRemovalBehavior      = $ScBehavior
         } | ConvertTo-Json -Depth 3
       register: ilogon_audit
       check_mode: no
-
 
     ######################################################################
     # 3) NETWORK SECURITY AUDIT (WinRM‑safe block)
@@ -114,7 +112,7 @@
         $ErrorActionPreference = "Stop"
 
         function Get-DWORD($path,$name) {
-            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            try { return (Get-ItemProperty -Path $path -Name $name -ErrorAction Stop).$name }
             catch { return $null }
         }
 
@@ -149,7 +147,6 @@
       register: netsec_audit
       check_mode: no
 
-
     ######################################################################
     # 4) Merge JSON (Accounts + Interactive Logon + Network Security)
     ######################################################################
@@ -159,7 +156,6 @@
           Accounts: "{{ accounts_audit.stdout | from_json }}"
           InteractiveLogon: "{{ ilogon_audit.stdout | from_json }}"
           NetworkSecurity: "{{ netsec_audit.stdout | from_json }}"
-
 
     ######################################################################
     # 5) Render report
@@ -173,7 +169,6 @@
         audit: "{{ audit_merged }}"
       check_mode: no
 
-
     ######################################################################
     # 6) Upload to S3
     ######################################################################
@@ -185,4 +180,5 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
+      check_mode: no
 ``
