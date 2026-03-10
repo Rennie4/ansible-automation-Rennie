@@ -14,7 +14,9 @@
       win_shell: |
         $ErrorActionPreference = "Stop"
 
-        # --- Export secedit-backed policy (for a few 'System Access' checks) ---
+        #
+        # 1) Read Local Security Policy (secedit snapshot)
+        #
         $tempFile = "C:\Windows\Temp\secedit_security.inf"
         secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
         $policy = Get-Content $tempFile -ErrorAction SilentlyContinue
@@ -26,173 +28,127 @@
             return $null
         }
 
+        #
+        # 2) Registry helpers
+        #
         function Get-REGDWORD($Path, $Name) {
             try {
-                $value = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
-                if ($value -is [int]) { return $value }
-                if ($null -ne $value) { return [int]$value }
-            } catch { }
-            return $null
+                $v = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
+                return [int]$v
+            } catch { return $null }
         }
 
         function Get-REGSZ($Path, $Name) {
-            try {
-                return (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
-            } catch { }
-            return $null
+            try { return (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name }
+            catch { return $null }
         }
 
-        function Map-BoolToEnabledDisabled($val, [switch]$Invert) {
-            if ($val -eq $null) { return "Not Defined" }
-            if ($Invert) { if ($val -eq 0) { return "Enabled" } elseif ($val -eq 1) { return "Disabled" } else { return "Not Defined" } }
-            if ($val -eq 1) { return "Enabled" } elseif ($val -eq 0) { return "Disabled" } else { return "Not Defined" }
+        function Map-Bool($v, [switch]$Invert) {
+            if ($v -eq $null) { return "Not Defined" }
+            if ($Invert) { return ($v -eq 0) ? "Enabled" : "Disabled" }
+            return ($v -eq 1) ? "Enabled" : "Disabled"
         }
 
-        # ---------------------------
-        # 1) Accounts (secedit + registry)
-        # ---------------------------
-        $EnableAdminAccount   = Get-Val "EnableAdminAccount"      # 0=Disabled, 1=Enabled
-        $EnableGuestAccount   = Get-Val "EnableGuestAccount"      # 0=Disabled, 1=Enabled
+        #
+        # 3) ACCOUNTS (CIS)
+        #
+        $EnableAdminAccount   = Get-Val "EnableAdminAccount"      # 0/1
+        $EnableGuestAccount   = Get-Val "EnableGuestAccount"
         $NewAdministratorName = Get-Val "NewAdministratorName"
         $NewGuestName         = Get-Val "NewGuestName"
-        $LimitBlankPasswordUse= Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LimitBlankPasswordUse" # 1=Enabled
+
+        $LimitBlankPasswordUse = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LimitBlankPasswordUse"
 
         $Accounts = [PSCustomObject]@{
-            AdministratorStatus = if ($EnableAdminAccount -eq "1") { "Enabled" } elseif ($EnableAdminAccount -eq "0") { "Disabled" } else { "Not Defined" }
-            GuestStatus         = if ($EnableGuestAccount -eq "1") { "Enabled" } elseif ($EnableGuestAccount -eq "0") { "Disabled" } else { "Not Defined" }
-            RenameAdmin         = if ([string]::IsNullOrWhiteSpace($NewAdministratorName)) { "Not Defined" } else { $NewAdministratorName }
-            RenameGuest         = if ([string]::IsNullOrWhiteSpace($NewGuestName)) { "Not Defined" } else { $NewGuestName }
-            LimitBlankPasswords = Map-BoolToEnabledDisabled $LimitBlankPasswordUse
+            AdministratorStatus = if ($EnableAdminAccount -eq "1") {"Enabled"} elseif ($EnableAdminAccount -eq "0") {"Disabled"} else {"Not Defined"}
+            GuestStatus         = if ($EnableGuestAccount -eq "1") {"Enabled"} elseif ($EnableGuestAccount -eq "0") {"Disabled"} else {"Not Defined"}
+            RenameAdmin         = if ($NewAdministratorName) { $NewAdministratorName } else { "Not Defined" }
+            RenameGuest         = if ($NewGuestName)         { $NewGuestName }         else { "Not Defined" }
+            LimitBlankPasswords = Map-Bool $LimitBlankPasswordUse
         }
 
-        # ---------------------------
-        # 2) Interactive logon (registry)
-        # ---------------------------
+        #
+        # 4) INTERACTIVE LOGON (CIS)
+        #
         $polSys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $ntWin  = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 
-        $DisableCAD               = Get-REGDWORD $polSys "DisableCAD"               # 1 = Do not require CTRL+ALT+DEL (policy 'Enabled' => undesirable)
-        $DontDisplayLastUserName  = Get-REGDWORD $polSys "DontDisplayLastUserName"  # 1 = Enabled
-        $DontDisplayLastSignin    = Get-REGDWORD $polSys "DontDisplayLastSignin"    # 1 = Enabled
-        $InactivityTimeoutSecs    = Get-REGDWORD $polSys "InactivityTimeoutSecs"    # seconds
+        $DisableCAD               = Get-REGDWORD $polSys "DisableCAD"
+        $DontDisplayLastUserName  = Get-REGDWORD $polSys "DontDisplayLastUserName"
+        $DontDisplayLastSignin    = Get-REGDWORD $polSys "DontDisplayLastSignin"
+        $InactivityTimeoutSecs    = Get-REGDWORD $polSys "InactivityTimeoutSecs"
+
         $LegalNoticeCaption       = Get-REGSZ   $polSys "LegalNoticeCaption"
         $LegalNoticeText          = Get-REGSZ   $polSys "LegalNoticeText"
 
-        $PasswordExpiryWarning    = Get-REGDWORD $ntWin "PasswordExpiryWarning"     # days
-        $ForceUnlockLogon         = Get-REGDWORD $ntWin "ForceUnlockLogon"          # 1 = Require DC auth to unlock
-        $ScRemoveOption           = Get-REGDWORD $ntWin "ScRemoveOption"            # 0=None, 1=Lock, 2=Logoff, 3=Disconnect (RDP)
+        $PasswordExpiryWarning    = Get-REGDWORD $ntWin "PasswordExpiryWarning"
+        $ForceUnlockLogon         = Get-REGDWORD $ntWin "ForceUnlockLogon"
+        $ScRemoveOption           = Get-REGDWORD $ntWin "ScRemoveOption"
 
         switch ($ScRemoveOption) {
-          0 { $ScRemoveStr = "No action" }
-          1 { $ScRemoveStr = "Lock workstation" }
-          2 { $ScRemoveStr = "Force logoff" }
-          3 { $ScRemoveStr = "Disconnect if Remote Desktop Services session" }
-          default { $ScRemoveStr = "Not Defined" }
+          0 { $ScStr = "No action" }
+          1 { $ScStr = "Lock workstation" }
+          2 { $ScStr = "Force logoff" }
+          3 { $ScStr = "Disconnect RDP session" }
+          default { $ScStr = "Not Defined" }
         }
-
-        $LegalCaptionState = if ($LegalNoticeCaption) { "Configured" } else { "Not Configured" }
-        $LegalTextState    = if ($LegalNoticeText)    { "Configured" } else { "Not Configured" }
 
         $InteractiveLogon = [PSCustomObject]@{
-            DoNotRequireCtrlAltDel         = Map-BoolToEnabledDisabled $DisableCAD          # CIS: Disabled
-            DoNotDisplayLastUserName       = Map-BoolToEnabledDisabled $DontDisplayLastUserName  # CIS: Enabled
-            DontDisplayLastSignin          = Map-BoolToEnabledDisabled $DontDisplayLastSignin    # CIS: Enabled
-            MachineInactivityLimitSeconds  = if ($InactivityTimeoutSecs -eq $null) { "Not Defined" } else { $InactivityTimeoutSecs }
-            LogonBannerTitle               = $LegalCaptionState
-            LogonBannerText                = $LegalTextState
-            PasswordExpiryWarningDays      = if ($PasswordExpiryWarning -eq $null) { "Not Defined" } else { $PasswordExpiryWarning }
-            RequireDCAuthToUnlock          = Map-BoolToEnabledDisabled $ForceUnlockLogon     # CIS: Enabled
-            SmartCardRemovalBehavior       = $ScRemoveStr                                    # CIS commonly: Lock workstation
+            DoNotRequireCtrlAltDel         = Map-Bool $DisableCAD
+            DoNotDisplayLastUserName       = Map-Bool $DontDisplayLastUserName
+            DontDisplayLastSignin          = Map-Bool $DontDisplayLastSignin
+            MachineInactivityLimitSeconds  = if ($InactivityTimeoutSecs -eq $null) {"Not Defined"} else { $InactivityTimeoutSecs }
+            LogonBannerTitle               = if ($LegalNoticeCaption) {"Configured"} else {"Not Configured"}
+            LogonBannerText                = if ($LegalNoticeText)    {"Configured"} else {"Not Configured"}
+            PasswordExpiryWarningDays      = if ($PasswordExpiryWarning -eq $null) {"Not Defined"} else { $PasswordExpiryWarning }
+            RequireDCAuthToUnlock          = Map-Bool $ForceUnlockLogon
+            SmartCardRemovalBehavior       = $ScStr
         }
 
-        # ---------------------------
-        # 3) Network security (registry)
-        # ---------------------------
+        #
+        # 5) NETWORK SECURITY  (from earlier working version)
+        #
         $LmCompatibilityLevel = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
         switch ($LmCompatibilityLevel) {
-          5 { $LmString = "Send NTLMv2 response only. Refuse LM & NTLM" }
-          3 { $LmString = "Send NTLMv2 response only" }
-          2 { $LmString = "Send NTLM response only" }
-          1 { $LmString = "Send LM & NTLM responses" }
-          0 { $LmString = "Send LM & NTLM responses" }
-          default { $LmString = "Not Defined" }
+          5 { $LmStr = "Send NTLMv2 response only. Refuse LM & NTLM" }
+          3 { $LmStr = "Send NTLMv2 response only" }
+          2 { $LmStr = "Send NTLM response only" }
+          1 { $LmStr = "Send LM & NTLM responses" }
+          0 { $LmStr = "Send LM & NTLM responses" }
+          default { $LmStr = "Not Defined" }
         }
 
         $NTLMMinClientSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinClientSec"
         $NTLMMinServerSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinServerSec"
-        function Describe-NtlmMinSec($val) {
-            if ($val -eq $null) { return "Not Defined" }
-            $parts = @()
-            if (($val -band 0x00020000) -ne 0) { $parts += "Require NTLMv2" }
-            if (($val -band 0x00800000) -ne 0 -or ($val -band 0x00200000) -ne 0) { $parts += "Require 128-bit" }
-            if (($val -band 0x00080000) -ne 0) { $parts += "Require 56-bit" }
-            if ($parts.Count -eq 0) { return "$val (unrecognized flags)" }
-            return ($parts | Select-Object -Unique) -join ", "
+
+        function Map-NtlmMask($v) {
+            if ($v -eq $null) { return "Not Defined" }
+            $o = @()
+            if ($v -band 0x00020000) { $o += "Require NTLMv2" }
+            if ($v -band 0x00800000 -or $v -band 0x00200000) { $o += "Require 128-bit" }
+            if ($o.Count -eq 0) { return "$v" }
+            return ($o -join ", ")
         }
 
         $NetworkSecurity = [PSCustomObject]@{
-            LanManagerAuthenticationLevel = $LmString
-            NtlmMinClientSec              = Describe-NtlmMinSec $NTLMMinClientSec
-            NtlmMinServerSec              = Describe-NtlmMinSec $NTLMMinServerSec
+            LanManagerAuthenticationLevel = $LmStr
+            NtlmMinClientSec              = Map-NtlmMask $NTLMMinClientSec
+            NtlmMinServerSec              = Map-NtlmMask $NTLMMinServerSec
         }
 
-        # ---------------------------
-        # 4) Microsoft network client (registry)
-        # ---------------------------
-        $CltRequireSig = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "RequireSecuritySignature"
-        $CltEnableSig  = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "EnableSecuritySignature"
-        $MsNetworkClient = [PSCustomObject]@{
-            DigitallySignAlways          = Map-BoolToEnabledDisabled $CltRequireSig
-            DigitallySignIfClientAgrees  = Map-BoolToEnabledDisabled $CltEnableSig
-        }
-
-        # ---------------------------
-        # 5) Microsoft network server (registry)
-        # ---------------------------
-        $SrvRequireSig = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "RequireSecuritySignature"
-        $SrvEnableSig  = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "EnableSecuritySignature"
-        $SMB1          = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" "SMB1"
-        $MsNetworkServer = [PSCustomObject]@{
-            DigitallySignAlways           = Map-BoolToEnabledDisabled $SrvRequireSig
-            DigitallySignIfClientAgrees   = Map-BoolToEnabledDisabled $SrvEnableSig
-            SMB1Protocol                  = if ($SMB1 -eq $null) { "Not Defined" } elseif ($SMB1 -eq 0) { "Disabled" } elseif ($SMB1 -eq 1) { "Enabled" } else { "$SMB1" }
-        }
-
-        # ---------------------------
-        # 6) Domain member (secure channel / registry)
-        # ---------------------------
-        $RequireSignOrSeal     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "RequireSignOrSeal"
-        $SealSecureChannel     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "SealSecureChannel"
-        $SignSecureChannel     = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "SignSecureChannel"
-        $RequireStrongKey      = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "RequireStrongKey"
-        $DisablePasswordChange = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters" "DisablePasswordChange"
-        $DomainMember = [PSCustomObject]@{
-            RequireSignOrSeal     = Map-BoolToEnabledDisabled $RequireSignOrSeal
-            SealSecureChannel     = Map-BoolToEnabledDisabled $SealSecureChannel
-            SignSecureChannel     = Map-BoolToEnabledDisabled $SignSecureChannel
-            RequireStrongKey      = Map-BoolToEnabledDisabled $RequireStrongKey
-            DisablePasswordChange = if ($DisablePasswordChange -eq $null) { "Not Defined" } elseif ($DisablePasswordChange -eq 1) { "Enabled" } else { "Disabled" }
-        }
-
-        # ---------------------------
-        # Combine all sections
-        # ---------------------------
+        #
+        # Assemble final object
+        #
         $Audit = [PSCustomObject]@{
             Accounts          = $Accounts
             InteractiveLogon  = $InteractiveLogon
             NetworkSecurity   = $NetworkSecurity
-            MsNetworkClient   = $MsNetworkClient
-            MsNetworkServer   = $MsNetworkServer
-            DomainMember      = $DomainMember
-            Devices           = [PSCustomObject]@{}  # unchanged from prior; keep placeholder if needed later
-            UAC               = [PSCustomObject]@{}  # unchanged here; already covered earlier version if you want to re-add
-            LDAPClient        = [PSCustomObject]@{}  # unchanged here; already covered earlier version if you want to re-add
-            NetworkAccess     = [PSCustomObject]@{}  # unchanged here; already covered earlier version if you want to re-add
         }
 
         $Audit | ConvertTo-Json -Depth 6
       register: security_audit
       check_mode: no
+
 
     - name: Render Security Options HTML Report
       delegate_to: localhost
@@ -202,6 +158,7 @@
       vars:
         audit: "{{ security_audit.stdout | from_json }}"
       check_mode: no
+
 
     - name: Upload Security Options Report to S3
       delegate_to: localhost
