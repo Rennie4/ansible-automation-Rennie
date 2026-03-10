@@ -10,106 +10,117 @@
 
   tasks:
 
-    - name: Audit Security Options (Force Run, Read-Only)
+    ######################################################################
+    # 1) ACCOUNTS AUDIT (WinRM‑safe block)
+    ######################################################################
+    - name: Audit Accounts CIS Section
       win_shell: |
         $ErrorActionPreference = "Stop"
 
-        #
-        # 1) Read Local Security Policy (secedit snapshot)
-        #
-        $tempFile = "C:\Windows\Temp\secedit_security.inf"
-        secedit /export /cfg $tempFile /areas SECURITYPOLICY | Out-Null
-        $policy = Get-Content $tempFile -ErrorAction SilentlyContinue
-        if (Test-Path $tempFile) { Remove-Item $tempFile -Force -ErrorAction SilentlyContinue }
+        # Export secedit section
+        $tmp = "C:\Windows\Temp\accts.inf"
+        secedit /export /cfg $tmp /areas SECURITYPOLICY | Out-Null
+        $pol = Get-Content $tmp
+        Remove-Item $tmp -ErrorAction SilentlyContinue
 
         function Get-Val($key) {
-            $line = $policy | Select-String "^$key\s*=" -ErrorAction SilentlyContinue
-            if ($line) { return $line.ToString().Split('=')[1].Trim() }
+            $line = $pol | Select-String "^$key\s*="
+            if ($line) { return $line.ToString().Split("=")[1].Trim() }
             return $null
         }
 
-        #
-        # 2) Registry helpers
-        #
-        function Get-REGDWORD($Path, $Name) {
-            try {
-                $v = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name
-                return [int]$v
-            } catch { return $null }
-        }
-
-        function Get-REGSZ($Path, $Name) {
-            try { return (Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop).$Name }
+        function Get-DWORD($path,$name) {
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
             catch { return $null }
         }
 
-        function Map-Bool($v, [switch]$Invert) {
-            if ($v -eq $null) { return "Not Defined" }
-            if ($Invert) { return ($v -eq 0) ? "Enabled" : "Disabled" }
-            return ($v -eq 1) ? "Enabled" : "Disabled"
+        # CIS: Administrator / Guest / Rename / Blank PW enforcement
+        $EnableAdmin = Get-Val "EnableAdminAccount"
+        $EnableGuest = Get-Val "EnableGuestAccount"
+        $RenameAdmin = Get-Val "NewAdministratorName"
+        $RenameGuest = Get-Val "NewGuestName"
+        $BlankPw     = Get-DWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LimitBlankPasswordUse"
+
+        @{
+            AdministratorStatus = if ($EnableAdmin -eq "1") {"Enabled"} elseif ($EnableAdmin -eq "0") {"Disabled"} else {"Not Defined"}
+            GuestStatus         = if ($EnableGuest -eq "1") {"Enabled"} elseif ($EnableGuest -eq "0") {"Disabled"} else {"Not Defined"}
+            RenameAdmin         = if ($RenameAdmin) {$RenameAdmin} else {"Not Defined"}
+            RenameGuest         = if ($RenameGuest) {$RenameGuest} else {"Not Defined"}
+            LimitBlankPasswords = if ($BlankPw -eq 1) {"Enabled"} elseif ($BlankPw -eq 0) {"Disabled"} else {"Not Defined"}
+        } | ConvertTo-Json -Depth 3
+      register: accounts_audit
+      check_mode: no
+
+
+    ######################################################################
+    # 2) INTERACTIVE LOGON AUDIT (WinRM‑safe block)
+    ######################################################################
+    - name: Audit Interactive Logon CIS Section
+      win_shell: |
+        $ErrorActionPreference = "Stop"
+
+        function Get-DWORD($path,$name) {
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            catch { return $null }
         }
 
-        #
-        # 3) ACCOUNTS (CIS)
-        #
-        $EnableAdminAccount   = Get-Val "EnableAdminAccount"      # 0/1
-        $EnableGuestAccount   = Get-Val "EnableGuestAccount"
-        $NewAdministratorName = Get-Val "NewAdministratorName"
-        $NewGuestName         = Get-Val "NewGuestName"
-
-        $LimitBlankPasswordUse = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LimitBlankPasswordUse"
-
-        $Accounts = [PSCustomObject]@{
-            AdministratorStatus = if ($EnableAdminAccount -eq "1") {"Enabled"} elseif ($EnableAdminAccount -eq "0") {"Disabled"} else {"Not Defined"}
-            GuestStatus         = if ($EnableGuestAccount -eq "1") {"Enabled"} elseif ($EnableGuestAccount -eq "0") {"Disabled"} else {"Not Defined"}
-            RenameAdmin         = if ($NewAdministratorName) { $NewAdministratorName } else { "Not Defined" }
-            RenameGuest         = if ($NewGuestName)         { $NewGuestName }         else { "Not Defined" }
-            LimitBlankPasswords = Map-Bool $LimitBlankPasswordUse
+        function Get-SZ($path,$name) {
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            catch { return $null }
         }
 
-        #
-        # 4) INTERACTIVE LOGON (CIS)
-        #
         $polSys = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         $ntWin  = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 
-        $DisableCAD               = Get-REGDWORD $polSys "DisableCAD"
-        $DontDisplayLastUserName  = Get-REGDWORD $polSys "DontDisplayLastUserName"
-        $DontDisplayLastSignin    = Get-REGDWORD $polSys "DontDisplayLastSignin"
-        $InactivityTimeoutSecs    = Get-REGDWORD $polSys "InactivityTimeoutSecs"
+        # CIS 2.51 – 2.58
+        $DisableCAD      = Get-DWORD $polSys "DisableCAD"
+        $ShowLastUser    = Get-DWORD $polSys "DontDisplayLastUserName"
+        $ShowLastSignin  = Get-DWORD $polSys "DontDisplayLastSignin"
+        $Inactivity      = Get-DWORD $polSys "InactivityTimeoutSecs"
+        $Title           = Get-SZ    $polSys "LegalNoticeCaption"
+        $Text            = Get-SZ    $polSys "LegalNoticeText"
+        $PwWarn          = Get-DWORD $ntWin  "PasswordExpiryWarning"
+        $ForceUnlock     = Get-DWORD $ntWin  "ForceUnlockLogon"
+        $ScOption        = Get-DWORD $ntWin  "ScRemoveOption"
 
-        $LegalNoticeCaption       = Get-REGSZ   $polSys "LegalNoticeCaption"
-        $LegalNoticeText          = Get-REGSZ   $polSys "LegalNoticeText"
-
-        $PasswordExpiryWarning    = Get-REGDWORD $ntWin "PasswordExpiryWarning"
-        $ForceUnlockLogon         = Get-REGDWORD $ntWin "ForceUnlockLogon"
-        $ScRemoveOption           = Get-REGDWORD $ntWin "ScRemoveOption"
-
-        switch ($ScRemoveOption) {
-          0 { $ScStr = "No action" }
-          1 { $ScStr = "Lock workstation" }
-          2 { $ScStr = "Force logoff" }
-          3 { $ScStr = "Disconnect RDP session" }
-          default { $ScStr = "Not Defined" }
+        switch ($ScOption) {
+          0 { $ScBehavior = "No action" }
+          1 { $ScBehavior = "Lock workstation" }
+          2 { $ScBehavior = "Force logoff" }
+          3 { $ScBehavior = "Disconnect RDP session" }
+          default { $ScBehavior = "Not Defined" }
         }
 
-        $InteractiveLogon = [PSCustomObject]@{
-            DoNotRequireCtrlAltDel         = Map-Bool $DisableCAD
-            DoNotDisplayLastUserName       = Map-Bool $DontDisplayLastUserName
-            DontDisplayLastSignin          = Map-Bool $DontDisplayLastSignin
-            MachineInactivityLimitSeconds  = if ($InactivityTimeoutSecs -eq $null) {"Not Defined"} else { $InactivityTimeoutSecs }
-            LogonBannerTitle               = if ($LegalNoticeCaption) {"Configured"} else {"Not Configured"}
-            LogonBannerText                = if ($LegalNoticeText)    {"Configured"} else {"Not Configured"}
-            PasswordExpiryWarningDays      = if ($PasswordExpiryWarning -eq $null) {"Not Defined"} else { $PasswordExpiryWarning }
-            RequireDCAuthToUnlock          = Map-Bool $ForceUnlockLogon
-            SmartCardRemovalBehavior       = $ScStr
+        @{
+            DoNotRequireCtrlAltDel        = if ($DisableCAD -eq 1) {"Enabled"} else {"Disabled"}
+            DoNotDisplayLastUserName      = if ($ShowLastUser -eq 1) {"Enabled"} else {"Disabled"}
+            DontDisplayLastSignin         = if ($ShowLastSignin -eq 1) {"Enabled"} else {"Disabled"}
+            MachineInactivityLimitSeconds = if ($Inactivity) {$Inactivity} else {"Not Defined"}
+            LogonBannerTitle              = if ($Title) {"Configured"} else {"Not Configured"}
+            LogonBannerText               = if ($Text) {"Configured"} else {"Not Configured"}
+            PasswordExpiryWarningDays     = if ($PwWarn) {$PwWarn} else {"Not Defined"}
+            RequireDCAuthToUnlock         = if ($ForceUnlock -eq 1) {"Enabled"} else {"Disabled"}
+            SmartCardRemovalBehavior      = $ScBehavior
+        } | ConvertTo-Json -Depth 3
+      register: ilogon_audit
+      check_mode: no
+
+
+    ######################################################################
+    # 3) NETWORK SECURITY AUDIT (WinRM‑safe block)
+    ######################################################################
+    - name: Audit Network Security CIS Section
+      win_shell: |
+        $ErrorActionPreference = "Stop"
+
+        function Get-DWORD($path,$name) {
+            try { return (Get-ItemProperty -Path $path -Name $name).$name }
+            catch { return $null }
         }
 
-        #
-        # 5) NETWORK SECURITY  (from earlier working version)
-        #
-        $LmCompatibilityLevel = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
-        switch ($LmCompatibilityLevel) {
+        # LAN Manager / NTLM Min Sec
+        $Lm = Get-DWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" "LmCompatibilityLevel"
+        switch ($Lm) {
           5 { $LmStr = "Send NTLMv2 response only. Refuse LM & NTLM" }
           3 { $LmStr = "Send NTLMv2 response only" }
           2 { $LmStr = "Send NTLM response only" }
@@ -118,10 +129,10 @@
           default { $LmStr = "Not Defined" }
         }
 
-        $NTLMMinClientSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinClientSec"
-        $NTLMMinServerSec = Get-REGDWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinServerSec"
+        $Client = Get-DWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinClientSec"
+        $Server = Get-DWORD "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0" "NTLMMinServerSec"
 
-        function Map-NtlmMask($v) {
+        function Map-Ntlm($v) {
             if ($v -eq $null) { return "Not Defined" }
             $o = @()
             if ($v -band 0x00020000) { $o += "Require NTLMv2" }
@@ -130,37 +141,43 @@
             return ($o -join ", ")
         }
 
-        $NetworkSecurity = [PSCustomObject]@{
+        @{
             LanManagerAuthenticationLevel = $LmStr
-            NtlmMinClientSec              = Map-NtlmMask $NTLMMinClientSec
-            NtlmMinServerSec              = Map-NtlmMask $NTLMMinServerSec
-        }
-
-        #
-        # Assemble final object
-        #
-        $Audit = [PSCustomObject]@{
-            Accounts          = $Accounts
-            InteractiveLogon  = $InteractiveLogon
-            NetworkSecurity   = $NetworkSecurity
-        }
-
-        $Audit | ConvertTo-Json -Depth 6
-      register: security_audit
+            NtlmMinClientSec              = Map-Ntlm $Client
+            NtlmMinServerSec              = Map-Ntlm $Server
+        } | ConvertTo-Json -Depth 3
+      register: netsec_audit
       check_mode: no
 
 
-    - name: Render Security Options HTML Report
+    ######################################################################
+    # 4) Merge JSON (Accounts + Interactive Logon + Network Security)
+    ######################################################################
+    - name: Merge audits
+      set_fact:
+        audit_merged:
+          Accounts: "{{ accounts_audit.stdout | from_json }}"
+          InteractiveLogon: "{{ ilogon_audit.stdout | from_json }}"
+          NetworkSecurity: "{{ netsec_audit.stdout | from_json }}"
+
+
+    ######################################################################
+    # 5) Render report
+    ######################################################################
+    - name: Render HTML report
       delegate_to: localhost
       template:
         src: "../templates/Windows-2025-HardenedAccountSecurityOptions-checkmode.j2"
         dest: "/tmp/{{ report_filename }}"
       vars:
-        audit: "{{ security_audit.stdout | from_json }}"
+        audit: "{{ audit_merged }}"
       check_mode: no
 
 
-    - name: Upload Security Options Report to S3
+    ######################################################################
+    # 6) Upload to S3
+    ######################################################################
+    - name: Upload to S3
       delegate_to: localhost
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
@@ -168,4 +185,4 @@
         src: "/tmp/{{ report_filename }}"
         mode: put
         region: "{{ s3_region }}"
-      check_mode: no
+``
